@@ -23,6 +23,9 @@ Defines a fluorophore
 ```
 mutable struct GenericFluor <: Molecule 
     γ::AbstractFloat         
-    q::Array{AbstractFloat}=[1.0]
+    q::Array{AbstractFloat}
+end
+function GenericFluor(γ::AbstractFloat)
+    return GenericFluor(γ,[1])
 end
 
