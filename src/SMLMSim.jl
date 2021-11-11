@@ -7,6 +7,7 @@ using Distributions
 include("typedefs.jl")
 include("molecules.jl")
 include("cameras.jl")
+include("sim.jl")
 
 
 
