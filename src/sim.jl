@@ -118,16 +118,41 @@ function genroistack(psf::MicroscopePSFs.PSF, xsize, ysize, nframes, framerate)
 end
 
 """
-    updatestate(state::Int,q::Matrix)
+    function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framerate::AbstractFloat;ndatasets::Int=1,minphotons=50.0)
 
-Update the state and return the elapsed time.    
-
-
-q has format of i,j where i is current state, j is rate to another state. 
+generate noise-free blinking model from smd_true
 """
-function updatestate(state::Int, q::Matrix)
-       
-    
-    
+function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framerate::AbstractFloat;ndatasets::Int=1,minphotons=50.0)
 
+    smd=SMLMData.SMLD2D(0)
+    for dd=1:ndatasets, ll=1:length(smd_true.x)
+        photons=SMLMSim.intensitytrace(f,nframes,framerate)    
+        framenum=findall(photons.>minphotons)
+        n=length(framenum)
+        push!(smd.photons,photons[framenum]...)
+        push!(smd.framenum,framenum...)
+        for nn=1:n
+            push!(smd.x,smd_true.x[ll])
+            push!(smd.y,smd_true.y[ll])
+            push!(smd.datasetnum,dd)
+        end
+    end
+    return smd
 end
+
+function noise(smd_model::SMLMData.SMLD2D,σ_psf::AbstractFloat)
+    n=length(smd_model.x)
+    smd=deepcopy(smd_model)
+    smd.σ_x=zeros(n)
+    smd.σ_y=zeros(n)
+
+    for nn=1:n
+        σ=σ_psf/sqrt(smd_model.photons[nn])
+        smd.x[nn]=smd_model.x[nn]+randn()*σ
+        smd.y[nn]=smd_model.y[nn]+randn()*σ
+        smd.σ_x[nn]=σ
+        smd.σ_y[nn]=σ
+    end
+    return smd
+end
+
