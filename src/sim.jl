@@ -135,10 +135,11 @@ function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framera
         n=length(framenum)
         push!(smd.photons,photons[framenum]...)
         push!(smd.framenum,framenum...)
-        for nn=1:n
-            push!(smd.x,smd_true.x[ll])
-            push!(smd.y,smd_true.y[ll])
-            push!(smd.datasetnum,dd)
+        for nn = 1:n
+            push!(smd.x, smd_true.x[ll])
+            push!(smd.y, smd_true.y[ll])
+            push!(smd.connectID, smd_true.connectID[ll])
+            push!(smd.datasetnum, dd)
         end
     end
     return smd
