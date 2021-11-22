@@ -124,11 +124,13 @@ generate noise-free blinking model from smd_true
 """
 function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framerate::AbstractFloat;ndatasets::Int=1,minphotons=50.0)
 
+    state1=2;
+
     smd=SMLMData.SMLD2D(0)
     smd.ndatasets=ndatasets
     smd.nframes=nframes
     for dd=1:ndatasets, ll=1:length(smd_true.x)
-        photons=SMLMSim.intensitytrace(f,nframes,framerate)    
+        photons=SMLMSim.intensitytrace(f,nframes,framerate;state1=state1)    
         framenum=findall(photons.>minphotons)
         n=length(framenum)
         push!(smd.photons,photons[framenum]...)

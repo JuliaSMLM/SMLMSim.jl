@@ -18,7 +18,7 @@ xsize=25.6 # image size
 ysize=25.6
 nframes=2000 # number of frames
 framerate=50.0 # framerate
-σ_psf=1.3 # psf sigma used for uncertainty calcs
+σ_psf=0.13 # psf sigma used for uncertainty calcs
 minphotons=500 # minimum number of photons per frame accepted
 
 # Simulation sequence
