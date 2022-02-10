@@ -129,16 +129,18 @@ function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framera
     smd=SMLMData.SMLD2D(0)
     smd.ndatasets=ndatasets
     smd.nframes=nframes
+    smd.datasize=deepcopy(smd_true.datasize)
     for dd=1:ndatasets, ll=1:length(smd_true.x)
         photons=SMLMSim.intensitytrace(f,nframes,framerate;state1=state1)    
         framenum=findall(photons.>minphotons)
         n=length(framenum)
         push!(smd.photons,photons[framenum]...)
         push!(smd.framenum,framenum...)
-        for nn=1:n
-            push!(smd.x,smd_true.x[ll])
-            push!(smd.y,smd_true.y[ll])
-            push!(smd.datasetnum,dd)
+        for nn = 1:n
+            push!(smd.x, smd_true.x[ll])
+            push!(smd.y, smd_true.y[ll])
+            push!(smd.connectID, smd_true.connectID[ll])
+            push!(smd.datasetnum, dd)
         end
     end
     return smd

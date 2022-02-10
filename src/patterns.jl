@@ -64,7 +64,7 @@ function uniform2D(ρ, p::Pattern, xsize::AbstractFloat, ysize::AbstractFloat)
 
     #make smd 
     smd = SMLMData.SMLD2D(ntotal)
-
+    smd.datasize = Int.(ceil.([ysize; xsize]))
     for nn = 1:npatterns
         θ = 2 * pi * rand()
         x0=rand()*xsize
