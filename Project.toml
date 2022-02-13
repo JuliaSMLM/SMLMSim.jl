@@ -6,11 +6,9 @@ version = "0.1.0"
 [deps]
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 MicroscopePSFs = "cb041358-c3ff-4140-98ff-83d5ae4723ab"
-PlotlyJS = "f0f68f2c-4968-5e81-91da-67840de0976a"
 SMLMData = "5488f106-40b8-4660-84c5-84a168990d1b"
 
 [compat]
-PlotlyJS = "0.18"
 julia = "1.6"
 
 [extras]

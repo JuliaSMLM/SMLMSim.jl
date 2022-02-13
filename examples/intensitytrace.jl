@@ -2,7 +2,6 @@
 
 using Revise
 using SMLMSim
-using Distributions
 using Plots  
 
 ## create a blinking fluorophore 
@@ -10,7 +9,6 @@ using Plots
 q=[0 10
    1e-1 0]
 f=SMLMSim.GenericFluor(γ,q)
-
 
 ## Simulate intensity trace 
 
@@ -23,12 +21,12 @@ starttime=0.0
 endtime = (nframes) / framerate
 state1=1
 ctmc=SMLMSim.CTMC(q,endtime,state1)
-plot(ctmc.transitiontimes,ctmc.states)
+Plots.plot(ctmc.transitiontimes,ctmc.states)
 
 
 ##  generate integrated photons 
 photons=SMLMSim.intensitytrace(f,nframes,framerate)
-plot((1:nframes),photons)
+Plots.plot((1:nframes),photons)
 
 
 
