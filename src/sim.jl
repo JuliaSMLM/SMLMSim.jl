@@ -86,7 +86,7 @@ end
 Calculate an intensity trace.     
 
 """
-function intensitytrace(f::GenericFluor, nframes::Int, framerate::AbstractFloat;state1=1)
+function intensitytrace(f::GenericFluor, nframes::Int, framerate::Real;state1=1)
 
     endtime = (nframes) / framerate
 
@@ -122,7 +122,7 @@ end
 
 generate noise-free blinking model from smd_true
 """
-function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framerate::AbstractFloat;ndatasets::Int=1,minphotons=50.0)
+function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framerate::Real;ndatasets::Int=1,minphotons=50.0)
 
     state1=2;
 
@@ -131,7 +131,7 @@ function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framera
     smd.nframes=nframes
     smd.datasize=deepcopy(smd_true.datasize)
     for dd=1:ndatasets, ll=1:length(smd_true.x)
-        photons=SMLMSim.intensitytrace(f,nframes,framerate;state1=state1)    
+        photons=SMLMSim.intensitytrace(f,nframes,framerate;state1=state1); 
         framenum=findall(photons.>minphotons)
         n=length(framenum)
         push!(smd.photons,photons[framenum]...)

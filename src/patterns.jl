@@ -15,6 +15,8 @@ N molecules symmetricaly organized with diameter d
 
 Nmer2D(n::Int,d::AbstractFloat)
 
+# Note `d` is in physical units (e.g. microns)
+
 """
 mutable struct Nmer2D <: Pattern
     n::Int
@@ -22,7 +24,7 @@ mutable struct Nmer2D <: Pattern
     x::Vector{AbstractFloat}
     y::Vector{AbstractFloat}
 end
-function Nmer2D(n::Int, d::AbstractFloat)
+function Nmer2D(;n::Int=8, d::AbstractFloat=.1)
 
     nmer = Nmer2D(n, d, zeros(n), zeros(n))
     for nn = 1:n
@@ -52,12 +54,13 @@ mutable struct Point2D <: Pattern
     Point2D() = new(1, [0.0], [0.0])
 end
 
+
 """
     function uniformPattern2D(ρ,xsize::AbstractFloat,ysize::AbstractFloat, p::Pattern)
 
 create true positions of molecules from uniformly randomly placed patterns
 """
-function uniform2D(ρ, p::Pattern, xsize::AbstractFloat, ysize::AbstractFloat)
+function uniform2D(ρ, p::Pattern, xsize::Real, ysize::Real)
 
     npatterns = rand(Poisson(xsize * ysize * ρ))
     ntotal = npatterns * p.n

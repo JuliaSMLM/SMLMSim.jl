@@ -18,14 +18,24 @@ abstract type Molecule end
 Defines a fluorophore
 
 # Fields
-- γ: photon emission rate in Hz
+- γ: photon emission rate in Hz, Default: 1e3
 - q: state transision matrix. Default: q=[1.0]
 """
 mutable struct GenericFluor <: Molecule 
     γ::AbstractFloat         
-    q::Array{AbstractFloat}
+    q::Array{<:AbstractFloat}
 end
-function GenericFluor(γ::AbstractFloat)
-    return GenericFluor(γ,[1])
+function GenericFluor(;
+    γ::AbstractFloat=1e5,
+    q::Array{<:AbstractFloat}=[1]
+    )
+    return GenericFluor(γ,q)
 end
+
+
+
+
+
+
+
 
