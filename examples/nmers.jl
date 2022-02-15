@@ -4,12 +4,9 @@ using Revise
 using SMLMSim
 using SMLMData
 using PlotlyJS
-using Plots 
 
-#Simulation paramters use physical units
-
-#smld structures are in units of pixels and frames 
-
+# Simulation paramters use physical units
+# smld structures are in units of pixels and frames 
 
 smld_true, smld_model, smld_noisy=SMLMSim.sim(;
 ρ=1.0,
@@ -25,10 +22,4 @@ camera=SMLMSim.IdealCamera(;xpixels=256,ypixels=256,pixelsize=0.1) #pixelsize is
 
 plt=PlotlyJS.plot(scattergl(x=smld_noisy.x, y=smld_noisy.y, mode="markers"))
 display(plt)
-
-
-
-
-
-
 

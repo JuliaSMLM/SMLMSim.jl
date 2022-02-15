@@ -112,10 +112,8 @@ function intensitytrace(f::GenericFluor, nframes::Int, framerate::Real;state1=1)
     return photons
 end
 
-function genroistack(psf::MicroscopePSFs.PSF, xsize, ysize, nframes, framerate)
-
-
-end
+# function genroistack(psf::MicroscopePSFs.PSF, xsize, ysize, nframes, framerate)
+# end
 
 """
     function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framerate::AbstractFloat;ndatasets::Int=1,minphotons=50.0)
