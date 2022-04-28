@@ -11,11 +11,15 @@ abstract type Pattern end
 """
     Nmer2D <: Pattern
 
-N molecules symmetricaly organized with diameter d    
+N molecules symmetricaly organized around a circle with diameter d    
 
-Nmer2D(n::Int,d::AbstractFloat)
+Nmer2D(;n::Int=8, d::AbstractFloat=.1)
 
-# Note `d` is in physical units (e.g. microns)
+# Fields
+- 'n': Numbor of Points = 1
+- 'd': Diameter
+- 'x': X position
+- 'y': Y position
 
 """
 mutable struct Nmer2D <: Pattern
@@ -40,7 +44,9 @@ end
 """
     Point2D <: Pattern
 
-    Generate single 2D points.    
+    A single 2D point.    
+
+Point2D() = new(1, [0.0], [0.0])
 
 # Fields
 - 'n': Numbor of Points = 1
@@ -59,7 +65,9 @@ end
 """
     Line2D <: Pattern
 
-Generate data with uniform random distribution between 2 endpoints.    
+Points with uniform random distribution between 2 endpoints.    
+
+Line2D(;λ::AbstractFloat=10.0, endpoints=[(-1.0,0.0),(1.0,0.0)])
 
 # Fields
 - `λ`: linear molecule density
@@ -101,7 +109,7 @@ end
 """
     function uniformPattern2D(ρ,xsize::AbstractFloat,ysize::AbstractFloat, p::Pattern)
 
-create true positions of molecules from uniformly randomly placed patterns
+Create positions of molecules from uniformly randomly placed and rotated patterns
 """
 function uniform2D(ρ, p::Pattern, xsize::Real, ysize::Real)
 
