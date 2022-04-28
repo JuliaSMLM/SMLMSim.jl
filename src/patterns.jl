@@ -37,14 +37,15 @@ end
 
 
 
-
 """
-    Uniform <: Pattern
+    Point2D <: Pattern
 
-Generate data with uniform random distribution.    
+    Generate single 2D points.    
 
 # Fields
-- `ρ`: molecule density
+- 'n': Numbor of Points = 1
+- 'x': X position
+- 'y': Y position
 
 """
 mutable struct Point2D <: Pattern
@@ -53,6 +54,48 @@ mutable struct Point2D <: Pattern
     y::Vector{AbstractFloat}
     Point2D() = new(1, [0.0], [0.0])
 end
+
+
+"""
+    Line2D <: Pattern
+
+Generate data with uniform random distribution between 2 endpoints.    
+
+# Fields
+- `λ`: linear molecule density
+- 'endpoints': Vector of Tuple 
+- 'n': Numbor of Points = 1
+- 'x': X position
+- 'y': Y position
+
+"""
+mutable struct Line2D <: Pattern
+    n::Int
+    x::Vector{AbstractFloat}
+    y::Vector{AbstractFloat}
+    λ::AbstractFloat
+    endpoints::Vector{Tuple{<:AbstractFloat,<:AbstractFloat}}
+end
+function Line2D(;λ::AbstractFloat=10.0, endpoints=[(-1.0,0.0),(1.0,0.0)])
+    
+    lx=(endpoints[2][1]-endpoints[1][1])
+    ly=(endpoints[2][2]-endpoints[2][1])
+    l=sqrt( lx^2+ ly^2)
+
+    pois=Poisson(λ*l)
+    n=rand(pois)
+
+    line = Line2D(n, zeros(n), zeros(n),λ,endpoints)
+    for nn = 1:n
+        d=l*rand()
+        line.x[nn] = endpoints[1][1] + d/l*lx
+        line.y[nn] = endpoints[1][2] + d/l*ly
+    end
+    return line
+end
+
+
+
 
 
 """
