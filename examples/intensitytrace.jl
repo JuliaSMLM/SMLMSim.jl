@@ -21,8 +21,6 @@ starttime=0.0
 endtime = (nframes) / framerate
 state1=1
 ctmc=SMLMSim.CTMC(q,endtime,state1)
-Plots.plot(ctmc.transitiontimes,ctmc.states)
-
 
 ##  generate integrated photons 
 photons=SMLMSim.intensitytrace(f,nframes,framerate)

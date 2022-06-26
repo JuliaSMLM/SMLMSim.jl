@@ -3,9 +3,9 @@
 using Revise
 using SMLMSim
 using SMLMData
-using PlotlyJS
+using GLMakie
 
-# Simulation paramters use physical units
+# Simulation parameters use physical units
 # smld structures are in units of pixels and frames 
 
 smld_true, smld_model, smld_noisy=SMLMSim.sim(;
@@ -20,6 +20,9 @@ molecule=SMLMSim.GenericFluor(;q=[0 50; 1e-2 0]), #1/s
 camera=SMLMSim.IdealCamera(;xpixels=256,ypixels=256,pixelsize=0.1) #pixelsize is microns
 )
 
-plt=PlotlyJS.plot(scattergl(x=smld_noisy.x, y=smld_noisy.y, mode="markers"))
+plt=Figure()
+ax=Axis(plt[1,1])
+ax.aspect = AxisAspect(1)
+GLMakie.scatter!(smld_noisy.x, smld_noisy.y)
 display(plt)
 

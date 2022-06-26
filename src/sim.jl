@@ -116,10 +116,12 @@ end
 # end
 
 """
-    function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framerate::AbstractFloat;ndatasets::Int=1,minphotons=50.0)
+    function kineticmodel(smd_true::SMLMData.SMLD,f::Molecule,nframes::Int,framerate::AbstractFloat;ndatasets::Int=1,minphotons=50.0)
 
 generate noise-free blinking model from smd_true
 """
+function kineticmodel end
+
 function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framerate::Real;ndatasets::Int=1,minphotons=50.0)
 
     state1=2;
@@ -144,6 +146,39 @@ function kineticmodel(smd_true::SMLMData.SMLD2D,f::Molecule,nframes::Int,framera
     return smd
 end
 
+function kineticmodel(smd_true::SMLMData.SMLD3D,f::Molecule,nframes::Int,framerate::Real;ndatasets::Int=1,minphotons=50.0)
+
+    state1=2;
+
+    smd=SMLMData.SMLD3D(0)
+    smd.ndatasets=ndatasets
+    smd.nframes=nframes
+    smd.datasize=deepcopy(smd_true.datasize)
+    for dd=1:ndatasets, ll=1:length(smd_true.x)
+        photons=SMLMSim.intensitytrace(f,nframes,framerate;state1=state1); 
+        framenum=findall(photons.>minphotons)
+        n=length(framenum)
+        push!(smd.photons,photons[framenum]...)
+        push!(smd.framenum,framenum...)
+        for nn = 1:n
+            push!(smd.x, smd_true.x[ll])
+            push!(smd.y, smd_true.y[ll])
+            push!(smd.z, smd_true.z[ll])
+            push!(smd.connectID, smd_true.connectID[ll])
+            push!(smd.datasetnum, dd)
+        end
+    end
+    return smd
+end
+
+
+"""
+    noise(smd_model::SMLMData.SMLD2D,σ_psf::AbstractFloat) 
+
+Add zero mean Gaussian noise to coordinates with σ = σ_pdf/sqrt(photons) 
+"""
+function noise end
+
 function noise(smd_model::SMLMData.SMLD2D,σ_psf::AbstractFloat)
     n=length(smd_model.x)
     smd=deepcopy(smd_model)
@@ -160,3 +195,26 @@ function noise(smd_model::SMLMData.SMLD2D,σ_psf::AbstractFloat)
     return smd
 end
 
+""" 
+    noise(smd_model::SMLMData.SMLD3D,σ_psf::Vector{<:AbstractFloat})
+3D data requries `σ_psf = [σ_x,σ_y,σ_z]`
+"""
+function noise(smd_model::SMLMData.SMLD3D,σ_psf::Vector{<:AbstractFloat})
+    n=length(smd_model.x)
+    smd=deepcopy(smd_model)
+    smd.σ_x=zeros(n)
+    smd.σ_y=zeros(n)
+    smd.σ_z=zeros(n)
+
+    for nn=1:n
+        σ=σ_psf./sqrt(smd_model.photons[nn])
+        smd.x[nn]=smd_model.x[nn]+randn()*σ[1]
+        smd.y[nn]=smd_model.y[nn]+randn()*σ[2]
+        smd.z[nn]=smd_model.z[nn]+randn()*σ[3]
+        
+        smd.σ_x[nn]=σ[1]
+        smd.σ_y[nn]=σ[2]
+        smd.σ_y[nn]=σ[3]
+    end
+    return smd
+end
