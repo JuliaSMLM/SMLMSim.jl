@@ -134,3 +134,52 @@ function uniform2D(ρ, p::Pattern, xsize::Real, ysize::Real)
     return smd
 end
 
+## Pattern Rotation
+
+"""
+    rotate!(p::Pattern,θ::AbstractFloat)
+
+Rotate a Pattern in 2D by \\theta.
+
+
+Both molecule positions and reference positions are rotated (e.g. endpoints of a line)
+"""
+function rotate!(p::Pattern,θ::AbstractFloat)
+end
+
+"""
+Rotate a Pattern in 3D by the improper Euler angles [\\alpha \\beta \\gamma].
+"""
+function rotate!(p::Pattern,α::Real, β::Real, γ::Real)
+end
+
+
+"""
+Rotate a Pattern in 3D by premultiplying with the rotation matrix `r`
+"""
+function rotate!(p::Pattern,r::Array{AbstractFloat})
+end
+
+function rotate(x::Real,y::Real,θ::Real)
+    return (x*cos(θ)-y*sin(θ), x*sin(θ)+y*cos(θ))
+end
+
+function rotate(x::Real,y::Real,z::Real,r::Matrix{<:Real})
+    out = r*[x y z]'
+    return (out[1],out[2],out[3])       
+end
+
+function rotate(x::Real,y::Real,z::Real,α::Real, β::Real, γ::Real)
+    r = [
+        cos(β)*cos(γ) sin(α)*sin(β)*cos(γ)-cos(α)*sin(γ) cos(α)*sin(β)*cos(γ)+sin(α)*sin(γ)
+        cos(β)*sin(γ) sin(α)*sin(β)*sin(γ)+cos(α)*cos(γ) cos(α)*sin(β)*sin(γ)-sin(α)*cos(γ)
+        -sin(β) sin(α)*cos(β) cos(α)*cos(β)
+        ]
+    return rotate(x,y,z,r)
+end
+
+function rotate!(p::Point2D)
+    
+
+end
+
