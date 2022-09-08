@@ -61,6 +61,27 @@ mutable struct Point2D <: Pattern
     Point2D() = new(1, [0.0], [0.0])
 end
 
+"""
+    Point3D <: Pattern
+
+    A single 3D point.    
+
+Point3D() = new(1, [0.0], [0.0],[0.0])
+
+# Fields
+- 'n': Numbor of Points = 1
+- 'x': X position
+- 'y': Y position
+- 'z': Z position
+"""
+mutable struct Point3D <: Pattern
+    n::Int
+    x::Vector{AbstractFloat}
+    y::Vector{AbstractFloat}
+    z::Vector{AbstractFloat}
+    Point3D() = new(1, [0.0], [0.0], [0.0])
+end
+
 
 """
     Line2D <: Pattern
@@ -107,9 +128,9 @@ end
 
 
 """
-    function uniformPattern2D(ρ,xsize::AbstractFloat,ysize::AbstractFloat, p::Pattern)
+    function uniformPattern2D(ρ,, p::Pattern,xsize::AbstractFloat,ysize::AbstractFloat)
 
-Create positions of molecules from uniformly randomly placed and rotated patterns
+Create positions of molecules from uniformly randomly placed and rotated patterns.
 """
 function uniform2D(ρ, p::Pattern, xsize::Real, ysize::Real)
 
@@ -181,5 +202,63 @@ end
 function rotate!(p::Point2D)
     
 
+"""
+    function uniformPattern3D(ρ,p::Pattern, xsize::AbstractFloat,ysize::AbstractFloat; zrange::Vector{<:Real}=[-1.0,1.0])
+
+Create positions of molecules from uniformly randomly placed and rotated patterns.
+
+!!! Note
+`ρ` is 2D density. 3D density is `ρ/(zrange[2]-zrange[1])`. 
+
+"""
+function uniform3D(ρ, p::Pattern, xsize::Real, ysize::Real; zrange::Vector{<:Real}=[-1.0,1.0])
+
+    npatterns = rand(Poisson(xsize * ysize * ρ))
+    ntotal = npatterns * p.n
+
+    #make smd 
+    smd = SMLMData.SMLD3D(ntotal)
+    smd.datasize = Int.(ceil.([ysize; xsize]))
+    for nn = 1:npatterns
+        
+        x0=rand()*xsize
+        y0=rand()*ysize
+        z0=rand()*(zrange[2]-zrange[1])+zrange[1]
+        
+        #Transformation that gives uniform rotation in 3D
+        # based on J. Avro 1992
+        x1=rand()
+        x2=rand()
+        x3=rand()
+        
+        r=[
+        cos(2 * pi * x1)  -sin(2 * pi * x1) 0
+        -sin(2 * pi * x1)  cos(2 * pi * x1) 0
+        0 0 1
+        ]
+
+        v=[
+        cos(2 * pi * x2)*sqrt(x3)
+        sin(2 * pi * x2)*sqrt(x3)
+        sqrt(1-x3)
+        ]
+
+        h=Diagonal([1.0,1.0,1.0])-2*v*v'
+
+        m=-r*h
+
+        for mm in 1:p.n
+            idx = (p.n) * (nn - 1) + mm
+
+            xyz=[p.x[mm],p.y[mm],p.z[mm]]
+            xyz_prime=m*xyz
+            
+            smd.x[idx] = xyz_prime[1] + x0
+            smd.y[idx] = xyz_prime[2] + y0
+            smd.z[idx] = xyz_prime[3] + z0
+        end
+    end
+
+    return smd
 end
 

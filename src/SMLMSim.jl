@@ -2,6 +2,7 @@ module SMLMSim
 
 using SMLMData
 using Distributions
+using LinearAlgebra
 
 include("typedefs.jl")
 include("molecules.jl")

@@ -1,5 +1,3 @@
-# generate an intensity trace from a blinking fluorophore
-
 using Revise
 using SMLMSim
 using Plots  
@@ -13,7 +11,7 @@ f=SMLMSim.GenericFluor(γ,q)
 ## Simulate intensity trace 
 
 # setup sim
-nframes = 1000
+nframes = 100000
 framerate = 10.0
 
 ## generate CTMC
@@ -23,8 +21,10 @@ state1=1
 ctmc=SMLMSim.CTMC(q,endtime,state1)
 
 ##  generate integrated photons 
-photons=SMLMSim.intensitytrace(f,nframes,framerate)
-Plots.plot((1:nframes),photons)
+using BenchmarkTools
 
+@btime SMLMSim.intensitytrace(f,nframes,framerate)
+
+@profview SMLMSim.intensitytrace(f,nframes,framerate)
 
 
