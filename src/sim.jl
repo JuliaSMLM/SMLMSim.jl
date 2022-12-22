@@ -4,7 +4,7 @@ CTMC
 
 Continous Time Markov Chain    
 """
-mutable struct CTMC{T<:AbstractFloat, U<:Int}
+mutable struct CTMC{T<:AbstractFloat,U<:Int}
     τ::T
     transitiontimes::Vector{T}
     states::Vector{U}
@@ -50,7 +50,7 @@ function CTMC(q::Array{T}, τ::T, state1::Int) where {T<:AbstractFloat}
         push!(transitiontimes, lastchange)
         currentstate = newstate
     end
-    return CTMC(τ,transitiontimes,states)
+    return CTMC(τ, transitiontimes, states)
 end
 
 

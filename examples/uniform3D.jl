@@ -1,6 +1,5 @@
 # Generate uniform random data
 
-using Revise
 using SMLMSim
 using SMLMData
 using GLMakie

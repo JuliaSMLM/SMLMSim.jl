@@ -28,7 +28,7 @@ mutable struct Nmer2D <: Pattern
     x::Vector{AbstractFloat}
     y::Vector{AbstractFloat}
 end
-function Nmer2D(; n::Int=8, d::AbstractFloat=0.1)
+function Nmer2D(;  n::Int=8, d::AbstractFloat=00.1)
 
     nmer = Nmer2D(n, d, zeros(n), zeros(n))
     for nn = 1:n
@@ -160,7 +160,7 @@ end
 
 Randomly place and rotate the input patterns.
 """
-function uniform2D(p::Vector{Pattern}, xsize::Real, ysize::Real)
+function uniform2D(p::Vector{Pattern},  xsize::Real, ysize::Real)
 
     npatterns = length(p)
 
@@ -192,7 +192,7 @@ end
 
 Randomly place the input patterns with fixed rotation \\theta.
 """
-function uniform2D(p::Vector{<:Pattern}, xsize::Real, ysize::Real, θ::Real)
+function uniform2D(p::Vector{<:Pattern},  xsize::Real, ysize::Real, θ::Real)
 
     npatterns = length(p)
 
@@ -223,7 +223,7 @@ end
 
 Place the input patterns and return SMLD2D.
 """
-function place2D(p::Vector{<:Pattern}, xsize::Real, ysize::Real)
+function place2D(p::Vector{<:Pattern},  xsize::Real, ysize::Real)
 
     npatterns = length(p)
 
