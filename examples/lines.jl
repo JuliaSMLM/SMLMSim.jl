@@ -1,9 +1,11 @@
-## Simulation of SMLM Data using Nmer Pattern
+## Simulation of SMLM Data using randomly placed Line2D Pattern
 
 using Revise
 using SMLMSim
 using SMLMData
-using GLMakie
+using CairoMakie #remote
+# using GLMakie #local
+
 
 # Simulation parameters use physical units
 # smld structures are in units of pixels and frames 
@@ -23,6 +25,6 @@ camera=SMLMSim.IdealCamera(;xpixels=256,ypixels=256,pixelsize=0.1) #pixelsize is
 plt=Figure()
 ax=Axis(plt[1,1])
 ax.aspect = AxisAspect(1)
-GLMakie.scatter!(smld_noisy.x, smld_noisy.y)
+scatter!(smld_noisy.x, smld_noisy.y)
 display(plt)
 
