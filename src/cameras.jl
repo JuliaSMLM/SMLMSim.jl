@@ -3,7 +3,7 @@
     Camera 
 
 """
-abstract type Camera end 
+abstract type Camera end
 
 
 
@@ -12,7 +12,7 @@ abstract type Camera end
 
 A camera with no added noise. 
 
-#Fields
+# Fields
 - pixelsize 
 - xpixels
 - ypixels
@@ -42,9 +42,9 @@ function IdealCamera(;
     xpixels::Int=256,
     ypixels::Int=256,
     gain=1.0,
-    offset=0.0,
-    )
-    return IdealCamera(pixelsize,xpixels,ypixels,gain,offset)
+    offset=0.0
+)
+    return IdealCamera(pixelsize, xpixels, ypixels, gain, offset)
 end
 
 

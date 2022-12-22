@@ -28,7 +28,7 @@ mutable struct Nmer2D <: Pattern
     x::Vector{AbstractFloat}
     y::Vector{AbstractFloat}
 end
-function Nmer2D(;n::Int=8, d::AbstractFloat=.1)
+function Nmer2D(; n::Int=8, d::AbstractFloat=0.1)
 
     nmer = Nmer2D(n, d, zeros(n), zeros(n))
     for nn = 1:n
@@ -105,20 +105,20 @@ mutable struct Line2D <: Pattern
     λ::AbstractFloat
     endpoints::Vector{Tuple{<:AbstractFloat,<:AbstractFloat}}
 end
-function Line2D(;λ::AbstractFloat=10.0, endpoints=[(-1.0,0.0),(1.0,0.0)])
-    
-    lx=(endpoints[2][1]-endpoints[1][1])
-    ly=(endpoints[2][2]-endpoints[2][1])
-    l=sqrt( lx^2+ ly^2)
+function Line2D(; λ::AbstractFloat=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
 
-    pois=Poisson(λ*l)
-    n=rand(pois)
+    lx = (endpoints[2][1] - endpoints[1][1])
+    ly = (endpoints[2][2] - endpoints[2][1])
+    l = sqrt(lx^2 + ly^2)
 
-    line = Line2D(n, zeros(n), zeros(n),λ,endpoints)
+    pois = Poisson(λ * l)
+    n = rand(pois)
+
+    line = Line2D(n, zeros(n), zeros(n), λ, endpoints)
     for nn = 1:n
-        d=l*rand()
-        line.x[nn] = endpoints[1][1] + d/l*lx
-        line.y[nn] = endpoints[1][2] + d/l*ly
+        d = l * rand()
+        line.x[nn] = endpoints[1][1] + d / l * lx
+        line.y[nn] = endpoints[1][2] + d / l * ly
     end
     return line
 end
@@ -142,9 +142,9 @@ function uniform2D(ρ, p::Pattern, xsize::Real, ysize::Real)
     smd.datasize = Int.(ceil.([ysize; xsize]))
     for nn = 1:npatterns
         θ = 2 * pi * rand()
-        x0=rand()*xsize
-        y0=rand()*ysize
-        
+        x0 = rand() * xsize
+        y0 = rand() * ysize
+
         for mm = 1:p.n
             idx = (p.n) * (nn - 1) + mm
             smd.x[idx] = p.x[mm] * cos(θ) - p.y[mm] * sin(θ) + x0
@@ -165,42 +165,43 @@ Rotate a Pattern in 2D by \\theta.
 
 Both molecule positions and reference positions are rotated (e.g. endpoints of a line)
 """
-function rotate!(p::Pattern,θ::AbstractFloat)
+function rotate!(p::Pattern, θ::AbstractFloat)
 end
 
 """
 Rotate a Pattern in 3D by the improper Euler angles [\\alpha \\beta \\gamma].
 """
-function rotate!(p::Pattern,α::Real, β::Real, γ::Real)
+function rotate!(p::Pattern, α::Real, β::Real, γ::Real)
 end
 
 
 """
 Rotate a Pattern in 3D by premultiplying with the rotation matrix `r`
 """
-function rotate!(p::Pattern,r::Array{AbstractFloat})
+function rotate!(p::Pattern, r::Array{AbstractFloat})
 end
 
-function rotate(x::Real,y::Real,θ::Real)
-    return (x*cos(θ)-y*sin(θ), x*sin(θ)+y*cos(θ))
+function rotate(x::Real, y::Real, θ::Real)
+    return (x * cos(θ) - y * sin(θ), x * sin(θ) + y * cos(θ))
 end
 
-function rotate(x::Real,y::Real,z::Real,r::Matrix{<:Real})
-    out = r*[x y z]'
-    return (out[1],out[2],out[3])       
+function rotate(x::Real, y::Real, z::Real, r::Matrix{<:Real})
+    out = r * [x y z]'
+    return (out[1], out[2], out[3])
 end
 
-function rotate(x::Real,y::Real,z::Real,α::Real, β::Real, γ::Real)
+function rotate(x::Real, y::Real, z::Real, α::Real, β::Real, γ::Real)
     r = [
         cos(β)*cos(γ) sin(α)*sin(β)*cos(γ)-cos(α)*sin(γ) cos(α)*sin(β)*cos(γ)+sin(α)*sin(γ)
         cos(β)*sin(γ) sin(α)*sin(β)*sin(γ)+cos(α)*cos(γ) cos(α)*sin(β)*sin(γ)-sin(α)*cos(γ)
         -sin(β) sin(α)*cos(β) cos(α)*cos(β)
-        ]
-    return rotate(x,y,z,r)
+    ]
+    return rotate(x, y, z, r)
 end
 
 function rotate!(p::Point2D)
-    
+
+end
 
 """
     function uniformPattern3D(ρ,p::Pattern, xsize::AbstractFloat,ysize::AbstractFloat; zrange::Vector{<:Real}=[-1.0,1.0])
@@ -211,7 +212,7 @@ Create positions of molecules from uniformly randomly placed and rotated pattern
 `ρ` is 2D density. 3D density is `ρ/(zrange[2]-zrange[1])`. 
 
 """
-function uniform3D(ρ, p::Pattern, xsize::Real, ysize::Real; zrange::Vector{<:Real}=[-1.0,1.0])
+function uniform3D(ρ, p::Pattern, xsize::Real, ysize::Real; zrange::Vector{<:Real}=[-1.0, 1.0])
 
     npatterns = rand(Poisson(xsize * ysize * ρ))
     ntotal = npatterns * p.n
@@ -220,39 +221,39 @@ function uniform3D(ρ, p::Pattern, xsize::Real, ysize::Real; zrange::Vector{<:Re
     smd = SMLMData.SMLD3D(ntotal)
     smd.datasize = Int.(ceil.([ysize; xsize]))
     for nn = 1:npatterns
-        
-        x0=rand()*xsize
-        y0=rand()*ysize
-        z0=rand()*(zrange[2]-zrange[1])+zrange[1]
-        
+
+        x0 = rand() * xsize
+        y0 = rand() * ysize
+        z0 = rand() * (zrange[2] - zrange[1]) + zrange[1]
+
         #Transformation that gives uniform rotation in 3D
         # based on J. Avro 1992
-        x1=rand()
-        x2=rand()
-        x3=rand()
-        
-        r=[
-        cos(2 * pi * x1)  -sin(2 * pi * x1) 0
-        -sin(2 * pi * x1)  cos(2 * pi * x1) 0
-        0 0 1
+        x1 = rand()
+        x2 = rand()
+        x3 = rand()
+
+        r = [
+            cos(2 * pi * x1) -sin(2 * pi * x1) 0
+            -sin(2 * pi * x1) cos(2 * pi * x1) 0
+            0 0 1
         ]
 
-        v=[
-        cos(2 * pi * x2)*sqrt(x3)
-        sin(2 * pi * x2)*sqrt(x3)
-        sqrt(1-x3)
+        v = [
+            cos(2 * pi * x2) * sqrt(x3)
+            sin(2 * pi * x2) * sqrt(x3)
+            sqrt(1 - x3)
         ]
 
-        h=Diagonal([1.0,1.0,1.0])-2*v*v'
+        h = Diagonal([1.0, 1.0, 1.0]) - 2 * v * v'
 
-        m=-r*h
+        m = -r * h
 
         for mm in 1:p.n
             idx = (p.n) * (nn - 1) + mm
 
-            xyz=[p.x[mm],p.y[mm],p.z[mm]]
-            xyz_prime=m*xyz
-            
+            xyz = [p.x[mm], p.y[mm], p.z[mm]]
+            xyz_prime = m * xyz
+
             smd.x[idx] = xyz_prime[1] + x0
             smd.y[idx] = xyz_prime[2] + y0
             smd.z[idx] = xyz_prime[3] + z0

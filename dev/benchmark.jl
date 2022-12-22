@@ -1,6 +1,7 @@
 using Revise
 using SMLMSim
 using Plots  
+using BenchmarkTools
 
 ## create a blinking fluorophore 
 γ=10000.0
@@ -20,8 +21,7 @@ endtime = (nframes) / framerate
 state1=1
 ctmc=SMLMSim.CTMC(q,endtime,state1)
 
-##  generate integrated photons 
-using BenchmarkTools
+
 
 @btime SMLMSim.intensitytrace(f,nframes,framerate)
 

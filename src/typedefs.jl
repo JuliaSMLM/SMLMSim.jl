@@ -8,7 +8,7 @@
 
 Output data type
 """
-abstract type Images end 
+abstract type Images end
 
 
 
