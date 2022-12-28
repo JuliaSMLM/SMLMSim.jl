@@ -2,9 +2,7 @@
 
 using SMLMSim
 using SMLMData
-using CairoMakie #remote
-# using GLMakie #local
-
+using GLMakie
 
 # Simulation parameters use physical units
 # smld structures are in units of pixels and frames 

@@ -108,7 +108,7 @@ end
 function Line2D(; λ::AbstractFloat=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
 
     lx = (endpoints[2][1] - endpoints[1][1])
-    ly = (endpoints[2][2] - endpoints[2][1])
+    ly = (endpoints[2][2] - endpoints[1][2])
     l = sqrt(lx^2 + ly^2)
 
     pois = Poisson(λ * l)
