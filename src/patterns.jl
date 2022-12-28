@@ -28,7 +28,7 @@ mutable struct Nmer2D <: Pattern
     x::Vector{AbstractFloat}
     y::Vector{AbstractFloat}
 end
-function Nmer2D(; n::Int=8, d::AbstractFloat=0.1)
+function Nmer2D(;  n::Int=8, d::AbstractFloat=00.1)
 
     nmer = Nmer2D(n, d, zeros(n), zeros(n))
     for nn = 1:n
@@ -108,7 +108,7 @@ end
 function Line2D(; λ::AbstractFloat=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
 
     lx = (endpoints[2][1] - endpoints[1][1])
-    ly = (endpoints[2][2] - endpoints[2][1])
+    ly = (endpoints[2][2] - endpoints[1][2])
     l = sqrt(lx^2 + ly^2)
 
     pois = Poisson(λ * l)
@@ -128,7 +128,7 @@ end
 
 
 """
-    function uniformPattern2D(ρ,, p::Pattern,xsize::AbstractFloat,ysize::AbstractFloat)
+    function uniform2D(ρ, p::Pattern,xsize::AbstractFloat,ysize::AbstractFloat)
 
 Create positions of molecules from uniformly randomly placed and rotated patterns.
 """
@@ -155,56 +155,105 @@ function uniform2D(ρ, p::Pattern, xsize::Real, ysize::Real)
     return smd
 end
 
-## Pattern Rotation
-
 """
-    rotate!(p::Pattern,θ::AbstractFloat)
+    uniform2D(p::Vector{Pattern}, xsize::Real, ysize::Real)  
 
-Rotate a Pattern in 2D by \\theta.
-
-
-Both molecule positions and reference positions are rotated (e.g. endpoints of a line)
+Randomly place and rotate the input patterns.
 """
-function rotate!(p::Pattern, θ::AbstractFloat)
+function uniform2D(p::Vector{Pattern},  xsize::Real, ysize::Real)
+
+    npatterns = length(p)
+
+    ntotal = 0
+    for n in 1:npatterns
+        ntotal += p[n].n
+    end
+
+    #make smd 
+    smd = SMLMData.SMLD2D(ntotal)
+    smd.datasize = Int.(ceil.([ysize; xsize]))
+    idx=1
+    for nn = 1:npatterns
+        θ = 2 * pi * rand()
+        x0 = rand() * xsize
+        y0 = rand() * ysize
+        for mm = 1:p.n
+            smd.x[idx] = p[nn].x[mm] * cos(θ) - p[nn].y[mm] * sin(θ) + x0
+            smd.y[idx] = p[nn].x[mm] * sin(θ) + p[nn].y[mm] * cos(θ) + y0
+            idx += 1
+        end
+    end
+
+    return smd
 end
 
 """
-Rotate a Pattern in 3D by the improper Euler angles [\\alpha \\beta \\gamma].
+    uniform2D(p::Vector{Pattern}, xsize::Real, ysize::Real,θ::Real)  
+
+Randomly place the input patterns with fixed rotation \\theta.
 """
-function rotate!(p::Pattern, α::Real, β::Real, γ::Real)
-end
+function uniform2D(p::Vector{<:Pattern},  xsize::Real, ysize::Real, θ::Real)
 
+    npatterns = length(p)
 
-"""
-Rotate a Pattern in 3D by premultiplying with the rotation matrix `r`
-"""
-function rotate!(p::Pattern, r::Array{AbstractFloat})
-end
+    ntotal = 0
+    for n in 1:npatterns
+        ntotal += p[n].n
+    end
 
-function rotate(x::Real, y::Real, θ::Real)
-    return (x * cos(θ) - y * sin(θ), x * sin(θ) + y * cos(θ))
-end
+    #make smd 
+    smd = SMLMData.SMLD2D(ntotal)
+    smd.datasize = Int.(ceil.([ysize; xsize]))
+    idx=1
+    for nn = 1:npatterns
+        x0 = rand() * xsize
+        y0 = rand() * ysize
+        for mm = 1:p[nn].n
+            smd.x[idx] = p[nn].x[mm] * cos(θ) - p[nn].y[mm] * sin(θ) + x0
+            smd.y[idx] = p[nn].x[mm] * sin(θ) + p[nn].y[mm] * cos(θ) + y0
+            idx += 1
+        end
+    end
 
-function rotate(x::Real, y::Real, z::Real, r::Matrix{<:Real})
-    out = r * [x y z]'
-    return (out[1], out[2], out[3])
-end
-
-function rotate(x::Real, y::Real, z::Real, α::Real, β::Real, γ::Real)
-    r = [
-        cos(β)*cos(γ) sin(α)*sin(β)*cos(γ)-cos(α)*sin(γ) cos(α)*sin(β)*cos(γ)+sin(α)*sin(γ)
-        cos(β)*sin(γ) sin(α)*sin(β)*sin(γ)+cos(α)*cos(γ) cos(α)*sin(β)*sin(γ)-sin(α)*cos(γ)
-        -sin(β) sin(α)*cos(β) cos(α)*cos(β)
-    ]
-    return rotate(x, y, z, r)
-end
-
-function rotate!(p::Point2D)
-
+    return smd
 end
 
 """
-    function uniformPattern3D(ρ,p::Pattern, xsize::AbstractFloat,ysize::AbstractFloat; zrange::Vector{<:Real}=[-1.0,1.0])
+    place2D(p::Vector{Pattern}, xsize::Real, ysize::Real)  
+
+Place the input patterns and return SMLD2D.
+"""
+function place2D(p::Vector{<:Pattern},  xsize::Real, ysize::Real)
+
+    npatterns = length(p)
+
+    ntotal = 0
+    for n in 1:npatterns
+        ntotal += p[n].n
+    end
+
+    #make smd 
+    smd = SMLMData.SMLD2D(ntotal)
+    smd.datasize = Int.(ceil.([ysize; xsize]))
+    idx=1
+    for nn in 1:npatterns
+        for mm in 1:p[nn].n
+            smd.x[idx] = p[nn].x[mm] 
+            smd.y[idx] = p[nn].y[mm] 
+            idx += 1
+        end
+    end
+
+   
+    return smd
+end
+
+
+
+
+
+"""
+    function uniform3D(ρ,p::Pattern, xsize::Real,ysize::Real; zrange::Vector{<:Real}=[-1.0,1.0])
 
 Create positions of molecules from uniformly randomly placed and rotated patterns.
 
@@ -262,4 +311,66 @@ function uniform3D(ρ, p::Pattern, xsize::Real, ysize::Real; zrange::Vector{<:Re
 
     return smd
 end
+
+## Pattern Rotation
+
+"""
+    rotate!(p::Pattern,θ::Real)
+
+Rotate a Pattern in 2D by \\theta radians.
+
+
+Both molecule positions and reference positions are rotated (e.g. endpoints of a line)
+"""
+function rotate!(p::Pattern, θ::Real)
+end
+
+"""
+Rotate a Pattern in 3D by the improper Euler angles [\\alpha \\beta \\gamma] (radians).
+"""
+function rotate!(p::Pattern, α::Real, β::Real, γ::Real)
+end
+
+
+"""
+Rotate a Pattern in 3D by premultiplying with the rotation matrix `r`.
+"""
+function rotate!(p::Pattern, r::Array{Real})
+end
+
+function rotate(x::Real, y::Real, θ::Real)
+    return (x * cos(θ) - y * sin(θ), x * sin(θ) + y * cos(θ))
+end
+
+function rotate(x::Real, y::Real, z::Real, r::Matrix{<:Real})
+    out = r * [x y z]'
+    return (out[1], out[2], out[3])
+end
+
+function rotate(x::Real, y::Real, z::Real, α::Real, β::Real, γ::Real)
+    r = [
+        cos(β)*cos(γ) sin(α)*sin(β)*cos(γ)-cos(α)*sin(γ) cos(α)*sin(β)*cos(γ)+sin(α)*sin(γ)
+        cos(β)*sin(γ) sin(α)*sin(β)*sin(γ)+cos(α)*cos(γ) cos(α)*sin(β)*sin(γ)-sin(α)*cos(γ)
+        -sin(β) sin(α)*cos(β) cos(α)*cos(β)
+    ]
+    return rotate(x, y, z, r)
+end
+
+function rotate!(p::Point2D, θ::Real)
+    for n in 1:p.n
+        (p.x[n], p.y[n]) = rotate(p.x[n], p.y[n], θ)
+    end
+    return nothing
+end
+
+function rotate!(p::Line2D, θ::Real)
+    for n in 1:p.n
+        (p.x[n], p.y[n]) = rotate(p.x[n], p.y[n], θ)
+    end
+    p.endpoints[1] = rotate(p.endpoints[1][1], p.endpoints[1][2], θ)
+    p.endpoints[2] = rotate(p.endpoints[2][1], p.endpoints[2][2], θ)
+    return nothing
+end
+
+
 

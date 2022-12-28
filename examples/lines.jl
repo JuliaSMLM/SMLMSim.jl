@@ -1,4 +1,4 @@
-## Simulation of SMLM Data using Nmer Pattern
+## Simulation of SMLM Data using randomly placed Line2D Pattern
 
 using SMLMSim
 using SMLMData

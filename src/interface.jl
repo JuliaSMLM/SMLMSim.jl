@@ -1,5 +1,20 @@
 # High Level Interface
 
+"""
+    sim(;
+        ρ=1.0,
+        σ_PSF=.13,
+        minphotons=50,
+        ndatasets=10,
+        nframes=1000,
+        framerate=50.0, 
+        pattern::Pattern=Nmer2D(),
+        molecule::Molecule=GenericFluor(;q=[0 50; 1e-2 0]),
+        camera::Camera=IdealCamera()
+    )
+
+Generate SMLD using simulation parmeters.      
+"""
 function sim(;
     ρ=1.0,
     σ_PSF=0.13,
@@ -19,5 +34,4 @@ function sim(;
 
     return smld_true, smld_model, smld_noisy
 end
-
 
