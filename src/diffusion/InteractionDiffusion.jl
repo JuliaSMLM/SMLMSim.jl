@@ -9,4 +9,6 @@ using Distributions
 include("diffusion.jl")
 include("smoluchowski.jl")
 
+export smoluchowski
+
 end
