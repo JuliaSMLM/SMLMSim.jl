@@ -7,17 +7,30 @@ Base.@kwdef mutable struct ArgsSmol
     box_size::Float64 = 10.0
     diff_monomer::Float64 = 0.1
     diff_dimer::Float64 = 0.05
-    diff_dimer_rot::Float64 = 0.05
+    diff_dimer_rot::Float64 = 0.1
     k_off::Float64 = 0.2
     r_react::Float64 = 0.01
     dt::Float64 = 0.01
     t_max::Float64 = 100.0
     ndims::Int64 = 2
-    d_dimer::Float64 = 0.005
+    d_dimer::Float64 = 0.01
     boundary::String = "periodic"
 end
 
 
+"""
+    struct Monomer <: AbstractOligomer
+
+A struct representing a single monomer in an oligomer.
+
+# Fields
+- `x::Float64`: the x-coordinate of the monomer's position
+- `y::Float64`: the y-coordinate of the monomer's position
+- `z::Float64`: the z-coordinate of the monomer's position
+- `state::Int64`: the state of the monomer (1 for monomer, 2 for dimer)
+- `link::Union{Monomer,Nothing}`: the monomer that this monomer is linked to, if any
+- `updated::Bool`: a flag indicating whether this monomer has been updated in the current iteration
+"""
 mutable struct Monomer <: AbstractOligomer
     x::Float64
     y::Float64
@@ -27,12 +40,34 @@ mutable struct Monomer <: AbstractOligomer
     updated::Bool
 end
 
+"""
+    struct MoleculeStates
+
+A struct representing the states of a system of molecules.
+
+# Fields
+- `dt::Float64`: the time step used in the simulation
+- `States::Vector{Vector{Monomer}}`: a vector of vectors of `Monomer` objects representing the states of the molecules in the system at each time step
+"""
 struct MoleculeStates
     dt::Float64
     States::Vector{Vector{Monomer}}
 end
 
+"""
+    dimerize!(mol1::Monomer, mol2::Monomer, distance::Float64)
 
+Update the state and position of two monomers to form a dimer.
+
+# Arguments
+- `mol1::Monomer`: the first monomer to dimerize
+- `mol2::Monomer`: the second monomer to dimerize
+- `distance::Float64`: the distance between the monomers in the dimer
+
+# Returns
+- `nothing`
+
+"""
 function dimerize!(mol1::Monomer, mol2::Monomer, distance::Float64)
 
     # Update status
@@ -67,6 +102,18 @@ function dimerize!(mol1::Monomer, mol2::Monomer, distance::Float64)
     return nothing
 end
 
+"""
+    monomerize!(mol::Monomer)
+
+Update the state and links of a monomer and its linked molecule.
+
+# Arguments
+- `mol::Monomer`: the monomer to monomerize
+
+# Returns
+- `nothing`
+
+"""
 function monomerize!(mol::Monomer)
     mol.state = 1
     mol.link.state = 1
@@ -76,13 +123,37 @@ function monomerize!(mol::Monomer)
 end
 
 
+"""
+    calc_r(mol1::Monomer, mol2::Monomer)
+
+Calculate the Euclidean distance between two monomers.
+
+# Arguments
+- `mol1::Monomer`: the first monomer
+- `mol2::Monomer`: the second monomer
+
+# Returns
+- `r::Float64`: the Euclidean distance between the two monomers
+
+"""
 function calc_r(mol1::Monomer, mol2::Monomer)
-    # Calculate distance between monomers
     return sqrt((mol1.x - mol2.x)^2 + (mol1.y - mol2.y)^2 + (mol1.z - mol2.z)^2)
 end
 
+"""
+    calc_θ(mol1::Monomer, mol2::Monomer)
+
+Calculate the angle between the z-axis and the vector connecting two monomers.
+
+# Arguments
+- `mol1::Monomer`: the first monomer
+- `mol2::Monomer`: the second monomer
+
+# Returns
+- `θ::Float64`: the angle between the z-axis and the vector connecting the two monomers, in radians
+
+"""
 function calc_θ(mol1::Monomer, mol2::Monomer)
-    # Calculate polar angle between monomers
     x = mol2.x - mol1.x
     y = mol2.y - mol1.y
     z = mol2.z - mol1.z
@@ -90,6 +161,19 @@ function calc_θ(mol1::Monomer, mol2::Monomer)
     return acos(z / r)
 end
 
+"""
+    calc_ϕ(mol1::Monomer, mol2::Monomer)
+
+Calculate the azimuthal angle between two monomers.
+
+# Arguments
+- `mol1::Monomer`: the first monomer
+- `mol2::Monomer`: the second monomer
+
+# Returns
+- `ϕ::Float64`: the azimuthal angle between the two monomers, in radians
+
+"""
 function calc_ϕ(mol1::Monomer, mol2::Monomer)
     # Calculate azimuthal angle between monomers
     x = mol2.x - mol1.x
@@ -97,6 +181,19 @@ function calc_ϕ(mol1::Monomer, mol2::Monomer)
     return atan(y, x)
 end
 
+"""
+    update_species!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
+
+Update the state of a system of molecules according to the Smoluchowski model.
+
+# Arguments
+- `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
+- `args::ArgsSmol`: a struct containing the simulation parameters
+
+# Returns
+- `nothing`
+
+"""
 function update_species!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
     for mol1 in molecules
         if mol1.state == 1 # a monomer 
@@ -121,7 +218,19 @@ function update_species!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
     return nothing
 end
 
+"""
+    update_position!(mol::Monomer, args::ArgsSmol)
 
+Update the position of a single monomer using isotropic Brownian motion.
+
+# Arguments
+- `mol::Monomer`: the monomer to update
+- `args::ArgsSmol`: a struct containing the simulation parameters
+
+# Returns
+- `nothing`
+
+"""
 function update_position!(mol::Monomer, args::ArgsSmol)
     # Update position of a single molecule
     diff = args.diff_monomer
@@ -135,6 +244,23 @@ function update_position!(mol::Monomer, args::ArgsSmol)
     return nothing
 end
 
+"""
+    update_position!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
+
+Update the position of a dimer using isotropic Brownian motion.
+
+The center of mass of the dimer is updated using isotropic Brownian motion,
+and the orientation of the dimer is updated using rotational Brownian motion.
+
+# Arguments
+- `mol1::Monomer`: the first monomer in the dimer to update
+- `mol2::Monomer`: the second monomer in the dimer to update
+- `args::ArgsSmol`: a struct containing the simulation parameters
+
+# Returns
+- `nothing`
+
+"""
 function update_position!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
     # Update center of mass
     diff = args.diff_dimer
@@ -170,7 +296,19 @@ function update_position!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
     return nothing
 end
 
+"""
+    update_positions!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
 
+Update the positions of all molecules in the system according to the Smoluchowski model.
+
+# Arguments
+- `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
+- `args::ArgsSmol`: a struct containing the simulation parameters
+
+# Returns
+- `nothing`
+
+"""
 function update_positions!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
     # Update positions of all molecules
     for mol in molecules
@@ -188,6 +326,19 @@ function update_positions!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol
     return nothing
 end
 
+"""
+    apply_boundary!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
+
+Apply boundary conditions to all molecules in the system.
+
+# Arguments
+- `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
+- `args::ArgsSmol`: a struct containing the simulation parameters
+
+# Returns
+- `nothing`
+
+"""
 function apply_boundary!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
     for mol in molecules
         if mol.state == 1 && mol.updated == false
@@ -201,12 +352,42 @@ function apply_boundary!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
     end
 end
 
+"""
+    apply_boundary!(mol::Monomer, args::ArgsSmol)
+
+Apply boundary conditions to a single monomer in the system.
+
+# Arguments
+- `mol::Monomer`: the monomer to apply boundary conditions to
+- `args::ArgsSmol`: a struct containing the simulation parameters
+
+# Returns
+- `nothing`
+
+"""
 function apply_boundary!(mol::Monomer, args::ArgsSmol)
     # Apply boundary conditions to a single molecule
     mol.x, mol.y, mol.z = apply_boundary(mol.x, mol.y, mol.z, args)
     return nothing
 end
 
+"""
+    apply_boundary!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
+
+Apply boundary conditions to a dimer using center of mass.
+
+# Note
+This may result in molecules being placed outside of the box.
+
+# Arguments
+- `mol1::Monomer`: the first monomer in the dimer to apply boundary conditions to
+- `mol2::Monomer`: the second monomer in the dimer to apply boundary conditions to
+- `args::ArgsSmol`: a struct containing the simulation parameters
+
+# Returns
+- `nothing`
+
+"""
 function apply_boundary!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
     # Apply boundary conditions to a dimer using center of mass
     com_x = (mol1.x + mol2.x) / 2
@@ -231,6 +412,23 @@ function apply_boundary!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
     return nothing
 end
 
+"""
+    apply_boundary(x::Float64, y::Float64, z::Float64, args::ArgsSmol)
+
+Apply boundary conditions to a set of coordinates.
+
+# Arguments
+- `x::Float64`: the x-coordinate of the point
+- `y::Float64`: the y-coordinate of the point
+- `z::Float64`: the z-coordinate of the point
+- `args::ArgsSmol`: a struct containing the simulation parameters
+
+# Returns
+- `x::Float64`: the x-coordinate of the point after applying boundary conditions
+- `y::Float64`: the y-coordinate of the point after applying boundary conditions
+- `z::Float64`: the z-coordinate of the point after applying boundary conditions
+
+"""
 function apply_boundary(x::Float64, y::Float64, z::Float64, args::ArgsSmol)
 
     box_size_x = args.box_size
@@ -282,6 +480,20 @@ function apply_boundary(x::Float64, y::Float64, z::Float64, args::ArgsSmol)
 end
 
 
+"""
+    record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeStates, t::Int64)
+
+Record the positions of all molecules in the system at a given time step.
+
+# Arguments
+- `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
+- `state_history::MoleculeStates`: a `MoleculeStates` object containing the states of the system at each time step
+- `t::Int64`: the current time step
+
+# Returns
+- `nothing`
+
+"""
 function record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeStates, t::Int64)
     # Record positions of all molecules
     state_history.States[t] = deepcopy(molecules)
@@ -290,7 +502,29 @@ end
 
 
 
+"""
+    smoluchowski(; kwargs...)
 
+Simulate a system of molecules using the Smoluchowski model.
+
+# Keyword Arguments
+- `density::Float64`: the number density of the system (default: 1.0)
+- `box_size::Float64`: the size of the simulation box (default: 10.0)
+- `diff_monomer::Float64`: the diffusion coefficient of a monomer (default: 0.1)
+- `diff_dimer::Float64`: the diffusion coefficient of a dimer (default: 0.05)
+- `diff_dimer_rot::Float64`: the rotational diffusion coefficient of a dimer (default: 0.1)
+- `k_off::Float64`: the unbinding rate of a dimer (default: 0.2)
+- `r_react::Float64`: the reaction radius for dimerization (default: 0.01)
+- `dt::Float64`: the time step used in the simulation (default: 0.01)
+- `t_max::Float64`: the maximum simulation time (default: 100.0)
+- `ndims::Int64`: the number of dimensions of the system (default: 2)
+- `d_dimer::Float64`: the diffusion coefficient of a dimer after unbinding (default: 0.01)
+- `boundary::String`: the type of boundary conditions to apply (default: "periodic" or "reflecting")
+
+# Returns
+- `state_history::MoleculeStates`: a `MoleculeStates` object containing the states of the system at each time step
+
+"""
 function smoluchowski(; kwargs...)
 
     # Parse keyword arguments

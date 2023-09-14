@@ -4,9 +4,9 @@ using CairoMakie
 
 # run the smoluchowski simulation
 box_size = 10
-dt = .01
+dt = .005
 state_history = SMLMSim.InteractionDiffusion.smoluchowski(; 
-    dt, box_size, t_max = 5.0);
+    dt, box_size, t_max = 5.0, density = 10, d_dimer = 0.05);
 
 
 function display_positions(states, time_step, box_size)
