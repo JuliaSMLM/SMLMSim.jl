@@ -3,7 +3,7 @@ abstract type AbstractOligomer end
 
 # kwargs struct for Smoluchowski simulation
 Base.@kwdef mutable struct ArgsSmol
-    density::Float64 = 0.1
+    density::Float64 = 1.0
     box_size::Float64 = 10.0
     diff_monomer::Float64 = 0.1
     diff_dimer::Float64 = 0.05
@@ -39,7 +39,7 @@ function dimerize!(mol1::Monomer, mol2::Monomer, distance::Float64)
     mol1.state = 2
     mol2.state = 2
     mol1.link = mol2
-    mol2.link = mol
+    mol2.link = mol1
 
     # Calculate center of mass
     com_x = (mol1.x + mol2.x) / 2
@@ -113,7 +113,7 @@ function update_species!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
             end
 
         elseif mol1.state == 2 # a dimer
-            if rand() < k_off * dt
+            if rand() < args.k_off * args.dt
                 monomerize!(mol1) # converts both monomers to state 1
             end
         end
@@ -150,20 +150,20 @@ function update_position!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
 
     # Update orientation
     diff_rot = args.diff_dimer_rot
-    ϕ = calc_ϕ(mol)
+    ϕ = calc_ϕ(mol1, mol2)
     ϕ += rand(Normal(0.0, sqrt(2 * diff_rot * dt)))
 
     if args.ndims == 3 # 3D
-        θ = calc_θ(mol)
+        θ = calc_θ(mol1, mol2)
         θ += rand(Normal(0.0, sqrt(2 * diff_rot * dt)))
+        mol1.z = com_z - args.d_dimer * sin(θ) * cos(ϕ)
+        mol2.z = com_z + args.d_dimer * sin(θ) * cos(ϕ)
     end
 
     mol1.x = com_x - args.d_dimer * cos(ϕ)
     mol1.y = com_y - args.d_dimer * sin(ϕ)
-    mol1.z = com_z - args.d_dimer * sin(θ) * cos(ϕ)
     mol2.x = com_x + args.d_dimer * cos(ϕ)
     mol2.y = com_y + args.d_dimer * sin(ϕ)
-    mol2.z = com_z + args.d_dimer * sin(θ) * cos(ϕ)
 
     mol1.updated = true
     mol2.updated = true
@@ -284,7 +284,7 @@ end
 
 function record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeStates, t::Int64)
     # Record positions of all molecules
-    state_history.States[t] = copy(molecules)
+    state_history.States[t] = deepcopy(molecules)
     return nothing
 end
 

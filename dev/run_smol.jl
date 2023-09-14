@@ -3,39 +3,51 @@ using SMLMSim
 using CairoMakie
 
 # run the smoluchowski simulation
+box_size = 10
+dt = .01
+state_history = SMLMSim.InteractionDiffusion.smoluchowski(; 
+    dt, box_size, t_max = 5.0);
 
-state_history = SMLMSim.InteractionDiffusion.smoluchowski()
 
-
-function display_positions(states, time_step)
+function display_positions(states, time_step, box_size)
     x = [mol.x for mol in states.States[time_step]]
     y = [mol.y for mol in states.States[time_step]]
     colors = [mol.state == 2 ? :red : :blue for mol in states.States[time_step]]
     f = Figure()
-    f[1,1]= Axis(f[1,1]; title="Positions at time step $time_step")
-    scatter!(f[1,1], x, y, markersize=10, color=colors)
+    ax = Axis(f[1,1]; title="Positions at time step $time_step")
+    # f[1,1] = Axis(f[1,1]; title="Positions at time step $time_step")
+    scatter!(ax, x, y, markersize=10, color=colors)
+    xlims!(ax, (0, box_size))
+    ylims!(ax, (0, box_size))
     display(f)
 end
 
-display_positions(state_history, 200)
+display_positions(state_history, 1, box_size)
 
 
 
-# function animate_positions(states::SMLMSim.InteractionDiffusion.MoleculeStates, filename::AbstractString)
-#     n_time_steps = length(states.States)
-#     positions = [[mol.x mol.y mol.z] for mol in states.States[1]]
-#     colors = [mol.state == 2 ? :red : :blue for mol in states.States[1]]
-#     fig = Figure(resolution=(800, 800))
-#     scatter!(fig[1, 1], positions[:, 1], positions[:, 2], positions[:, 3], markersize=10, color=colors)
-#     xlabel!(fig[1, 1], "X")
-#     ylabel!(fig[1, 1], "Y")
-#     zlabel!(fig[1, 1], "Z")
-#     title!(fig[1, 1], "Positions at time step 1")
-#     for i in 2:n_time_steps
-#         positions = [mol.x mol.y mol.z for mol in states.States[i]]
-#         colors = [mol.state == 2 ? :red : :blue for mol in states.States[i]]
-#         scatter!(fig[1, 1], positions[:, 1], positions[:, 2], positions[:, 3], markersize=10, color=colors)
-#         title!(fig[1, 1], "Positions at time step $i")
-#         Makie.save(filename * "_$(i-1).png", fig)
-#     end
-# end
+function generate_animation(states, box_size, filename, dt)
+    fig = Figure()
+    ax = Axis(fig[1, 1], xlabel="x", ylabel="y", 
+    limits=(0, box_size, 0, box_size), 
+    title="Smoluchowski Simulation")
+    sc = scatter!(ax, 
+        [mol.x for mol in states.States[1]], 
+        [mol.y for mol in states.States[1]], 
+        color=[mol.state == 2 ? :red : :blue for mol in states.States[1]], 
+        markersize=10)
+        display(sc)
+    framerate = 1/dt
+    timestamps = 1:length(states.States)
+    record(fig, filename, timestamps; framerate=framerate) do i
+        ax.title = "Positions at time step $i"
+        sc[1] = [mol.x for mol in states.States[i]]
+        sc[2] = [mol.y for mol in states.States[i]]
+        sc.color = [mol.state == 2 ? :red : :blue for mol in states.States[i]]
+        # scatter!(ax, sc.x, sc.y, color=sc.color, markersize=10)
+    end
+end
+
+generate_animation(state_history, box_size, "smoluchowski.mp4", 0.01)
+
+
