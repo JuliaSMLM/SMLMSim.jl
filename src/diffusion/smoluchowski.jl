@@ -7,7 +7,7 @@ Base.@kwdef mutable struct ArgsSmol
     box_size::Float64 = 10.0
     diff_monomer::Float64 = 0.1
     diff_dimer::Float64 = 0.05
-    diff_dimer_rot::Float64 = 0.1
+    diff_dimer_rot::Union{Nothing,Float64} = nothing
     k_off::Float64 = 0.2
     r_react::Float64 = 0.01
     dt::Float64 = 0.01
@@ -276,6 +276,7 @@ function update_position!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
 
     # Update orientation
     diff_rot = args.diff_dimer_rot
+    
     ϕ = calc_ϕ(mol1, mol2)
     ϕ += rand(Normal(0.0, sqrt(2 * diff_rot * dt)))
 
@@ -512,7 +513,7 @@ Simulate a system of molecules using the Smoluchowski model.
 - `box_size::Float64`: the size of the simulation box (default: 10.0)
 - `diff_monomer::Float64`: the diffusion coefficient of a monomer (default: 0.1)
 - `diff_dimer::Float64`: the diffusion coefficient of a dimer (default: 0.05)
-- `diff_dimer_rot::Float64`: the rotational diffusion coefficient of a dimer (default: 0.1)
+- `diff_dimer_rot::Union{Nothing,Float64}`: the rotational diffusion coefficient of a dimer (default: diff_dimer/d_dimer^2)
 - `k_off::Float64`: the unbinding rate of a dimer (default: 0.2)
 - `r_react::Float64`: the reaction radius for dimerization (default: 0.01)
 - `dt::Float64`: the time step used in the simulation (default: 0.01)
@@ -523,12 +524,16 @@ Simulate a system of molecules using the Smoluchowski model.
 
 # Returns
 - `state_history::MoleculeStates`: a `MoleculeStates` object containing the states of the system at each time step
-
+- `args::ArgsSmol`: a struct containing the simulation parameters
 """
 function smoluchowski(; kwargs...)
 
-    # Parse keyword arguments
+    # Parse keyword Arguments
     args = ArgsSmol(; kwargs...)
+    # Update orientation
+    if isnothing(args.diff_dimer_rot)
+        args.diff_dimer_rot = args.diff_dimer/args.d_dimer^2
+    end
 
     # Calculate number of molecules
     n_molecules = round(Int, args.density * args.box_size^args.ndims)
@@ -561,5 +566,5 @@ function smoluchowski(; kwargs...)
         record_positions!(molecules, state_history, t)
     end
 
-    return state_history
+    return state_history, args
 end

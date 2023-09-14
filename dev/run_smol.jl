@@ -5,9 +5,11 @@ using CairoMakie
 # run the smoluchowski simulation
 box_size = 10
 dt = .005
-state_history = SMLMSim.InteractionDiffusion.smoluchowski(; 
-    dt, box_size, t_max = 5.0, density = 10, d_dimer = 0.05);
+state_history, args = SMLMSim.InteractionDiffusion.smoluchowski(; 
+    dt=dt, box_size=box_size, t_max = 5.0, density = 10, d_dimer = 0.05);
 
+    SMLMSim.show_frame(state_history, 1, args)
+    
 
 function display_positions(states, time_step, box_size)
     x = [mol.x for mol in states.States[time_step]]
@@ -37,7 +39,7 @@ function generate_animation(states, box_size, filename, dt)
         color=[mol.state == 2 ? :red : :blue for mol in states.States[1]], 
         markersize=10)
         display(sc)
-    framerate = 1/dt
+    framerate = Int(round(1/dt))
     timestamps = 1:length(states.States)
     record(fig, filename, timestamps; framerate=framerate) do i
         ax.title = "Positions at time step $i"

@@ -5,10 +5,12 @@ This module provides simulation tools for diffusion
 module InteractionDiffusion
 
 using Distributions
+using CairoMakie
 
 include("diffusion.jl")
 include("smoluchowski.jl")
+include("visualize.jl")
 
-export smoluchowski
+export smoluchowski, gen_movie, show_frame
 
 end
