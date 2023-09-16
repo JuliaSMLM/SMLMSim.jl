@@ -16,6 +16,6 @@ include("visualize.jl")
 include("microscope.jl")
 include("dimer.jl")
 
-export smoluchowski, gen_movie, show_frame, gen_image, gen_image_stack
+export smoluchowski, gen_movie, show_frame, gen_image, gen_image_stack, get_dimers
 
 end

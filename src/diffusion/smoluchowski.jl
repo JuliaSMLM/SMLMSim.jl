@@ -8,9 +8,9 @@ Base.@kwdef mutable struct ArgsSmol
     k_off::Float64 = 0.2
     r_react::Float64 = 0.01
     dt::Float64 = 0.01
-    t_max::Float64 = 100.0
+    t_max::Float64 = 10.0
     ndims::Int64 = 2
-    d_dimer::Float64 = 0.01
+    d_dimer::Float64 = 0.05
     boundary::String = "periodic"
 end
 
@@ -480,9 +480,9 @@ Simulate a system of molecules using the Smoluchowski model.
 - `k_off::Float64`: the unbinding rate of a dimer (default: 0.2)
 - `r_react::Float64`: the reaction radius for dimerization (default: 0.01)
 - `dt::Float64`: the time step used in the simulation (default: 0.01)
-- `t_max::Float64`: the maximum simulation time (default: 100.0)
+- `t_max::Float64`: the maximum simulation time (default: 10.0)
 - `ndims::Int64`: the number of dimensions of the system (default: 2)
-- `d_dimer::Float64`: the diffusion coefficient of a dimer after unbinding (default: 0.01)
+- `d_dimer::Float64`: Monomer seperation in the dimer (default: 0.05)
 - `boundary::String`: the type of boundary conditions to apply (default: "periodic" or "reflecting")
 
 # Returns

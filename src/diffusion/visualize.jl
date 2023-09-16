@@ -11,7 +11,7 @@ Display a scatter plot of the positions of all molecules in the system at a give
 - `args::ArgsSmol`: a struct containing the simulation parameters
 
 # Returns
-- `nothing`
+- f::Figure
 
 """
 function show_frame(states::MoleculeHistory, framenum, args)
@@ -25,6 +25,17 @@ function show_frame(states::MoleculeHistory, framenum, args)
     xlims!(ax, (0, box_size))
     ylims!(ax, (0, box_size))
     display(f)
+    return f
+end
+
+"""
+    show_frame(states::MoleculeStates, framenum::Int64, args::ArgsSmol, filename::String)
+
+Display a scatter plot of the positions of all molecules in the system at a given time step and save it to a file.
+"""
+function show_frame(states::MoleculeHistory, framenum, args, filename::String)
+    f = show_frame(states, framenum, args)
+    save(filename, f)
 end
 
 

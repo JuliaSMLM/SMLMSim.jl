@@ -31,32 +31,44 @@ A struct representing a time frame of a simulation of a system of molecules.
 
 # Fields
 - `frame::Int64`: The frame number of the simulation.
-- `molecules::Vector{<:AbstractOligomer}`: A vector of `AbstractOligomer` objects representing the molecules in the system at the given frame.
+- 'molecules::Vector{<:AbstractOligomer}': A vector of `AbstractOligomer` objects representing the state of the system at the current time step.
 """
 struct MoleculeFrame
     framenum::Int64
     molecules::Vector{<:AbstractOligomer}
 end
 
+"""
+    MoleculeFrame(framenum::Int64, nmolecules::Int64)
+
+Create a `MoleculeFrame` object with `nmolecules` molecules.
+
+"""
 function MoleculeFrame(framenum::Int64, nmolecules::Int64)
     molecules = [Monomer(0.0, 0.0, 0.0, 1, nothing, false) for i in 1:nmolecules]
     return MoleculeFrame(framenum, molecules)
 end
 
 """
-    MoleculeFrame(frame::Int64, molecules::Vector{<:AbstractOligomer})
+    MoleculeHistory(dt::Float64, frames::Vector{MoleculeFrame})
 
-A struct representing a frame of a simulation of a system of molecules.
+A history of the state of a system of molecules over time.
 
 # Fields
-- `frame::Int64`: The frame number of the simulation.
-- `molecules::Vector{<:AbstractOligomer}`: A vector of `AbstractOligomer` objects representing the molecules in the system at the given frame.
+- `dt::Float64`: The time step used in the simulation.
+- `frames::Vector{MoleculeFrame}`: A vector of `MoleculeFrame` objects representing the state of the system at each time step.
 """
 struct MoleculeHistory
     dt::Float64
     frames::Vector{MoleculeFrame}
 end
 
+"""
+    MoleculeHistory(dt::Float64, nframes::Int64, nmolecules::Int64)
+
+Create a `MoleculeHistory` object with `nframes` frames, each containing `nmolecules` molecules.
+
+"""
 function MoleculeHistory(dt::Float64, nframes::Int64, nmolecules::Int64)
     frames = [MoleculeFrame(i, [Monomer(0.0, 0.0, 0.0, 1, nothing, false) for j in 1:nmolecules]) for i in 1:nframes]
     return MoleculeHistory(dt, frames)

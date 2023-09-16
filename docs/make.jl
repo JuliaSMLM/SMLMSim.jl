@@ -1,7 +1,7 @@
 using SMLMSim
 using Documenter
 
-DocMeta.setdocmeta!(SMLMSim, :DocTestSetup, :(using SMLMSim); recursive=true)
+# DocMeta.setdocmeta!(SMLMSim, :DocTestSetup, :(using SMLMSim); recursive=true)
 
 makedocs(;
     modules=[SMLMSim],
@@ -15,6 +15,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Interaction-Diffusion" => "diffusion.md"
     ],
 )
 

@@ -1,5 +1,24 @@
 # Generating microscope camera data from simulation data 
+"""
+    gen_image(psf::MicroscopePSFs.PSF, states::MoleculeHistory, camera::SMLMSim.Camera, framenum::Int64;
+        photons::Float64=1000.0, bg::Float64=5.0, poissonnoise::Bool=true)
 
+Generate an image of a simulated system of molecules using a microscope PSF and camera.
+
+# Arguments
+- `psf::MicroscopePSFs.PSF`: A `MicroscopePSFs.PSF` object representing the point spread function of the microscope.
+- `states::MoleculeHistory`: A `MoleculeHistory` object representing the history of the simulated system of molecules.
+- `camera::SMLMSim.Camera`: A `SMLMSim.Camera` object representing the camera used to capture the image.
+- `framenum::Int64`: An integer representing the frame number of the simulation to generate an image for.
+
+# Optional Arguments
+- `photons::Float64=1000.0`: The number of photons to simulate for each molecule.
+- `bg::Float64=5.0`: The background level of the image.
+- `poissonnoise::Bool=true`: A boolean indicating whether to add Poisson noise to the image.
+
+# Returns
+- An image of the simulated system of molecules as captured by the microscope.
+"""
 function gen_image(psf::MicroscopePSFs.PSF,
     states::MoleculeHistory, camera::SMLMSim.Camera, framenum::Int64;
     photons::Float64=1000.0, bg::Float64=5.0, poissonnoise::Bool=true)
@@ -41,6 +60,27 @@ function gen_image(psf::MicroscopePSFs.PSF,
     return image
 end
 
+"""
+    gen_image_stack(psf::MicroscopePSFs.PSF, states::MoleculeHistory, camera::SMLMSim.Camera;
+        photons::Float64=1000.0, bg::Float64=5.0, poissonnoise::Bool=true, frame_integration::Int64=1)
+
+Generate a stack of images of a simulated system of molecules using a microscope PSF and camera.
+
+# Arguments
+- `psf::MicroscopePSFs.PSF`: A `MicroscopePSFs.PSF` object representing the point spread function of the microscope.
+- `states::MoleculeHistory`: A `MoleculeHistory` object representing the history of the simulated system of molecules.
+- `camera::SMLMSim.Camera`: A `SMLMSim.Camera` object representing the camera used to capture the images.
+
+# Optional Arguments
+- `photons::Float64=1000.0`: The number of photons to simulate for each molecule.
+- `bg::Float64=5.0`: The background level of the images.
+- `poissonnoise::Bool=true`: A boolean indicating whether to add Poisson noise to the images.
+- `frame_integration::Int64=1`: The number of simulation frames to integrate into each output image.
+
+# Returns
+- A stack of images of the simulated system of molecules as captured by the microscope.
+
+"""
 function gen_image_stack(psf::MicroscopePSFs.PSF,
     states::MoleculeHistory, camera::SMLMSim.Camera;
     photons::Float64=1000.0, bg::Float64=5.0, poissonnoise::Bool=true,
