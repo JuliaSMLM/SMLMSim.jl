@@ -1,6 +1,3 @@
-
-abstract type AbstractOligomer end
-
 # kwargs struct for Smoluchowski simulation
 Base.@kwdef mutable struct ArgsSmol
     density::Float64 = 1.0
@@ -18,41 +15,7 @@ Base.@kwdef mutable struct ArgsSmol
 end
 
 
-"""
-    struct Monomer <: AbstractOligomer
 
-A struct representing a single monomer in an oligomer.
-
-# Fields
-- `x::Float64`: the x-coordinate of the monomer's position
-- `y::Float64`: the y-coordinate of the monomer's position
-- `z::Float64`: the z-coordinate of the monomer's position
-- `state::Int64`: the state of the monomer (1 for monomer, 2 for dimer)
-- `link::Union{Monomer,Nothing}`: the monomer that this monomer is linked to, if any
-- `updated::Bool`: a flag indicating whether this monomer has been updated in the current iteration
-"""
-mutable struct Monomer <: AbstractOligomer
-    x::Float64
-    y::Float64
-    z::Float64
-    state::Int64
-    link::Union{Monomer,Nothing}
-    updated::Bool
-end
-
-"""
-    struct MoleculeStates
-
-A struct representing the states of a system of molecules.
-
-# Fields
-- `dt::Float64`: the time step used in the simulation
-- `States::Vector{Vector{Monomer}}`: a vector of vectors of `Monomer` objects representing the states of the molecules in the system at each time step
-"""
-struct MoleculeStates
-    dt::Float64
-    States::Vector{Vector{Monomer}}
-end
 
 """
     dimerize!(mol1::Monomer, mol2::Monomer, distance::Float64)
@@ -482,22 +445,22 @@ end
 
 
 """
-    record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeStates, t::Int64)
+    record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeHistory, t::Int64)
 
 Record the positions of all molecules in the system at a given time step.
 
 # Arguments
 - `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
-- `state_history::MoleculeStates`: a `MoleculeStates` object containing the states of the system at each time step
+- `state_history::MoleculeHistory`: a `MoleculeStates` object containing the states of the system at each time step
 - `t::Int64`: the current time step
 
 # Returns
 - `nothing`
 
 """
-function record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeStates, t::Int64)
+function record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeHistory, t::Int64)
     # Record positions of all molecules
-    state_history.States[t] = deepcopy(molecules)
+    state_history.frames[t].molecules .= deepcopy(molecules)
     return nothing
 end
 
@@ -523,7 +486,7 @@ Simulate a system of molecules using the Smoluchowski model.
 - `boundary::String`: the type of boundary conditions to apply (default: "periodic" or "reflecting")
 
 # Returns
-- `state_history::MoleculeStates`: a `MoleculeStates` object containing the states of the system at each time step
+- `state_history::MoleculeHistory`: a `MoleculeHistory` object containing the states of the system at each time step
 - `args::ArgsSmol`: a struct containing the simulation parameters
 """
 function smoluchowski(; kwargs...)
@@ -539,7 +502,7 @@ function smoluchowski(; kwargs...)
     n_molecules = round(Int, args.density * args.box_size^args.ndims)
     n_time_steps = round(Int, args.t_max / args.dt)
     # Initialize molecules Simulation States
-    state_history = MoleculeStates(args.dt, [Vector{Monomer}(undef, n_molecules) for i in 1:n_time_steps])
+    state_history = MoleculeHistory(args.dt, n_time_steps, n_molecules)
 
     # Initial States
     # These are updated in place during simulation
