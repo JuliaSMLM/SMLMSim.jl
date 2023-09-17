@@ -1,7 +1,7 @@
 using SMLMSim
 using Documenter
 
-# DocMeta.setdocmeta!(SMLMSim, :DocTestSetup, :(using SMLMSim); recursive=true)
+# DocMeta.setdocmeta!(SMLMSim, :DocTestSetup, :(using SMLMSim); recursive=false)
 
 makedocs(;
     modules=[SMLMSim],

@@ -8,48 +8,20 @@ dt = .005
 state_history, args = SMLMSim.InteractionDiffusion.smoluchowski(; 
     dt=dt, box_size=box_size, t_max = 5.0, density = 10, d_dimer = 0.05);
 
-    SMLMSim.show_frame(state_history, 1, args)
+SMLMSim.show_frame(state_history, 1, args)
     
+SMLMSim.gen_movie(state_history, args)
 
-function display_positions(states, time_step, box_size)
-    x = [mol.x for mol in states.States[time_step]]
-    y = [mol.y for mol in states.States[time_step]]
-    colors = [mol.state == 2 ? :red : :blue for mol in states.States[time_step]]
+
+box_size = 1.0
+x = rand(10)
+y = rand(10)
     f = Figure()
-    ax = Axis(f[1,1]; title="Positions at time step $time_step")
-    # f[1,1] = Axis(f[1,1]; title="Positions at time step $time_step")
-    scatter!(ax, x, y, markersize=10, color=colors)
+    ax = Axis(f[1,1]; 
+    title="Positions at frame 1")
+    scatter!(ax, x, y, markersize=10)
     xlims!(ax, (0, box_size))
-    ylims!(ax, (0, box_size))
+    ylims!(ax, ( box_size, 0))
     display(f)
-end
-
-display_positions(state_history, 1, box_size)
-
-
-
-function generate_animation(states, box_size, filename, dt)
-    fig = Figure()
-    ax = Axis(fig[1, 1], xlabel="x", ylabel="y", 
-    limits=(0, box_size, 0, box_size), 
-    title="Smoluchowski Simulation")
-    sc = scatter!(ax, 
-        [mol.x for mol in states.States[1]], 
-        [mol.y for mol in states.States[1]], 
-        color=[mol.state == 2 ? :red : :blue for mol in states.States[1]], 
-        markersize=10)
-        display(sc)
-    framerate = Int(round(1/dt))
-    timestamps = 1:length(states.States)
-    record(fig, filename, timestamps; framerate=framerate) do i
-        ax.title = "Positions at time step $i"
-        sc[1] = [mol.x for mol in states.States[i]]
-        sc[2] = [mol.y for mol in states.States[i]]
-        sc.color = [mol.state == 2 ? :red : :blue for mol in states.States[i]]
-        # scatter!(ax, sc.x, sc.y, color=sc.color, markersize=10)
-    end
-end
-
-generate_animation(state_history, box_size, "smoluchowski.mp4", 0.01)
 
 

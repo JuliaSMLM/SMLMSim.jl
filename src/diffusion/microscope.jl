@@ -13,8 +13,8 @@ Generate an image of a simulated system of molecules using a microscope PSF and 
 
 # Optional Arguments
 - `photons::Float64=1000.0`: The number of photons to simulate for each molecule.
-- `bg::Float64=5.0`: The background level of the image.
-- `poissonnoise::Bool=true`: A boolean indicating whether to add Poisson noise to the image.
+- `bg::Float64=5.0`: Background photons per pixel.
+- `poissonnoise::Bool=true`: A boolean indicating whether to corrupt with Poisson noise.
 
 # Returns
 - An image of the simulated system of molecules as captured by the microscope.
@@ -72,9 +72,9 @@ Generate a stack of images of a simulated system of molecules using a microscope
 - `camera::SMLMSim.Camera`: A `SMLMSim.Camera` object representing the camera used to capture the images.
 
 # Optional Arguments
-- `photons::Float64=1000.0`: The number of photons to simulate for each molecule.
-- `bg::Float64=5.0`: The background level of the images.
-- `poissonnoise::Bool=true`: A boolean indicating whether to add Poisson noise to the images.
+- `photons::Float64=1000.0`: The number of photons emitted from each particle over the integration period.
+- `bg::Float64=5.0`: Background photons per pixel in output images.
+- `poissonnoise::Bool=true`: A boolean indicating whether to corrupt with Poisson noise.
 - `frame_integration::Int64=1`: The number of simulation frames to integrate into each output image.
 
 # Returns
@@ -104,7 +104,10 @@ function gen_image_stack(psf::MicroscopePSFs.PSF,
                 break
             end
             # calculate the image
-            image = gen_image(psf, states, camera, frame_num; photons=photons, bg=bg, poissonnoise=poissonnoise)
+            image = gen_image(psf, states, camera, frame_num; 
+                photons=photons/frame_integration, 
+                bg=bg/frame_integration, 
+                poissonnoise=poissonnoise)
             # add the image to the stack
             image_stack[:,:,i] += image
         end

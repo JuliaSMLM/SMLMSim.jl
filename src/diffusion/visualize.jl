@@ -20,10 +20,11 @@ function show_frame(states::MoleculeHistory, framenum, args)
     y = [mol.y for mol in states.frames[framenum].molecules]
     colors = [mol.state == 2 ? :red : :blue for mol in states.frames[framenum].molecules]
     f = Figure()
-    ax = Axis(f[1,1]; title="Positions at frame $framenum")
-    scatter!(ax, x, y, markersize=10, color=colors)
+    ax = Axis(f[1,1]; 
+    title="Positions at frame $framenum")
+    scatter!(ax, x, y, markersize=10, color=colors, yflip = true)
     xlims!(ax, (0, box_size))
-    ylims!(ax, (0, box_size))
+    ylims!(ax, (box_size, 0))
     display(f)
     return f
 end
@@ -57,15 +58,17 @@ function gen_movie(states::MoleculeHistory, args; filename::String="smoluchowski
     dt = args.dt
     box_size = args.box_size
     fig = Figure()
-    ax = Axis(fig[1, 1], xlabel="x", ylabel="y", 
-    limits=(0, box_size, 0, box_size), 
-    title="Smoluchowski Simulation")
+    ax = Axis(fig[1, 1], xlabel="x", ylabel="y",  
+    title="Smoluchowski Simulation",
+    yreversed = true)
     sc = scatter!(ax, 
         [mol.x for mol in states.frames[1].molecules],
         [mol.y for mol in states.frames[1].molecules], 
         color=[mol.state == 2 ? :red : :blue for mol in states.frames[1].molecules], 
         markersize=10)
-        display(sc)
+    xlims!(ax, (0, box_size))
+    ylims!(ax, (box_size, 0))
+    display(sc)
     framerate = Int(round(1/dt))
     timestamps = 1:length(states.frames)
     record(fig, filename, timestamps; framerate=framerate) do i

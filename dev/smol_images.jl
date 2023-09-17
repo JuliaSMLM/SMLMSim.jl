@@ -35,3 +35,4 @@ dimer_stack = SMLMSim.gen_image_stack(psf, dimer_history, camera;
 
 imshow(dimer_stack)
 
+
