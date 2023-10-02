@@ -7,9 +7,25 @@ Abstract type for structured patterns of molecules
 """
 abstract type Pattern end
 
+"""
+    Pattern2D
+
+Abstract type for structured patterns of molecules    
+"""
+abstract type Pattern2D <: Pattern end
 
 """
-    Nmer2D <: Pattern
+    Pattern3D
+
+Abstract type for structured patterns of molecules    
+"""
+abstract type Pattern3D <: Pattern end
+
+
+
+
+"""
+    Nmer2D <: Pattern2D
 
 N molecules symmetricaly organized around a circle with diameter d    
 
@@ -22,7 +38,7 @@ Nmer2D(;n::Int=8, d::AbstractFloat=.1)
 - 'y': Y position
 
 """
-mutable struct Nmer2D <: Pattern
+mutable struct Nmer2D <: Pattern2D
     n::Int
     d::AbstractFloat
     x::Vector{AbstractFloat}
@@ -42,7 +58,7 @@ end
 
 
 """
-    Point2D <: Pattern
+    Point2D <: Pattern2D
 
     A single 2D point.    
 
@@ -54,7 +70,7 @@ Point2D() = new(1, [0.0], [0.0])
 - 'y': Y position
 
 """
-mutable struct Point2D <: Pattern
+mutable struct Point2D <: Pattern2D
     n::Int
     x::Vector{AbstractFloat}
     y::Vector{AbstractFloat}
@@ -62,7 +78,7 @@ mutable struct Point2D <: Pattern
 end
 
 """
-    Point3D <: Pattern
+    Point3D <: Pattern3D
 
     A single 3D point.    
 
@@ -74,7 +90,7 @@ Point3D() = new(1, [0.0], [0.0],[0.0])
 - 'y': Y position
 - 'z': Z position
 """
-mutable struct Point3D <: Pattern
+mutable struct Point3D <: Pattern3D
     n::Int
     x::Vector{AbstractFloat}
     y::Vector{AbstractFloat}
@@ -84,7 +100,7 @@ end
 
 
 """
-    Line2D <: Pattern
+    Line2D <: Pattern2D
 
 Points with uniform random distribution between 2 endpoints.    
 
@@ -98,7 +114,7 @@ Line2D(;λ::AbstractFloat=10.0, endpoints=[(-1.0,0.0),(1.0,0.0)])
 - 'y': Y position
 
 """
-mutable struct Line2D <: Pattern
+mutable struct Line2D <: Pattern2D
     n::Int
     x::Vector{AbstractFloat}
     y::Vector{AbstractFloat}
@@ -128,11 +144,11 @@ end
 
 
 """
-    function uniform2D(ρ, p::Pattern,xsize::AbstractFloat,ysize::AbstractFloat)
+    uniform2D(ρ, p::Pattern2D, xsize::AbstractFloat,ysize::AbstractFloat)
 
 Create positions of molecules from uniformly randomly placed and rotated patterns.
 """
-function uniform2D(ρ, p::Pattern, xsize::Real, ysize::Real)
+function uniform2D(ρ, p::Pattern2D, xsize::Real, ysize::Real)
 
     npatterns = rand(Poisson(xsize * ysize * ρ))
     ntotal = npatterns * p.n
@@ -152,15 +168,18 @@ function uniform2D(ρ, p::Pattern, xsize::Real, ysize::Real)
         end
     end
 
-    return smd
+    return smd.y, smd.x
 end
 
+
+
+
 """
-    uniform2D(p::Vector{Pattern}, xsize::Real, ysize::Real)  
+    uniform2D(p::Vector{Pattern2D}, xsize::Real, ysize::Real)  
 
 Randomly place and rotate the input patterns.
 """
-function uniform2D(p::Vector{Pattern},  xsize::Real, ysize::Real)
+function uniform2D(p::Vector{Pattern2D},  xsize::Real, ysize::Real)
 
     npatterns = length(p)
 
@@ -184,7 +203,7 @@ function uniform2D(p::Vector{Pattern},  xsize::Real, ysize::Real)
         end
     end
 
-    return smd
+    return smd.y, smd.x
 end
 
 """
@@ -192,7 +211,7 @@ end
 
 Randomly place the input patterns with fixed rotation \\theta.
 """
-function uniform2D(p::Vector{<:Pattern},  xsize::Real, ysize::Real, θ::Real)
+function uniform2D(p::Vector{<:Pattern2D},  xsize::Real, ysize::Real, θ::Real)
 
     npatterns = length(p)
 
@@ -215,7 +234,7 @@ function uniform2D(p::Vector{<:Pattern},  xsize::Real, ysize::Real, θ::Real)
         end
     end
 
-    return smd
+    return smd.y, smd.x
 end
 
 """
@@ -223,7 +242,7 @@ end
 
 Place the input patterns and return SMLD2D.
 """
-function place2D(p::Vector{<:Pattern},  xsize::Real, ysize::Real)
+function place2D(p::Vector{<:Pattern2D},  xsize::Real, ysize::Real)
 
     npatterns = length(p)
 
@@ -245,7 +264,7 @@ function place2D(p::Vector{<:Pattern},  xsize::Real, ysize::Real)
     end
 
    
-    return smd
+    return smd.y, smd.x
 end
 
 
@@ -261,7 +280,7 @@ Create positions of molecules from uniformly randomly placed and rotated pattern
 `ρ` is 2D density. 3D density is `ρ/(zrange[2]-zrange[1])`. 
 
 """
-function uniform3D(ρ, p::Pattern, xsize::Real, ysize::Real; zrange::Vector{<:Real}=[-1.0, 1.0])
+function uniform3D(ρ, p::Pattern3D, xsize::Real, ysize::Real; zrange::Vector{<:Real}=[-1.0, 1.0])
 
     npatterns = rand(Poisson(xsize * ysize * ρ))
     ntotal = npatterns * p.n
@@ -309,7 +328,7 @@ function uniform3D(ρ, p::Pattern, xsize::Real, ysize::Real; zrange::Vector{<:Re
         end
     end
 
-    return smd
+    return smd.y, smd.x, smd.z
 end
 
 ## Pattern Rotation
