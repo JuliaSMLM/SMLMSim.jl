@@ -36,14 +36,14 @@ function SMLMData.SMLD3D(cam::Camera, y_microns::Vector{T}, x_microns::Vector{T}
     framenum::Vector{Int}, datasetnum::Vector{Int}, connectID::Vector{Int} ) where {T<:Real}
     
     smld = SMLD3D(length(y_microns))
-    smld.x = x_microns ./ cam.pixel_size
-    smld.y = y_microns ./ cam.pixel_size
-    smld.z = z_microns ./ cam.pixel_size
+    smld.x = x_microns ./ cam.pixelsize
+    smld.y = y_microns ./ cam.pixelsize
+    smld.z = z_microns 
     smld.photons = photons
     smld.framenum = framenum
     smld.datasetnum = datasetnum
     smld.connectID = connectID
-    smld.datasize = [cam.y_pixels, cam.x_pixels]
+    smld.datasize = [cam.ypixels, cam.xpixels]
 
     return smld
 end

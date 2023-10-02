@@ -48,9 +48,14 @@ function sim(;
 
 
     out = SMLMSim.kineticmodel(coords..., molecule, nframes, framerate; ndatasets, minphotons)
-    smld_model = SMLMData.SMLD2D(camera, out...)
-    smld_noisy = SMLMSim.noise(smld_model, σ_PSF)
+    
+    if pattern isa Pattern2D
+        smld_model = SMLMData.SMLD2D(camera, out...)
+    elseif pattern isa Pattern3D
+        smld_model = SMLMData.SMLD3D(camera, out...)
+    end
 
+    smld_noisy = SMLMSim.noise(smld_model, σ_PSF)
 
     return smld_true, smld_model, smld_noisy
 end
