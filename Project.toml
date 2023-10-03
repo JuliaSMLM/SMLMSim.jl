@@ -10,6 +10,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 SMLMData = "5488f106-40b8-4660-84c5-84a168990d1b"
 
 [compat]
+CairoMakie = "0.10"
 Distributions = "0.25"
 SMLMData = "0.1.0"
 julia = "1.6"
