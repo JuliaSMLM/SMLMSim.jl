@@ -51,10 +51,13 @@ function sim(;
     
     if pattern isa Pattern2D
         smld_model = SMLMData.SMLD2D(camera, out...)
+        σ_PSF = σ_PSF / camera.pixelsize
     elseif pattern isa Pattern3D
         smld_model = SMLMData.SMLD3D(camera, out...)
-    end
+        σ_PSF = σ_PSF .* [1.0 / camera.pixelsize, 1.0 / camera.pixelsize, 1.0]
 
+    end
+    
     smld_noisy = SMLMSim.noise(smld_model, σ_PSF)
 
     return smld_true, smld_model, smld_noisy

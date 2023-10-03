@@ -216,7 +216,7 @@ function noise(smd_model::SMLMData.SMLD3D, σ_psf::Vector{<:AbstractFloat})
 
         smd.σ_x[nn] = σ[1]
         smd.σ_y[nn] = σ[2]
-        smd.σ_y[nn] = σ[3]
+        smd.σ_z[nn] = σ[3]
     end
     return smd
 end
