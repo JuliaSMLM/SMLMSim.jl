@@ -16,7 +16,7 @@ CairoMakie = "0.10"
 Distributions = "0.25"
 Images = "0.26"
 MicroscopePSFs = "0.3"
-SMLMData = "0.1.0"
+SMLMData = "0.1"
 julia = "1.6"
 
 [extras]
