@@ -10,6 +10,7 @@ include("molecules.jl")
 include("cameras.jl")
 include("patterns.jl")
 include("sim.jl")
+include("smld.jl")
 include("interface.jl")
 
 # Submodules

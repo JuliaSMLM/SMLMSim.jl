@@ -4,7 +4,7 @@ CTMC
 
 Continous Time Markov Chain    
 """
-mutable struct CTMC{T<:AbstractFloat, U<:Int}
+mutable struct CTMC{T<:AbstractFloat,U<:Int}
     τ::T
     transitiontimes::Vector{T}
     states::Vector{U}
@@ -50,7 +50,7 @@ function CTMC(q::Array{T}, τ::T, state1::Int) where {T<:AbstractFloat}
         push!(transitiontimes, lastchange)
         currentstate = newstate
     end
-    return CTMC(τ,transitiontimes,states)
+    return CTMC(τ, transitiontimes, states)
 end
 
 
@@ -123,53 +123,54 @@ generate noise-free blinking model from smd_true
 """
 function kineticmodel end
 
-function kineticmodel(smd_true::SMLMData.SMLD2D, f::Molecule, nframes::Int, framerate::Real; ndatasets::Int=1, minphotons=50.0)
+function kineticmodel(y_true::Vector{<:Real}, x_true::Vector{<:Real}, f::Molecule, nframes::Int, framerate::Real; ndatasets::Int=1, minphotons=50.0)
 
     state1 = 2
 
     smd = SMLMData.SMLD2D(0)
     smd.ndatasets = ndatasets
     smd.nframes = nframes
-    smd.datasize = deepcopy(smd_true.datasize)
-    for dd = 1:ndatasets, ll = 1:length(smd_true.x)
+    
+    for dd = 1:ndatasets, ll = 1:length(y_true)
         photons = SMLMSim.intensitytrace(f, nframes, framerate; state1=state1)
         framenum = findall(photons .> minphotons)
         n = length(framenum)
         push!(smd.photons, photons[framenum]...)
         push!(smd.framenum, framenum...)
         for nn = 1:n
-            push!(smd.x, smd_true.x[ll])
-            push!(smd.y, smd_true.y[ll])
-            push!(smd.connectID, smd_true.connectID[ll])
+            push!(smd.x, x_true[ll])
+            push!(smd.y, y_true[ll])
+            push!(smd.connectID, ll)
             push!(smd.datasetnum, dd)
         end
     end
-    return smd
+    return smd.y, smd.x, smd.photons, smd.framenum, smd.datasetnum, smd.connectID
 end
 
-function kineticmodel(smd_true::SMLMData.SMLD3D, f::Molecule, nframes::Int, framerate::Real; ndatasets::Int=1, minphotons=50.0)
+function kineticmodel(y_true::Vector{<:Real}, x_true::Vector{<:Real}, z_true::Vector{<:Real},  
+    f::Molecule, nframes::Int, framerate::Real; ndatasets::Int=1, minphotons=50.0)
 
     state1 = 2
 
     smd = SMLMData.SMLD3D(0)
     smd.ndatasets = ndatasets
     smd.nframes = nframes
-    smd.datasize = deepcopy(smd_true.datasize)
-    for dd = 1:ndatasets, ll = 1:length(smd_true.x)
+    
+    for dd = 1:ndatasets, ll = 1:length(x_true)
         photons = SMLMSim.intensitytrace(f, nframes, framerate; state1=state1)
         framenum = findall(photons .> minphotons)
         n = length(framenum)
         push!(smd.photons, photons[framenum]...)
         push!(smd.framenum, framenum...)
         for nn = 1:n
-            push!(smd.x, smd_true.x[ll])
-            push!(smd.y, smd_true.y[ll])
-            push!(smd.z, smd_true.z[ll])
-            push!(smd.connectID, smd_true.connectID[ll])
+            push!(smd.x, x_true[ll])
+            push!(smd.y, y_true[ll])
+            push!(smd.z, z_true[ll])
+            push!(smd.connectID, ll)
             push!(smd.datasetnum, dd)
         end
     end
-    return smd
+    return smd.y, smd.x, smd.z, smd.photons, smd.framenum, smd.datasetnum, smd.connectID
 end
 
 
@@ -215,7 +216,7 @@ function noise(smd_model::SMLMData.SMLD3D, σ_psf::Vector{<:AbstractFloat})
 
         smd.σ_x[nn] = σ[1]
         smd.σ_y[nn] = σ[2]
-        smd.σ_y[nn] = σ[3]
+        smd.σ_z[nn] = σ[3]
     end
     return smd
 end
