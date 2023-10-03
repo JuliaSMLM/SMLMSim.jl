@@ -13,7 +13,7 @@ smld_true, smld_model, smld_noisy = SMLMSim.sim(;
     ndatasets=10,
     nframes=1000,
     framerate=50.0, # 1/s
-    pattern=SMLMSim.Point3D(),
+    pattern=SMLMSim.Nmer3D(),
     molecule=SMLMSim.GenericFluor(; q=[0 50; 1e-2 0]), #1/s 
     camera=SMLMSim.IdealCamera(; ypixels=256, xpixels=128, pixelsize=0.1) #pixelsize is microns
 )

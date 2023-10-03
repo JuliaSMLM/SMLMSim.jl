@@ -55,6 +55,38 @@ function Nmer2D(;  n::Int=8, d::AbstractFloat=00.1)
     return nmer
 end
 
+"""
+    Nmer3D <: Pattern3D
+
+N molecules symmetricaly organized around a circle with diameter d    
+
+Nmer3D(;n::Int=8, d::AbstractFloat=.1)
+
+# Fields
+- 'n': Numbor of Points = 1
+- 'd': Diameter
+- 'x': X position
+- 'y': Y position
+- 'z': Z position
+"""
+mutable struct Nmer3D <: Pattern3D
+    n::Int
+    d::AbstractFloat
+    x::Vector{AbstractFloat}
+    y::Vector{AbstractFloat}
+    z::Vector{AbstractFloat}
+end
+function Nmer3D(;  n::Int=8, d::AbstractFloat=00.1)
+
+    nmer = Nmer3D(n, d, zeros(n), zeros(n), zeros(n))
+    for nn = 1:n
+        θ = 2 * pi / n * (nn - 1)
+        nmer.x[nn] = d / 2 * cos(θ)
+        nmer.y[nn] = d / 2 * sin(θ)
+        nmer.z[nn] = 0.0
+    end
+    return nmer
+end
 
 
 """
@@ -140,9 +172,6 @@ function Line2D(; λ::AbstractFloat=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
 end
 
 
-
-
-
 """
     uniform2D(ρ, p::Pattern2D, xsize::AbstractFloat,ysize::AbstractFloat)
 
@@ -170,8 +199,6 @@ function uniform2D(ρ, p::Pattern2D, xsize::Real, ysize::Real)
 
     return smd.y, smd.x
 end
-
-
 
 
 """
