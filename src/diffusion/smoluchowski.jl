@@ -476,14 +476,14 @@ Simulate a system of molecules using the Smoluchowski model.
 - `box_size::Float64`: the size of the simulation box (default: 10.0)
 - `diff_monomer::Float64`: the diffusion coefficient of a monomer (default: 0.1)
 - `diff_dimer::Float64`: the diffusion coefficient of a dimer (default: 0.05)
-- `diff_dimer_rot::Union{Nothing,Float64}`: the rotational diffusion coefficient of a dimer (default: diff_dimer/d_dimer^2)
+- `diff_dimer_rot::Union{Nothing,Float64}`: the rotational diffusion coefficient of a dimer (default: `diff_dimer/d_dimer^2`)
 - `k_off::Float64`: the unbinding rate of a dimer (default: 0.2)
 - `r_react::Float64`: the reaction radius for dimerization (default: 0.01)
 - `dt::Float64`: the time step used in the simulation (default: 0.01)
 - `t_max::Float64`: the maximum simulation time (default: 10.0)
 - `ndims::Int64`: the number of dimensions of the system (default: 2)
 - `d_dimer::Float64`: Monomer seperation in the dimer (default: 0.05)
-- `boundary::String`: the type of boundary conditions to apply (default: "periodic" or "reflecting")
+- `boundary::String`: the type of boundary conditions to apply (default: "periodic",  or "reflecting")
 
 # Returns
 - `state_history::MoleculeHistory`: a `MoleculeHistory` object containing the states of the system at each time step

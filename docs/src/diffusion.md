@@ -8,10 +8,10 @@ end
 # SMLMSim.InteractionDiffusion
 ## Overview
 
-This module simulates interacting particles within a box. At each time step of the simulation, the following actions are taken:
+This module simulates interacting particles within a box. Monomers are consdiered point particles, and dimers and monomers kept at fixed separation. At each time step of the simulation, the following actions are taken:
 - If two free monomers are within the reaction radius, they are linked to form dimers.  
 - Pre-existing dimers are broken with a probabilty of $p = k_{\mathrm{off}}dt$
-- Monomer position and dimer center-of-mass positions are updated with diffusion simulated as isotropic Brownian motion using thier respective diffusion constant.  
+- Monomer position and dimer center-of-mass positions are updated with diffusion simulated as isotropic Brownian motion using their respective diffusion constant.  
 - Dimers undergo rotational diffusion. 
 - Boundary conditions are applied to the monomer position and dimer center-of-mass
 
