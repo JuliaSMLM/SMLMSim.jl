@@ -5,3 +5,5 @@
 .vscode/*
 Manifest.toml
 examples/Manifest.toml
+*.mp4
+*.png

@@ -13,5 +13,10 @@ include("sim.jl")
 include("smld.jl")
 include("interface.jl")
 
+# Submodules
+include("diffusion/InteractionDiffusion.jl")
+
+using SMLMSim.InteractionDiffusion
+
 
 end
