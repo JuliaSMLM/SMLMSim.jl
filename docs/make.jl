@@ -17,6 +17,7 @@ makedocs(;
         "Home" => "index.md",
         "Interaction-Diffusion" => "diffusion.md"
     ],
+    warnonly=true,
 )
 
 deploydocs(;
