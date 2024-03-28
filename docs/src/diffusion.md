@@ -47,7 +47,7 @@ using SMLMSim
 state_history, args = SMLMSim.smoluchowski()
 framenum = 100
 SMLMSim.show_frame(state_history,framenum,args)
-SMLMSim.show_frame(state_history,framenum,args,"IDFrame.png") # hide
+SMLMSim.show_frame(state_history,framenum,args,"diffusion/IDFrame.png") # hide
 ```
 
 ```@raw html
