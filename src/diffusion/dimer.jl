@@ -5,20 +5,15 @@
 
     get_dimers(states::MoleculeHistory)
 
-#description 
 create a array of vector of type MoleculeFrame that takes the frames in a the input states and pass it to the MoleculeHistory function
 
-#arguments
-
+# Arguments
     - states::MoleculeHistory  : the estates of the molecule
 
-#return
-
+# Returns
     - MoleculeHistory(states.dt, dimer_frames)  : return the function MoleculeHistory
 
 """
-
-
 function get_dimers(states::MoleculeHistory)
     dimer_frames = Vector{MoleculeFrame}()
     for frame in states.frames
