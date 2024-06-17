@@ -4,7 +4,7 @@
 """
     get_dimers(states::MoleculeHistory)
 
-
+#description 
 create a array of vector of type MoleculeFrame that takes the frames in a the input states and pass it to the MoleculeHistory function
 
 #arguments
