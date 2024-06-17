@@ -2,6 +2,7 @@
 
 #get molecules that are in linked states
 """
+
     get_dimers(states::MoleculeHistory)
 
 #description 
@@ -9,12 +10,11 @@ create a array of vector of type MoleculeFrame that takes the frames in a the in
 
 #arguments
 
-- in: states::MoleculeHistory  a variable with MoleculeHistory method
-
+    - states::MoleculeHistory  : the estates of the molecule
 
 #return
 
-- out: MoleculeHistory(states.dt, dimer_frames) return the function MoleculeHistory
+    - MoleculeHistory(states.dt, dimer_frames)  : return the function MoleculeHistory
 
 """
 
