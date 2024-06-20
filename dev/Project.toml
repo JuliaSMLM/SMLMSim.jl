@@ -1,9 +1,13 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 ImageView = "86fae568-95e7-573e-a6b2-d8a6b900c9ef"
 Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
 Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
 MicroscopePSFs = "de9ac726-48a4-48ab-84b0-1c03c7c18929"
+Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+SMLMData = "5488f106-40b8-4660-84c5-84a168990d1b"
 SMLMSim = "5a0a87e4-02d4-41f5-bf26-b8c94c784a04"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
