@@ -517,7 +517,7 @@ function smoluchowski(; kwargs...)
             z = 0
         end
         molecules[i] =
-            Monomer(x, y, z, 1, nothing, false)
+            Monomer(x, y, z, 1, nothing, false, i)
     end
 
     # Run simulation    
