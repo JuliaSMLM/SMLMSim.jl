@@ -1,7 +1,19 @@
 # Tools for analyzing dimers
 
 #get molecules that are in linked states
+"""
 
+    get_dimers(states::MoleculeHistory)
+
+create a array of vector of type MoleculeFrame that takes the frames in a the input states and pass it to the MoleculeHistory function
+
+# Arguments
+    - states::MoleculeHistory  : the estates of the molecule
+
+# Returns
+    - MoleculeHistory(states.dt, dimer_frames)  : return the function MoleculeHistory
+
+"""
 function get_dimers(states::MoleculeHistory)
     dimer_frames = Vector{MoleculeFrame}()
     for frame in states.frames
