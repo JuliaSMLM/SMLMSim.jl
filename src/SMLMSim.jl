@@ -7,16 +7,19 @@ using LinearAlgebra
 
 include("typedefs.jl")
 include("molecules.jl")
-include("cameras.jl")
 include("patterns.jl")
 include("sim.jl")
-include("smld.jl")
 include("interface.jl")
 
+export sim
 # Submodules
-include("diffusion/InteractionDiffusion.jl")
+# include("diffusion/InteractionDiffusion.jl")
 
-using SMLMSim.InteractionDiffusion
+# using SMLMSim.InteractionDiffusion
+
+# Rexport SMLMData 
+
 
 
 end
+

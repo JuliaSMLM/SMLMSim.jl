@@ -1,51 +1,31 @@
-#define patterned stuctures
-
-"""
-    Pattern
-
-Abstract type for structured patterns of molecules    
-"""
+# Pattern type definitions
 abstract type Pattern end
-
-"""
-    Pattern2D
-
-Abstract type for structured patterns of molecules    
-"""
 abstract type Pattern2D <: Pattern end
-
-"""
-    Pattern3D
-
-Abstract type for structured patterns of molecules    
-"""
 abstract type Pattern3D <: Pattern end
 
-
-
+#==========================================================================
+2D Pattern Types
+==========================================================================#
 
 """
     Nmer2D <: Pattern2D
 
-N molecules symmetricaly organized around a circle with diameter d    
-
-Nmer2D(;n::Int=8, d::AbstractFloat=.1)
+N molecules symmetrically organized around a circle with diameter d    
 
 # Fields
-- 'n': Numbor of Points = 1
-- 'd': Diameter
-- 'x': X position
-- 'y': Y position
-
+- `n`: Number of Points
+- `d`: Diameter
+- `x`: X positions
+- `y`: Y positions
 """
 mutable struct Nmer2D <: Pattern2D
     n::Int
-    d::AbstractFloat
-    x::Vector{AbstractFloat}
-    y::Vector{AbstractFloat}
+    d::Float64
+    x::Vector{Float64}
+    y::Vector{Float64}
 end
-function Nmer2D(;  n::Int=8, d::AbstractFloat=00.1)
 
+function Nmer2D(; n::Int=8, d::Float64=0.1)
     nmer = Nmer2D(n, d, zeros(n), zeros(n))
     for nn = 1:n
         θ = 2 * pi / n * (nn - 1)
@@ -58,26 +38,24 @@ end
 """
     Nmer3D <: Pattern3D
 
-N molecules symmetricaly organized around a circle with diameter d    
-
-Nmer3D(;n::Int=8, d::AbstractFloat=.1)
+N molecules symmetrically organized around a circle with diameter d at z=0    
 
 # Fields
-- 'n': Numbor of Points = 1
-- 'd': Diameter
-- 'x': X position
-- 'y': Y position
-- 'z': Z position
+- `n`: Number of Points
+- `d`: Diameter
+- `x`: X positions
+- `y`: Y positions
+- `z`: Z positions
 """
 mutable struct Nmer3D <: Pattern3D
     n::Int
-    d::AbstractFloat
-    x::Vector{AbstractFloat}
-    y::Vector{AbstractFloat}
-    z::Vector{AbstractFloat}
+    d::Float64
+    x::Vector{Float64}
+    y::Vector{Float64}
+    z::Vector{Float64}
 end
-function Nmer3D(;  n::Int=8, d::AbstractFloat=00.1)
 
+function Nmer3D(; n::Int=8, d::Float64=0.1)
     nmer = Nmer3D(n, d, zeros(n), zeros(n), zeros(n))
     for nn = 1:n
         θ = 2 * pi / n * (nn - 1)
@@ -88,73 +66,27 @@ function Nmer3D(;  n::Int=8, d::AbstractFloat=00.1)
     return nmer
 end
 
-
-"""
-    Point2D <: Pattern2D
-
-    A single 2D point.    
-
-Point2D() = new(1, [0.0], [0.0])
-
-# Fields
-- 'n': Numbor of Points = 1
-- 'x': X position
-- 'y': Y position
-
-"""
-mutable struct Point2D <: Pattern2D
-    n::Int
-    x::Vector{AbstractFloat}
-    y::Vector{AbstractFloat}
-    Point2D() = new(1, [0.0], [0.0])
-end
-
-"""
-    Point3D <: Pattern3D
-
-    A single 3D point.    
-
-Point3D() = new(1, [0.0], [0.0],[0.0])
-
-# Fields
-- 'n': Numbor of Points = 1
-- 'x': X position
-- 'y': Y position
-- 'z': Z position
-"""
-mutable struct Point3D <: Pattern3D
-    n::Int
-    x::Vector{AbstractFloat}
-    y::Vector{AbstractFloat}
-    z::Vector{AbstractFloat}
-    Point3D() = new(1, [0.0], [0.0], [0.0])
-end
-
-
 """
     Line2D <: Pattern2D
 
 Points with uniform random distribution between 2 endpoints.    
 
-Line2D(;λ::AbstractFloat=10.0, endpoints=[(-1.0,0.0),(1.0,0.0)])
-
 # Fields
-- `λ`: linear molecule density
-- 'endpoints': Vector of Tuple 
-- 'n': Numbor of Points = 1
-- 'x': X position
-- 'y': Y position
-
+- `λ`: Linear molecule density
+- `endpoints`: Vector of endpoint coordinates
+- `n`: Number of Points
+- `x`: X positions
+- `y`: Y positions
 """
 mutable struct Line2D <: Pattern2D
     n::Int
-    x::Vector{AbstractFloat}
-    y::Vector{AbstractFloat}
-    λ::AbstractFloat
-    endpoints::Vector{Tuple{<:AbstractFloat,<:AbstractFloat}}
+    x::Vector{Float64}
+    y::Vector{Float64}
+    λ::Float64
+    endpoints::Vector{Tuple{Float64,Float64}}
 end
-function Line2D(; λ::AbstractFloat=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
 
+function Line2D(; λ::Float64=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
     lx = (endpoints[2][1] - endpoints[1][1])
     ly = (endpoints[2][2] - endpoints[1][2])
     l = sqrt(lx^2 + ly^2)
@@ -171,252 +103,200 @@ function Line2D(; λ::AbstractFloat=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
     return line
 end
 
+"""
+    Line3D <: Pattern3D
+
+Points with uniform random distribution between 2 3D endpoints.    
+
+# Fields
+- `λ`: Linear molecule density
+- `endpoints`: Vector of 3D endpoint coordinates
+- `n`: Number of Points
+- `x`: X positions
+- `y`: Y positions
+- `z`: Z positions
+"""
+mutable struct Line3D <: Pattern3D
+    n::Int
+    x::Vector{Float64}
+    y::Vector{Float64}
+    z::Vector{Float64}
+    λ::Float64
+    endpoints::Vector{Tuple{Float64,Float64,Float64}}
+end
+
+function Line3D(; λ::Float64=10.0, endpoints=[(-1.0, 0.0, 0.0), (1.0, 0.0, 0.0)])
+    lx = (endpoints[2][1] - endpoints[1][1])
+    ly = (endpoints[2][2] - endpoints[1][2])
+    lz = (endpoints[2][3] - endpoints[1][3])
+    l = sqrt(lx^2 + ly^2 + lz^2)
+
+    pois = Poisson(λ * l)
+    n = rand(pois)
+
+    line = Line3D(n, zeros(n), zeros(n), zeros(n), λ, endpoints)
+    for nn = 1:n
+        d = l * rand()
+        line.x[nn] = endpoints[1][1] + d / l * lx
+        line.y[nn] = endpoints[1][2] + d / l * ly
+        line.z[nn] = endpoints[1][3] + d / l * lz
+    end
+    return line
+end
+
+#==========================================================================
+Pattern Generation Functions
+==========================================================================#
 
 """
-    uniform2D(ρ, p::Pattern2D, xsize::AbstractFloat,ysize::AbstractFloat)
+    uniform2D(ρ, p::Pattern2D, field_x::Float64, field_y::Float64)
 
-Create positions of molecules from uniformly randomly placed and rotated patterns.
+Create coordinate arrays for randomly placed and rotated 2D patterns.
+
+# Arguments
+- `ρ`: Pattern density (patterns per square micron)
+- `p`: Pattern to replicate
+- `field_x`: Field width in microns
+- `field_y`: Field height in microns
+
+# Returns
+Tuple{Vector{Float64}, Vector{Float64}}: (x, y) coordinates in microns
 """
-function uniform2D(ρ, p::Pattern2D, xsize::Real, ysize::Real)
-
-    npatterns = rand(Poisson(xsize * ysize * ρ))
+function uniform2D(ρ::Float64, p::Pattern2D, field_x::Float64, field_y::Float64)
+    # Generate random number of patterns
+    npatterns = rand(Poisson(field_x * field_y * ρ))
     ntotal = npatterns * p.n
 
-    #make smd 
-    smd = SMLMData.SMLD2D(ntotal)
-    smd.datasize = Int.(ceil.([ysize; xsize]))
+    # Initialize coordinate arrays
+    x = Vector{Float64}(undef, ntotal)
+    y = Vector{Float64}(undef, ntotal)
+    
+    idx = 1
     for nn = 1:npatterns
         θ = 2 * pi * rand()
-        x0 = rand() * xsize
-        y0 = rand() * ysize
+        x0 = rand() * field_x
+        y0 = rand() * field_y
 
         for mm = 1:p.n
-            idx = (p.n) * (nn - 1) + mm
-            smd.x[idx] = p.x[mm] * cos(θ) - p.y[mm] * sin(θ) + x0
-            smd.y[idx] = p.x[mm] * sin(θ) + p.y[mm] * cos(θ) + y0
-        end
-    end
-
-    return smd.y, smd.x
-end
-
-
-"""
-    uniform2D(p::Vector{Pattern2D}, xsize::Real, ysize::Real)  
-
-Randomly place and rotate the input patterns.
-"""
-function uniform2D(p::Vector{Pattern2D},  xsize::Real, ysize::Real)
-
-    npatterns = length(p)
-
-    ntotal = 0
-    for n in 1:npatterns
-        ntotal += p[n].n
-    end
-
-    #make smd 
-    smd = SMLMData.SMLD2D(ntotal)
-    smd.datasize = Int.(ceil.([ysize; xsize]))
-    idx=1
-    for nn = 1:npatterns
-        θ = 2 * pi * rand()
-        x0 = rand() * xsize
-        y0 = rand() * ysize
-        for mm = 1:p.n
-            smd.x[idx] = p[nn].x[mm] * cos(θ) - p[nn].y[mm] * sin(θ) + x0
-            smd.y[idx] = p[nn].x[mm] * sin(θ) + p[nn].y[mm] * cos(θ) + y0
+            # Rotate and translate pattern points
+            x[idx] = p.x[mm] * cos(θ) - p.y[mm] * sin(θ) + x0
+            y[idx] = p.x[mm] * sin(θ) + p.y[mm] * cos(θ) + y0
             idx += 1
         end
     end
 
-    return smd.y, smd.x
+    return x, y
 end
 
 """
-    uniform2D(p::Vector{Pattern}, xsize::Real, ysize::Real,θ::Real)  
+    uniform3D(ρ, p::Pattern3D, field_x::Float64, field_y::Float64; 
+             zrange::Vector{Float64}=[-1.0, 1.0])
 
-Randomly place the input patterns with fixed rotation \\theta.
+Create coordinate arrays for randomly placed and rotated 3D patterns.
+
+# Arguments
+- `ρ`: Pattern density (patterns per square micron)
+- `p`: Pattern to replicate
+- `field_x`: Field width in microns
+- `field_y`: Field height in microns
+- `zrange`: [min_z, max_z] range in microns
+
+# Returns
+Tuple{Vector{Float64}, Vector{Float64}, Vector{Float64}}: (x, y, z) coordinates
 """
-function uniform2D(p::Vector{<:Pattern2D},  xsize::Real, ysize::Real, θ::Real)
-
-    npatterns = length(p)
-
-    ntotal = 0
-    for n in 1:npatterns
-        ntotal += p[n].n
-    end
-
-    #make smd 
-    smd = SMLMData.SMLD2D(ntotal)
-    smd.datasize = Int.(ceil.([ysize; xsize]))
-    idx=1
-    for nn = 1:npatterns
-        x0 = rand() * xsize
-        y0 = rand() * ysize
-        for mm = 1:p[nn].n
-            smd.x[idx] = p[nn].x[mm] * cos(θ) - p[nn].y[mm] * sin(θ) + x0
-            smd.y[idx] = p[nn].x[mm] * sin(θ) + p[nn].y[mm] * cos(θ) + y0
-            idx += 1
-        end
-    end
-
-    return smd.y, smd.x
-end
-
-"""
-    place2D(p::Vector{Pattern}, xsize::Real, ysize::Real)  
-
-Place the input patterns and return SMLD2D.
-"""
-function place2D(p::Vector{<:Pattern2D},  xsize::Real, ysize::Real)
-
-    npatterns = length(p)
-
-    ntotal = 0
-    for n in 1:npatterns
-        ntotal += p[n].n
-    end
-
-    #make smd 
-    smd = SMLMData.SMLD2D(ntotal)
-    smd.datasize = Int.(ceil.([ysize; xsize]))
-    idx=1
-    for nn in 1:npatterns
-        for mm in 1:p[nn].n
-            smd.x[idx] = p[nn].x[mm] 
-            smd.y[idx] = p[nn].y[mm] 
-            idx += 1
-        end
-    end
-
-   
-    return smd.y, smd.x
-end
-
-
-
-
-
-"""
-    function uniform3D(ρ,p::Pattern, xsize::Real,ysize::Real; zrange::Vector{<:Real}=[-1.0,1.0])
-
-Create positions of molecules from uniformly randomly placed and rotated patterns.
-
-!!! Note
-`ρ` is 2D density. 3D density is `ρ/(zrange[2]-zrange[1])`. 
-
-"""
-function uniform3D(ρ, p::Pattern3D, xsize::Real, ysize::Real; zrange::Vector{<:Real}=[-1.0, 1.0])
-
-    npatterns = rand(Poisson(xsize * ysize * ρ))
+function uniform3D(ρ::Float64, p::Pattern3D, field_x::Float64, field_y::Float64;
+                  zrange::Vector{Float64}=Float64[-1.0, 1.0])
+    # Generate random number of patterns (note: ρ is 2D density)
+    npatterns = rand(Poisson(field_x * field_y * ρ))
     ntotal = npatterns * p.n
 
-    #make smd 
-    smd = SMLMData.SMLD3D(ntotal)
-    smd.datasize = Int.(ceil.([ysize; xsize]))
+    # Initialize coordinate arrays
+    x = Vector{Float64}(undef, ntotal)
+    y = Vector{Float64}(undef, ntotal)
+    z = Vector{Float64}(undef, ntotal)
+    
+    idx = 1
     for nn = 1:npatterns
-
-        x0 = rand() * xsize
-        y0 = rand() * ysize
+        # Random position
+        x0 = rand() * field_x
+        y0 = rand() * field_y
         z0 = rand() * (zrange[2] - zrange[1]) + zrange[1]
 
-        #Transformation that gives uniform rotation in 3D
-        # based on J. Avro 1992
-        x1 = rand()
-        x2 = rand()
-        x3 = rand()
-
-        r = [
-            cos(2 * pi * x1) -sin(2 * pi * x1) 0
-            -sin(2 * pi * x1) cos(2 * pi * x1) 0
-            0 0 1
+        # Generate random 3D rotation using quaternions
+        # This gives uniform rotation in 3D space
+        u1, u2, u3 = rand(3)
+        
+        q0 = sqrt(1 - u1) * sin(2π * u2)
+        q1 = sqrt(1 - u1) * cos(2π * u2)
+        q2 = sqrt(u1) * sin(2π * u3)
+        q3 = sqrt(u1) * cos(2π * u3)
+        
+        # Convert quaternion to rotation matrix
+        R = [
+            1-2*(q2^2 + q3^2)  2*(q1*q2 - q0*q3)  2*(q1*q3 + q0*q2);
+            2*(q1*q2 + q0*q3)  1-2*(q1^2 + q3^2)  2*(q2*q3 - q0*q1);
+            2*(q1*q3 - q0*q2)  2*(q2*q3 + q0*q1)  1-2*(q1^2 + q2^2)
         ]
 
-        v = [
-            cos(2 * pi * x2) * sqrt(x3)
-            sin(2 * pi * x2) * sqrt(x3)
-            sqrt(1 - x3)
-        ]
-
-        h = Diagonal([1.0, 1.0, 1.0]) - 2 * v * v'
-
-        m = -r * h
-
-        for mm in 1:p.n
-            idx = (p.n) * (nn - 1) + mm
-
-            xyz = [p.x[mm], p.y[mm], p.z[mm]]
-            xyz_prime = m * xyz
-
-            smd.x[idx] = xyz_prime[1] + x0
-            smd.y[idx] = xyz_prime[2] + y0
-            smd.z[idx] = xyz_prime[3] + z0
+        for mm = 1:p.n
+            # Rotate and translate pattern points
+            pos = R * [p.x[mm]; p.y[mm]; p.z[mm]]
+            x[idx] = pos[1] + x0
+            y[idx] = pos[2] + y0
+            z[idx] = pos[3] + z0
+            idx += 1
         end
     end
 
-    return smd.y, smd.x, smd.z
+    return x, y, z
 end
 
-## Pattern Rotation
+#==========================================================================
+Pattern Rotation Functions
+==========================================================================#
 
 """
-    rotate!(p::Pattern,θ::Real)
+    rotate!(p::Pattern2D, θ::Float64)
 
-Rotate a Pattern in 2D by \\theta radians.
-
-
-Both molecule positions and reference positions are rotated (e.g. endpoints of a line)
+Rotate a 2D pattern by angle θ (in radians).
 """
-function rotate!(p::Pattern, θ::Real)
+function rotate!(p::Pattern2D, θ::Float64)
+    for n in 1:p.n
+        x_new = p.x[n] * cos(θ) - p.y[n] * sin(θ)
+        y_new = p.x[n] * sin(θ) + p.y[n] * cos(θ)
+        p.x[n] = x_new
+        p.y[n] = y_new
+    end
+    return nothing
 end
 
 """
-Rotate a Pattern in 3D by the improper Euler angles [\\alpha \\beta \\gamma] (radians).
+    rotate!(p::Pattern3D, R::Matrix{Float64})
+
+Rotate a 3D pattern by rotation matrix R.
 """
-function rotate!(p::Pattern, α::Real, β::Real, γ::Real)
+function rotate!(p::Pattern3D, R::Matrix{Float64})
+    for n in 1:p.n
+        pos = R * [p.x[n]; p.y[n]; p.z[n]]
+        p.x[n] = pos[1]
+        p.y[n] = pos[2]
+        p.z[n] = pos[3]
+    end
+    return nothing
 end
-
 
 """
-Rotate a Pattern in 3D by premultiplying with the rotation matrix `r`.
+    rotate!(p::Pattern3D, α::Float64, β::Float64, γ::Float64)
+
+Rotate a 3D pattern by Euler angles α, β, γ (in radians).
+Uses ZYZ convention.
 """
-function rotate!(p::Pattern, r::Array{Real})
-end
-
-function rotate(x::Real, y::Real, θ::Real)
-    return (x * cos(θ) - y * sin(θ), x * sin(θ) + y * cos(θ))
-end
-
-function rotate(x::Real, y::Real, z::Real, r::Matrix{<:Real})
-    out = r * [x y z]'
-    return (out[1], out[2], out[3])
-end
-
-function rotate(x::Real, y::Real, z::Real, α::Real, β::Real, γ::Real)
-    r = [
-        cos(β)*cos(γ) sin(α)*sin(β)*cos(γ)-cos(α)*sin(γ) cos(α)*sin(β)*cos(γ)+sin(α)*sin(γ)
-        cos(β)*sin(γ) sin(α)*sin(β)*sin(γ)+cos(α)*cos(γ) cos(α)*sin(β)*sin(γ)-sin(α)*cos(γ)
-        -sin(β) sin(α)*cos(β) cos(α)*cos(β)
+function rotate!(p::Pattern3D, α::Float64, β::Float64, γ::Float64)
+    # ZYZ Euler angle rotation matrix
+    R = [
+        cos(α)*cos(β)*cos(γ)-sin(α)*sin(γ) -cos(α)*cos(β)*sin(γ)-sin(α)*cos(γ) cos(α)*sin(β);
+        sin(α)*cos(β)*cos(γ)+cos(α)*sin(γ) -sin(α)*cos(β)*sin(γ)+cos(α)*cos(γ) sin(α)*sin(β);
+        -sin(β)*cos(γ) sin(β)*sin(γ) cos(β)
     ]
-    return rotate(x, y, z, r)
+    rotate!(p, R)
 end
-
-function rotate!(p::Point2D, θ::Real)
-    for n in 1:p.n
-        (p.x[n], p.y[n]) = rotate(p.x[n], p.y[n], θ)
-    end
-    return nothing
-end
-
-function rotate!(p::Line2D, θ::Real)
-    for n in 1:p.n
-        (p.x[n], p.y[n]) = rotate(p.x[n], p.y[n], θ)
-    end
-    p.endpoints[1] = rotate(p.endpoints[1][1], p.endpoints[1][2], θ)
-    p.endpoints[2] = rotate(p.endpoints[2][1], p.endpoints[2][2], θ)
-    return nothing
-end
-
-
-

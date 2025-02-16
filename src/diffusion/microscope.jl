@@ -20,7 +20,7 @@ Generate an image of a simulated system of molecules using a microscope PSF and 
 - An image of the simulated system of molecules as captured by the microscope.
 """
 function gen_image(psf::MicroscopePSFs.PSF,
-    states::MoleculeHistory, camera::SMLMSim.Camera, framenum::Int64;
+    states::MoleculeHistory, camera::IdealCamera, framenum::Int64;
     photons::Float64=1000.0, bg::Float64=5.0, poissonnoise::Bool=true)
 
     x = [mol.x for mol in states.frames[framenum].molecules]
