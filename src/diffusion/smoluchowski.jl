@@ -1,533 +1,251 @@
-# kwargs struct for Smoluchowski simulation
-Base.@kwdef mutable struct ArgsSmol
+# src/diffusion/smoluchowski.jl
+using SMLMData
+using Distributions
+
+"""
+    SmoluchowskiParams
+
+Parameters for Smoluchowski diffusion simulation.
+
+# Fields
+- `density::Float64`: number density (molecules/micron^2 or micron^3)
+- `box_size::Float64`: simulation box size in microns
+- `diff_monomer::Float64`: monomer diffusion coefficient (micron^2/s)
+- `diff_dimer::Float64`: dimer diffusion coefficient (micron^2/s)
+- `diff_dimer_rot::Float64`: dimer rotational diffusion coefficient (rad^2/s)
+- `k_off::Float64`: dimer dissociation rate (1/s)
+- `r_react::Float64`: reaction radius for dimerization (microns)
+- `d_dimer::Float64`: monomer separation in dimer (microns)
+- `dt::Float64`: simulation time step (s)
+- `t_max::Float64`: total simulation time (s)
+- `ndims::Int`: number of dimensions (2 or 3)
+- `boundary::String`: boundary condition type ("periodic" or "reflecting")
+"""
+Base.@kwdef mutable struct SmoluchowskiParams
     density::Float64 = 1.0
     box_size::Float64 = 10.0
     diff_monomer::Float64 = 0.1
     diff_dimer::Float64 = 0.05
-    diff_dimer_rot::Union{Nothing,Float64} = nothing
+    diff_dimer_rot::Float64 = 0.5
     k_off::Float64 = 0.2
     r_react::Float64 = 0.01
+    d_dimer::Float64 = 0.05
     dt::Float64 = 0.01
     t_max::Float64 = 10.0
-    ndims::Int64 = 2
-    d_dimer::Float64 = 0.05
+    ndims::Int = 2
     boundary::String = "periodic"
 end
 
-
-
-
 """
-    dimerize!(mol1::Monomer, mol2::Monomer, distance::Float64)
+    update_species!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
 
-Update the state and position of two monomers to form a dimer.
-
-# Arguments
-- `mol1::Monomer`: the first monomer to dimerize
-- `mol2::Monomer`: the second monomer to dimerize
-- `distance::Float64`: the distance between the monomers in the dimer
-
-# Returns
-- `nothing`
-
+Update molecular states (dimerization/dissociation) for all molecules.
 """
-function dimerize!(mol1::Monomer, mol2::Monomer, distance::Float64)
-
-    # Update status
-    mol1.state = 2
-    mol2.state = 2
-    mol1.link = mol2
-    mol2.link = mol1
-
-    # Calculate center of mass
-    com_x = (mol1.x + mol2.x) / 2
-    com_y = (mol1.y + mol2.y) / 2
-    com_z = (mol1.z + mol2.z) / 2
-
-    # Find angle between monomers
-    ϕ = calc_ϕ(mol1, mol2)
-    θ = calc_θ(mol1, mol2)
-    r = distance / 2
-
-    # Set positions of monomers using center of mass and angle and distance
-    x = r * cos(ϕ) * sin(θ)
-    y = r * sin(ϕ) * sin(θ)
-    z = r * cos(θ)
-
-    # Update positions
-    mol1.x = com_x - x
-    mol1.y = com_y - y
-    mol1.z = com_z - z
-    mol2.x = com_x + x
-    mol2.y = com_y + y
-    mol2.z = com_z + z
-
-    return nothing
-end
-
-"""
-    monomerize!(mol::Monomer)
-
-Update the state and links of a monomer and its linked molecule.
-
-# Arguments
-- `mol::Monomer`: the monomer to monomerize
-
-# Returns
-- `nothing`
-
-"""
-function monomerize!(mol::Monomer)
-    mol.state = 1
-    mol.link.state = 1
-    mol.link.link = nothing
-    mol.link = nothing
-    return nothing
-end
-
-
-"""
-    calc_r(mol1::Monomer, mol2::Monomer)
-
-Calculate the Euclidean distance between two monomers.
-
-# Arguments
-- `mol1::Monomer`: the first monomer
-- `mol2::Monomer`: the second monomer
-
-# Returns
-- `r::Float64`: the Euclidean distance between the two monomers
-
-"""
-function calc_r(mol1::Monomer, mol2::Monomer)
-    return sqrt((mol1.x - mol2.x)^2 + (mol1.y - mol2.y)^2 + (mol1.z - mol2.z)^2)
-end
-
-"""
-    calc_θ(mol1::Monomer, mol2::Monomer)
-
-Calculate the angle between the z-axis and the vector connecting two monomers.
-
-# Arguments
-- `mol1::Monomer`: the first monomer
-- `mol2::Monomer`: the second monomer
-
-# Returns
-- `θ::Float64`: the angle between the z-axis and the vector connecting the two monomers, in radians
-
-"""
-function calc_θ(mol1::Monomer, mol2::Monomer)
-    x = mol2.x - mol1.x
-    y = mol2.y - mol1.y
-    z = mol2.z - mol1.z
-    r = sqrt(x^2 + y^2 + z^2)
-    return acos(z / r)
-end
-
-"""
-    calc_ϕ(mol1::Monomer, mol2::Monomer)
-
-Calculate the azimuthal angle between two monomers.
-
-# Arguments
-- `mol1::Monomer`: the first monomer
-- `mol2::Monomer`: the second monomer
-
-# Returns
-- `ϕ::Float64`: the azimuthal angle between the two monomers, in radians
-
-"""
-function calc_ϕ(mol1::Monomer, mol2::Monomer)
-    # Calculate azimuthal angle between monomers
-    x = mol2.x - mol1.x
-    y = mol2.y - mol1.y
-    return atan(y, x)
-end
-
-"""
-    update_species!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
-
-Update the state of a system of molecules according to the Smoluchowski model.
-
-# Arguments
-- `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
-- `args::ArgsSmol`: a struct containing the simulation parameters
-
-# Returns
-- `nothing`
-
-"""
-function update_species!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
-    for mol1 in molecules
-        if mol1.state == 1 # a monomer 
-            # Check to see if any other molecules are within r_react
-            # Only check for molecules that are later in the list
-            # to avoid double counting
-            for mol2 in molecules[findfirst(x -> x == mol1, molecules)+1:end]
-                if mol2.state == 1 # a monomer
-                    if (mol1.x - mol2.x)^2 + (mol1.y - mol2.y)^2 + (mol1.z - mol2.z)^2 < args.r_react^2
-                        # Form dimer by updating links and enforcing distance
-                        dimerize!(mol1, mol2, args.d_dimer)
+function update_species!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
+    for (i, mol1) in enumerate(system.molecules)
+        if mol1.state == 1  # monomer
+            # Check for dimerization with other monomers
+            for mol2 in @view system.molecules[i+1:end]
+                if mol2.state == 1  # also a monomer
+                    if calc_r(mol1, mol2) < params.r_react
+                        dimerize!(mol1, mol2, params.d_dimer)
+                        break  # Only one dimerization per molecule per step
                     end
                 end
             end
-
-        elseif mol1.state == 2 # a dimer
-            if rand() < args.k_off * args.dt
-                monomerize!(mol1) # converts both monomers to state 1
+        elseif mol1.state == 2  # dimer
+            # Check for dissociation
+            if rand() < params.k_off * params.dt
+                monomerize!(mol1, system)
             end
         end
     end
-    return nothing
 end
 
 """
-    update_position!(mol::Monomer, args::ArgsSmol)
+    update_positions!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
 
-Update the position of a single monomer using isotropic Brownian motion.
-
-# Arguments
-- `mol::Monomer`: the monomer to update
-- `args::ArgsSmol`: a struct containing the simulation parameters
-
-# Returns
-- `nothing`
-
+Update positions of all molecules using appropriate diffusion models.
 """
-function update_position!(mol::Monomer, args::ArgsSmol)
-    # Update position of a single molecule
-    diff = args.diff_monomer
-    dt = args.dt
-    mol.x += rand(Normal(0.0, sqrt(2 * diff * dt)))
-    mol.y += rand(Normal(0.0, sqrt(2 * diff * dt)))
-    if args.ndims == 3
-        mol.z += rand(Normal(0.0, sqrt(2 * diff * dt)))
+function update_positions!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
+    for mol in system.molecules
+        if !mol.updated  # Skip if already updated through dimer
+            if mol.state == 1
+                update_monomer_position!(mol, params)
+            else  # state == 2
+                # Find linked molecule and update dimer
+                linked_idx = findfirst(m -> m.id == mol.link, system.molecules)
+                if !isnothing(linked_idx)
+                    update_dimer_position!(mol, system.molecules[linked_idx], params)
+                end
+            end
+        end
     end
-    mol.updated = true
-    return nothing
-end
-
-"""
-    update_position!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
-
-Update the position of a dimer using isotropic Brownian motion.
-
-The center of mass of the dimer is updated using isotropic Brownian motion,
-and the orientation of the dimer is updated using rotational Brownian motion.
-
-# Arguments
-- `mol1::Monomer`: the first monomer in the dimer to update
-- `mol2::Monomer`: the second monomer in the dimer to update
-- `args::ArgsSmol`: a struct containing the simulation parameters
-
-# Returns
-- `nothing`
-
-"""
-function update_position!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
-    # Update center of mass
-    diff = args.diff_dimer
-    dt = args.dt
-    com_x = (mol1.x + mol2.x) / 2
-    com_y = (mol1.y + mol2.y) / 2
-    com_z = (mol1.z + mol2.z) / 2
-    com_x += rand(Normal(0.0, sqrt(2 * diff * dt)))
-    com_y += rand(Normal(0.0, sqrt(2 * diff * dt)))
-    if args.ndims == 3
-        com_z += rand(Normal(0.0, sqrt(2 * diff * dt)))
-    end
-
-    # Update orientation
-    diff_rot = args.diff_dimer_rot
     
-    ϕ = calc_ϕ(mol1, mol2)
-    ϕ += rand(Normal(0.0, sqrt(2 * diff_rot * dt)))
-
-    if args.ndims == 3 # 3D
-        θ = calc_θ(mol1, mol2)
-        θ += rand(Normal(0.0, sqrt(2 * diff_rot * dt)))
-        mol1.z = com_z - args.d_dimer * sin(θ) * cos(ϕ)
-        mol2.z = com_z + args.d_dimer * sin(θ) * cos(ϕ)
+    # Reset update flags
+    for mol in system.molecules
+        mol.updated = false
     end
+end
 
-    mol1.x = com_x - args.d_dimer * cos(ϕ)
-    mol1.y = com_y - args.d_dimer * sin(ϕ)
-    mol2.x = com_x + args.d_dimer * cos(ϕ)
-    mol2.y = com_y + args.d_dimer * sin(ϕ)
+"""Update position of a single monomer"""
+function update_monomer_position!(mol::DiffusingMolecule, params::SmoluchowskiParams)
+    σ = sqrt(2 * params.diff_monomer * params.dt)
+    
+    mol.x += rand(Normal(0, σ))
+    mol.y += rand(Normal(0, σ))
+    if params.ndims == 3
+        mol.z += rand(Normal(0, σ))
+    end
+    
+    mol.updated = true
+end
 
+"""Update position and orientation of a dimer"""
+function update_dimer_position!(mol1::DiffusingMolecule, mol2::DiffusingMolecule, params::SmoluchowskiParams)
+    # Translational diffusion of center of mass
+    σ_trans = sqrt(2 * params.diff_dimer * params.dt)
+    dx = rand(Normal(0, σ_trans))
+    dy = rand(Normal(0, σ_trans))
+    dz = params.ndims == 3 ? rand(Normal(0, σ_trans)) : 0.0
+    
+    # Current center of mass
+    com_x = (mol1.x + mol2.x)/2
+    com_y = (mol1.y + mol2.y)/2
+    com_z = (mol1.z + mol2.z)/2
+    
+    # Move center of mass
+    com_x += dx
+    com_y += dy
+    com_z += dz
+    
+    # Rotational diffusion
+    σ_rot = sqrt(2 * params.diff_dimer_rot * params.dt)
+    ϕ = calc_ϕ(mol1, mol2)
+    θ = calc_θ(mol1, mol2)
+    
+    # Update angles
+    ϕ += rand(Normal(0, σ_rot))
+    if params.ndims == 3
+        θ += rand(Normal(0, σ_rot))
+    end
+    
+    # Calculate new positions relative to center of mass
+    r = params.d_dimer/2
+    dx = r * cos(ϕ) * sin(θ)
+    dy = r * sin(ϕ) * sin(θ)
+    dz = r * cos(θ)
+    
+    # Update positions
+    mol1.x = com_x - dx
+    mol1.y = com_y - dy
+    mol1.z = com_z - dz
+    mol2.x = com_x + dx
+    mol2.y = com_y + dy
+    mol2.z = com_z + dz
+    
     mol1.updated = true
     mol2.updated = true
-    return nothing
 end
 
-"""
-    update_positions!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
-
-Update the positions of all molecules in the system according to the Smoluchowski model.
-
-# Arguments
-- `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
-- `args::ArgsSmol`: a struct containing the simulation parameters
-
-# Returns
-- `nothing`
-
-"""
-function update_positions!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
-    # Update positions of all molecules
-    for mol in molecules
-        if mol.state == 1 && mol.updated == false
-            update_position!(mol, args)
-        elseif mol.state == 2
-            update_position!(mol, mol.link, args)
+"""Apply periodic or reflecting boundary conditions"""
+function apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
+    for mol in system.molecules
+        if params.boundary == "periodic"
+            mol.x = mod(mol.x, params.box_size)
+            mol.y = mod(mol.y, params.box_size)
+            if params.ndims == 3
+                mol.z = mod(mol.z, params.box_size)
+            end
+        else  # reflecting
+            if mol.x < 0
+                mol.x = -mol.x
+            elseif mol.x > params.box_size
+                mol.x = 2params.box_size - mol.x
+            end
+            
+            if mol.y < 0
+                mol.y = -mol.y
+            elseif mol.y > params.box_size
+                mol.y = 2params.box_size - mol.y
+            end
+            
+            if params.ndims == 3
+                if mol.z < 0
+                    mol.z = -mol.z
+                elseif mol.z > params.box_size
+                    mol.z = 2params.box_size - mol.z
+                end
+            end
         end
-    end
-
-    for mol in molecules
-        mol.updated = false
-    end
-
-    return nothing
-end
-
-"""
-    apply_boundary!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
-
-Apply boundary conditions to all molecules in the system.
-
-# Arguments
-- `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
-- `args::ArgsSmol`: a struct containing the simulation parameters
-
-# Returns
-- `nothing`
-
-"""
-function apply_boundary!(molecules::Vector{<:AbstractOligomer}, args::ArgsSmol)
-    for mol in molecules
-        if mol.state == 1 && mol.updated == false
-            apply_boundary!(mol, args)
-        elseif mol.state == 2
-            apply_boundary!(mol, mol.link, args)
-        end
-    end
-    for mol in molecules
-        mol.updated = false
     end
 end
 
 """
-    apply_boundary!(mol::Monomer, args::ArgsSmol)
+    initialize_system(params::SmoluchowskiParams)
 
-Apply boundary conditions to a single monomer in the system.
-
-# Arguments
-- `mol::Monomer`: the monomer to apply boundary conditions to
-- `args::ArgsSmol`: a struct containing the simulation parameters
-
-# Returns
-- `nothing`
-
+Create initial DiffusingMoleculeSystem with randomly placed monomers.
 """
-function apply_boundary!(mol::Monomer, args::ArgsSmol)
-    # Apply boundary conditions to a single molecule
-    mol.x, mol.y, mol.z = apply_boundary(mol.x, mol.y, mol.z, args)
-    return nothing
-end
-
-"""
-    apply_boundary!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
-
-Apply boundary conditions to a dimer using center of mass.
-
-# Note
-This may result in molecules being placed outside of the box.
-
-# Arguments
-- `mol1::Monomer`: the first monomer in the dimer to apply boundary conditions to
-- `mol2::Monomer`: the second monomer in the dimer to apply boundary conditions to
-- `args::ArgsSmol`: a struct containing the simulation parameters
-
-# Returns
-- `nothing`
-
-"""
-function apply_boundary!(mol1::Monomer, mol2::Monomer, args::ArgsSmol)
-    # Apply boundary conditions to a dimer using center of mass
-    com_x = (mol1.x + mol2.x) / 2
-    com_y = (mol1.y + mol2.y) / 2
-    com_z = (mol1.z + mol2.z) / 2
-
-    Δx1 = mol1.x - com_x
-    Δy1 = mol1.y - com_y
-    Δz1 = mol1.z - com_z
-    Δx2 = mol2.x - com_x
-    Δy2 = mol2.y - com_y
-    Δz2 = mol2.z - com_z
-
-    com_x, com_y, com_z = apply_boundary(com_x, com_y, com_z, args)
-    mol1.x = com_x + Δx1
-    mol1.y = com_y + Δy1
-    mol1.z = com_z + Δz1
-    mol2.x = com_x + Δx2
-    mol2.y = com_y + Δy2
-    mol2.z = com_z + Δz2
-
-    return nothing
-end
-
-"""
-    apply_boundary(x::Float64, y::Float64, z::Float64, args::ArgsSmol)
-
-Apply boundary conditions to a set of coordinates.
-
-# Arguments
-- `x::Float64`: the x-coordinate of the point
-- `y::Float64`: the y-coordinate of the point
-- `z::Float64`: the z-coordinate of the point
-- `args::ArgsSmol`: a struct containing the simulation parameters
-
-# Returns
-- `x::Float64`: the x-coordinate of the point after applying boundary conditions
-- `y::Float64`: the y-coordinate of the point after applying boundary conditions
-- `z::Float64`: the z-coordinate of the point after applying boundary conditions
-
-"""
-function apply_boundary(x::Float64, y::Float64, z::Float64, args::ArgsSmol)
-
-    box_size_x = args.box_size
-    box_size_y = args.box_size
-    if args.ndims == 3
-        box_size_z = args.box_size
-    else
-        box_size_z = 0
-    end
-
-    if args.boundary == "periodic"
-        if x > box_size_x
-            x -= box_size_x
-        elseif x < 0
-            x += box_size_x
-        end
-        if y > box_size_y
-            y -= box_size_y
-        elseif y < 0
-            y += box_size_y
-        end
-        if z > box_size_z
-            z -= box_size_z
-        elseif z < 0
-            z += box_size_z
-        end
-    elseif args.boundary == "reflecting"
-        if x > box_size_x
-            x = 2 * box_size_x - x
-        elseif x < 0
-            x = -x
-        end
-        if y > box_size_y
-            y = 2 * box_size_y - y
-        elseif y < 0
-            y = -y
-        end
-        if z > box_size_z
-            z = 2 * box_size_z - z
-        elseif z < 0
-            z = -z
-        end
-
-    else
-        error("Boundary condition not recognized")
-    end
-
-    return x, y, z
-end
-
-
-"""
-    record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeHistory, t::Int64)
-
-Record the positions of all molecules in the system at a given time step.
-
-# Arguments
-- `molecules::Vector{<:AbstractOligomer}`: a vector of `AbstractOligomer` objects representing the molecules in the system
-- `state_history::MoleculeHistory`: a `MoleculeStates` object containing the states of the system at each time step
-- `t::Int64`: the current time step
-
-# Returns
-- `nothing`
-
-"""
-function record_positions!(molecules::Vector{<:AbstractOligomer}, state_history::MoleculeHistory, t::Int64)
-    # Record positions of all molecules
-    state_history.frames[t].molecules .= deepcopy(molecules)
-    return nothing
-end
-
-
-
-"""
-    smoluchowski(; kwargs...)
-
-Simulate a system of molecules using the Smoluchowski model.
-
-# Keyword Arguments
-- `density::Float64`: the number density of the system (default: 1.0)
-- `box_size::Float64`: the size of the simulation box (default: 10.0)
-- `diff_monomer::Float64`: the diffusion coefficient of a monomer (default: 0.1)
-- `diff_dimer::Float64`: the diffusion coefficient of a dimer (default: 0.05)
-- `diff_dimer_rot::Union{Nothing,Float64}`: the rotational diffusion coefficient of a dimer (default: `diff_dimer/d_dimer^2`)
-- `k_off::Float64`: the unbinding rate of a dimer (default: 0.2)
-- `r_react::Float64`: the reaction radius for dimerization (default: 0.01)
-- `dt::Float64`: the time step used in the simulation (default: 0.01)
-- `t_max::Float64`: the maximum simulation time (default: 10.0)
-- `ndims::Int64`: the number of dimensions of the system (default: 2)
-- `d_dimer::Float64`: Monomer seperation in the dimer (default: 0.05)
-- `boundary::String`: the type of boundary conditions to apply (default: "periodic",  or "reflecting")
-
-# Returns
-- `state_history::MoleculeHistory`: a `MoleculeHistory` object containing the states of the system at each time step
-- `args::ArgsSmol`: a struct containing the simulation parameters
-"""
-function smoluchowski(; kwargs...)
-
-    # Parse keyword Arguments
-    args = ArgsSmol(; kwargs...)
-    # Update orientation
-    if isnothing(args.diff_dimer_rot)
-        args.diff_dimer_rot = args.diff_dimer/args.d_dimer^2
-    end
-
-    # Calculate number of molecules
-    n_molecules = round(Int, args.density * args.box_size^args.ndims)
-    n_time_steps = round(Int, args.t_max / args.dt)
-    # Initialize molecules Simulation States
-    state_history = MoleculeHistory(args.dt, n_time_steps, n_molecules)
-
-    # Initial States
-    # These are updated in place during simulation
-    molecules = Vector{Monomer}(undef, n_molecules)
-
+function initialize_system(params::SmoluchowskiParams)
+    # Calculate number of molecules based on density and dimensions
+    n_molecules = round(Int, params.density * params.box_size^params.ndims)
+    
+    # Create emitters at random positions
+    molecules = Vector{DiffusingMolecule{Emitter2D{Float64}}}(undef, n_molecules)
     for i in 1:n_molecules
-        x = rand(Uniform(0, args.box_size))
-        y = rand(Uniform(0, args.box_size))
-        if args.ndims == 3
-            z = rand(Uniform(0, args.box_size))
-        else
-            z = 0
-        end
-        molecules[i] =
-            Monomer(x, y, z, 1, nothing, false, i)
+        x = rand(Uniform(0, params.box_size))
+        y = rand(Uniform(0, params.box_size))
+        z = params.ndims == 3 ? rand(Uniform(0, params.box_size)) : 0.0
+        
+        # Create basic emitter with position and standard brightness
+        emitter = Emitter2D{Float64}(x, y, 1000.0)
+        molecules[i] = DiffusingMolecule(emitter, 1, nothing, false)
     end
+    
+    # Create camera matching box size
+    pixel_size = 0.1  # 100nm pixels
+    n_pixels = ceil(Int, params.box_size / pixel_size)
+    camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
+    
+    # Create system
+    DiffusingMoleculeSystem(
+        molecules,
+        camera,
+        params.box_size,
+        1,  # Start with single frame
+        1,  # Single dataset
+        Dict{String,Any}(
+            "simulation_parameters" => params
+        )
+    )
+end
 
-    # Run simulation    
-    record_positions!(molecules, state_history, 1)
-    for t in 2:n_time_steps
-        update_species!(molecules, args)
-        update_positions!(molecules, args)
-        apply_boundary!(molecules, args)
-        record_positions!(molecules, state_history, t)
+"""
+    simulate(params::SmoluchowskiParams)
+
+Run a complete Smoluchowski diffusion simulation.
+
+Returns a vector of DiffusingMoleculeSystem states at each timepoint.
+"""
+function simulate(params::SmoluchowskiParams)
+    # Initialize
+    n_steps = round(Int, params.t_max / params.dt)
+    system = initialize_system(params)
+    
+    # Store system states
+    systems = Vector{typeof(system)}(undef, n_steps)
+    systems[1] = deepcopy(system)
+    
+    # Run simulation
+    for t in 2:n_steps
+        update_species!(system, params)
+        update_positions!(system, params)
+        apply_boundary!(system, params)
+        
+        # Store copy of current state
+        systems[t] = deepcopy(system)
+        systems[t].metadata["time"] = (t-1) * params.dt
     end
-
-    return state_history, args
+    
+    return systems
 end

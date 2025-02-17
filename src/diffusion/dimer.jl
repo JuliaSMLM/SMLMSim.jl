@@ -1,34 +1,85 @@
-# Tools for analyzing dimers
 
-#get molecules that are in linked states
 """
+    get_dimers(system::DiffusingMoleculeSystem)
 
-    get_dimers(states::MoleculeHistory)
-
-create a array of vector of type MoleculeFrame that takes the frames in a the input states and pass it to the MoleculeHistory function
+Extract a new DiffusingMoleculeSystem containing only molecules in dimer state.
 
 # Arguments
-    - states::MoleculeHistory  : the estates of the molecule
+- `system::DiffusingMoleculeSystem`: Original system with all molecules
 
 # Returns
-    - MoleculeHistory(states.dt, dimer_frames)  : return the function MoleculeHistory
+- `DiffusingMoleculeSystem`: New system containing only dimers
+"""
+function get_dimers(system::DiffusingMoleculeSystem)
+    # Extract molecules in dimer state
+    dimer_molecules = filter(mol -> mol.state == 2, system.molecules)
+    
+    # Create new system with same parameters but only dimer molecules
+    DiffusingMoleculeSystem(
+        dimer_molecules,
+        system.camera,
+        system.box_size,
+        system.n_frames,
+        system.n_datasets,
+        copy(system.metadata)
+    )
+end
 
 """
-function get_dimers(states::MoleculeHistory)
-    dimer_frames = Vector{MoleculeFrame}()
-    for frame in states.frames
-        push!(dimer_frames, get_dimers(frame))
-    end
-    return MoleculeHistory(states.dt, dimer_frames)
+    get_dimers(systems::Vector{DiffusingMoleculeSystem})
+
+Extract dimers from a sequence of system states.
+
+# Arguments
+- `systems::Vector{DiffusingMoleculeSystem}`: Sequence of system states
+
+# Returns
+- `Vector{DiffusingMoleculeSystem}`: Sequence of dimer-only states
+"""
+function get_dimers(systems::Vector{DiffusingMoleculeSystem})
+    [get_dimers(system) for system in systems]
 end
 
+"""
+    gen_dimer_images(systems::Vector{DiffusingMoleculeSystem}, psf::PSF; kwargs...)
 
-function get_dimers(frame::MoleculeFrame)
-    linked_molecules = Vector{Monomer}()
-    for molecule in frame.molecules
-        if molecule.state == 2
-            push!(linked_molecules, molecule)
-        end
-    end
-    return MoleculeFrame(frame.framenum, linked_molecules)
+Generate microscope images showing only dimers.
+
+# Arguments
+- `systems::Vector{DiffusingMoleculeSystem}`: Sequence of system states
+- `psf::PSF`: Point spread function model
+
+# Optional kwargs
+- `frame_integration::Int=1`: Number of frames to integrate
+- `poisson_noise::Bool=true`: Whether to add Poisson noise
+
+# Returns
+- `Array{Float64,3}`: Stack of dimer-only images [ny, nx, frames]
+"""
+function gen_dimer_images(systems::Vector{DiffusingMoleculeSystem}, psf::PSF;
+                         frame_integration::Int=1, poisson_noise::Bool=true)
+    dimer_systems = get_dimers(systems)
+    gen_image_sequence(psf, dimer_systems; 
+                      frame_integration=frame_integration,
+                      poisson_noise=poisson_noise)
 end
+
+"""
+    analyze_dimer_fraction(systems::Vector{DiffusingMoleculeSystem})
+
+Calculate the fraction of molecules in dimer state over time.
+
+# Arguments
+- `systems::Vector{DiffusingMoleculeSystem}`: Sequence of system states
+
+# Returns
+- `Vector{Float64}`: Dimer fraction at each timepoint
+"""
+function analyze_dimer_fraction(systems::Vector{DiffusingMoleculeSystem})
+    map(systems) do system
+        n_dimers = count(mol -> mol.state == 2, system.molecules)
+        n_total = length(system.molecules)
+        n_dimers / n_total
+    end
+end
+

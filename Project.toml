@@ -15,7 +15,6 @@ SMLMData = "5488f106-40b8-4660-84c5-84a168990d1b"
 CairoMakie = "0.13"
 Distributions = "0.25"
 Images = "0.26"
-MicroscopePSFs = "0.3, 0.4"
 SMLMData = "0.2"
 julia = "1.6"
 

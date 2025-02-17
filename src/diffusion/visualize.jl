@@ -1,81 +1,166 @@
 
-
 """
-    show_frame(states::MoleculeStates, framenum::Int64, args::ArgsSmol)
+    show_frame(system::DiffusingMoleculeSystem;
+              title::String="", show_dimers::Bool=true)
 
-Display a scatter plot of the positions of all molecules in the system at a given time step.
+Display a scatter plot of molecular positions in the system.
 
 # Arguments
-- `states::MoleculeHistory`: a `MoleculeHistory` object containing the states of the system at each time step
-- `framenum::Int64`: the time step to display
-- `args::ArgsSmol`: a struct containing the simulation parameters
+- `system::DiffusingMoleculeSystem`: System state to visualize
+
+# Optional Arguments
+- `title::String=""`: Plot title
+- `show_dimers::Bool=true`: Whether to color-code dimers differently
 
 # Returns
-- f::Figure
-
+- `Figure`: Generated figure
 """
-function show_frame(states::MoleculeHistory, framenum, args)
-    box_size = args.box_size
-    x = [mol.x for mol in states.frames[framenum].molecules]
-    y = [mol.y for mol in states.frames[framenum].molecules]
-    colors = [mol.state == 2 ? :red : :blue for mol in states.frames[framenum].molecules]
+function show_frame(system::DiffusingMoleculeSystem; 
+                   title::String="",
+                   show_dimers::Bool=true)
+    
+    # Extract positions
+    x = [mol.x for mol in system.molecules]
+    y = [mol.y for mol in system.molecules]
+    
+    # Determine colors
+    colors = if show_dimers
+        [mol.state == 2 ? :red : :blue for mol in system.molecules]
+    else
+        fill(:blue, length(system.molecules))
+    end
+    
+    # Create figure
     f = Figure()
     ax = Axis(f[1,1]; 
-    title="Positions at frame $framenum")
-    scatter!(ax, x, y, markersize=10, color=colors, yflip = true)
-    xlims!(ax, (0, box_size))
-    ylims!(ax, (box_size, 0))
-    display(f)
+        title = isempty(title) ? "Molecule Positions" : title,
+        xlabel = "x (μm)",
+        ylabel = "y (μm)",
+        yreversed = true)
+    
+    # Plot molecules
+    scatter!(ax, x, y, 
+        markersize = 10,
+        color = colors)
+    
+    # Set limits based on box size
+    xlims!(ax, (0, system.box_size))
+    ylims!(ax, (system.box_size, 0))
+    
     return f
 end
 
 """
-    show_frame(states::MoleculeStates, framenum::Int64, args::ArgsSmol, filename::String)
+    show_frame(system::DiffusingMoleculeSystem, filename::String; kwargs...)
 
-Display a scatter plot of the positions of all molecules in the system at a given time step and save it to a file.
-"""
-function show_frame(states::MoleculeHistory, framenum, args, filename::String)
-    f = show_frame(states, framenum, args)
-    save(filename, f)
-end
-
-
-"""
-gen_movie(states::MoleculeStates, args::ArgsSmol; filename::String="smoluchowski.mp4")
-
-Generate an animation of the positions of all molecules in the system over time.
+Display and save a scatter plot of molecular positions.
 
 # Arguments
-- `states::MoleculeHistory`: a `MoleculeHistory` object containing the states of the system at each time step
-- `args::ArgsSmol`: a struct containing the simulation parameters
-- `filename::String`: the name of the output file (default: "smoluchowski.mp4")
+- `system::DiffusingMoleculeSystem`: System state to visualize
+- `filename::String`: Output file path
 
-# Returns
-- `nothing`
+# Optional kwargs are passed to show_frame
+"""
+function show_frame(system::DiffusingMoleculeSystem, filename::String; kwargs...)
+    f = show_frame(system, kwargs...)
+    save(filename, f)
+    return f
+end
 
 """
-function gen_movie(states::MoleculeHistory, args; filename::String="smoluchowski.mp4")
-    dt = args.dt
-    box_size = args.box_size
+    visualize_sequence(systems::Vector{DiffusingMoleculeSystem};
+                      filename::String="smoluchowski.mp4",
+                      framerate::Int=30,
+                      show_dimers::Bool=true)
+
+Generate an animation of molecular dynamics.
+
+# Arguments
+- `systems::Vector{DiffusingMoleculeSystem}`: Sequence of system states
+
+# Optional Arguments
+- `filename::String="smoluchowski.mp4"`: Output file path
+- `framerate::Int=30`: Video frame rate
+- `show_dimers::Bool=true`: Whether to color-code dimers
+
+# Returns
+- Nothing, but saves animation to file
+"""
+function visualize_sequence(systems::Vector{DiffusingMoleculeSystem};
+                          filename::String="smoluchowski.mp4",
+                          framerate::Int=30,
+                          show_dimers::Bool=true)
+    
+    # Set up figure
     fig = Figure()
-    ax = Axis(fig[1, 1], xlabel="x", ylabel="y",  
-    title="Smoluchowski Simulation",
-    yreversed = true)
-    sc = scatter!(ax, 
-        [mol.x for mol in states.frames[1].molecules],
-        [mol.y for mol in states.frames[1].molecules], 
-        color=[mol.state == 2 ? :red : :blue for mol in states.frames[1].molecules], 
-        markersize=10)
+    ax = Axis(fig[1, 1], 
+        xlabel = "x (μm)",
+        ylabel = "y (μm)",
+        title = "Molecular Dynamics Simulation",
+        yreversed = true)
+    
+    # Initial scatter plot
+    x = [mol.x for mol in systems[1].molecules]
+    y = [mol.y for mol in systems[1].molecules]
+    colors = show_dimers ? 
+        [mol.state == 2 ? :red : :blue for mol in systems[1].molecules] :
+        fill(:blue, length(systems[1].molecules))
+    
+    sc = scatter!(ax, x, y, 
+        color = colors,
+        markersize = 10)
+    
+    # Set consistent limits
+    box_size = systems[1].box_size
     xlims!(ax, (0, box_size))
     ylims!(ax, (box_size, 0))
-    display(sc)
-    framerate = Int(round(1/dt))
-    timestamps = 1:length(states.frames)
-    record(fig, filename, timestamps; framerate=framerate) do i
-        ax.title = "Positions at time step $i"
-        sc[1] = [mol.x for mol in states.frames[i].molecules]
-        sc[2] = [mol.y for mol in states.frames[i].molecules]
-        sc.color = [mol.state == 2 ? :red : :blue for mol in states.frames[i].molecules]
+    
+    # Generate animation frames
+    record(fig, filename, 1:length(systems); framerate=framerate) do i
+        # Update title with frame info
+        time = get(systems[i].metadata, "time", (i-1)*get(systems[i].metadata, "dt", 0.0))
+        ax.title = @sprintf("t = %.2f s", time)
+        
+        # Update positions and colors
+        sc[1] = [mol.x for mol in systems[i].molecules]
+        sc[2] = [mol.y for mol in systems[i].molecules]
+        if show_dimers
+            sc.color = [mol.state == 2 ? :red : :blue for mol in systems[i].molecules]
+        end
     end
+    
     return nothing
 end
+
+"""
+    visualize_simulation(params::SmoluchowskiParams;
+                        filename::String="smoluchowski.mp4",
+                        framerate::Int=30)
+
+Run a simulation and generate visualization.
+
+# Arguments
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Optional Arguments
+- `filename::String="smoluchowski.mp4"`: Output file path
+- `framerate::Int=30`: Video frame rate
+
+# Returns
+- `Vector{DiffusingMoleculeSystem}`: Generated system states
+"""
+function visualize_simulation(params::SmoluchowskiParams;
+                            filename::String="smoluchowski.mp4",
+                            framerate::Int=30)
+    
+    # Run simulation
+    systems = simulate(params)
+    
+    # Generate visualization
+    visualize_sequence(systems; 
+        filename=filename,
+        framerate=framerate)
+    
+    return systems
+end
+

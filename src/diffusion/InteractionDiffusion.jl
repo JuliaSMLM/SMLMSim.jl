@@ -10,12 +10,24 @@ using MicroscopePSFs
 using SMLMSim
 
 include("types.jl")
-include("diffusion.jl")
 include("smoluchowski.jl")
 include("visualize.jl")
 include("microscope.jl")
 include("dimer.jl")
 
-export smoluchowski, gen_movie, show_frame, gen_image, gen_image_stack, get_dimers
+# Core types and functions for diffusion simulation
+export
+    # Core types
+    DiffusingMolecule,
+    DiffusingMoleculeSystem,
+    SmoluchowskiParams,
+
+    # Core simulation functions
+    simulate,
+    simulate_and_image,
+
+    # Analysis functions
+    get_dimers,
+    gen_dimer_images
 
 end
