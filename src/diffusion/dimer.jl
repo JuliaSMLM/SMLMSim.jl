@@ -36,12 +36,12 @@ Extract dimers from a sequence of system states.
 # Returns
 - `Vector{DiffusingMoleculeSystem}`: Sequence of dimer-only states
 """
-function get_dimers(systems::Vector{DiffusingMoleculeSystem})
+function get_dimers(systems::Vector{<:DiffusingMoleculeSystem})
     [get_dimers(system) for system in systems]
 end
 
 """
-    gen_dimer_images(systems::Vector{DiffusingMoleculeSystem}, psf::PSF; kwargs...)
+    gen_dimer_images(systems::Vector{DiffusingMoleculeSystem}, psf::AbstractPSF; kwargs...)
 
 Generate microscope images showing only dimers.
 
@@ -56,7 +56,7 @@ Generate microscope images showing only dimers.
 # Returns
 - `Array{Float64,3}`: Stack of dimer-only images [ny, nx, frames]
 """
-function gen_dimer_images(systems::Vector{DiffusingMoleculeSystem}, psf::PSF;
+function gen_dimer_images(systems::Vector{<:DiffusingMoleculeSystem}, psf::AbstractPSF;
                          frame_integration::Int=1, poisson_noise::Bool=true)
     dimer_systems = get_dimers(systems)
     gen_image_sequence(psf, dimer_systems; 
@@ -75,7 +75,7 @@ Calculate the fraction of molecules in dimer state over time.
 # Returns
 - `Vector{Float64}`: Dimer fraction at each timepoint
 """
-function analyze_dimer_fraction(systems::Vector{DiffusingMoleculeSystem})
+function analyze_dimer_fraction(systems::Vector{<:DiffusingMoleculeSystem})
     map(systems) do system
         n_dimers = count(mol -> mol.state == 2, system.molecules)
         n_total = length(system.molecules)

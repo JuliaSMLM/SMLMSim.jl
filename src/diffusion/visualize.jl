@@ -1,4 +1,3 @@
-
 """
     show_frame(system::DiffusingMoleculeSystem;
               title::String="", show_dimers::Bool=true)
@@ -36,6 +35,7 @@ function show_frame(system::DiffusingMoleculeSystem;
         title = isempty(title) ? "Molecule Positions" : title,
         xlabel = "x (μm)",
         ylabel = "y (μm)",
+        aspect = DataAspect(),
         yreversed = true)
     
     # Plot molecules
@@ -86,7 +86,7 @@ Generate an animation of molecular dynamics.
 # Returns
 - Nothing, but saves animation to file
 """
-function visualize_sequence(systems::Vector{DiffusingMoleculeSystem};
+function visualize_sequence(systems::Vector{<:DiffusingMoleculeSystem};
                           filename::String="smoluchowski.mp4",
                           framerate::Int=30,
                           show_dimers::Bool=true)
@@ -97,6 +97,7 @@ function visualize_sequence(systems::Vector{DiffusingMoleculeSystem};
         xlabel = "x (μm)",
         ylabel = "y (μm)",
         title = "Molecular Dynamics Simulation",
+        aspect = DataAspect(),
         yreversed = true)
     
     # Initial scatter plot

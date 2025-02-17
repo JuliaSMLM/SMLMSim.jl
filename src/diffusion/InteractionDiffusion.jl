@@ -4,10 +4,14 @@ This module provides simulation tools for diffusion
 """
 module InteractionDiffusion
 
+using SMLMData 
 using Distributions
-using CairoMakie
 using MicroscopePSFs
 using SMLMSim
+
+using Printf
+using CairoMakie
+
 
 include("types.jl")
 include("smoluchowski.jl")
@@ -28,6 +32,11 @@ export
 
     # Analysis functions
     get_dimers,
-    gen_dimer_images
+    gen_dimer_images,
+
+    show_frame,
+    visualize_sequence,
+    visualize_simulation
+
 
 end

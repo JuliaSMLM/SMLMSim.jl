@@ -1,6 +1,4 @@
 # src/diffusion/smoluchowski.jl
-using SMLMData
-using Distributions
 
 """
     SmoluchowskiParams
@@ -8,15 +6,15 @@ using Distributions
 Parameters for Smoluchowski diffusion simulation.
 
 # Fields
-- `density::Float64`: number density (molecules/micron^2 or micron^3)
-- `box_size::Float64`: simulation box size in microns
-- `diff_monomer::Float64`: monomer diffusion coefficient (micron^2/s)
-- `diff_dimer::Float64`: dimer diffusion coefficient (micron^2/s)
-- `diff_dimer_rot::Float64`: dimer rotational diffusion coefficient (rad^2/s)
-- `k_off::Float64`: dimer dissociation rate (1/s)
-- `r_react::Float64`: reaction radius for dimerization (microns)
-- `d_dimer::Float64`: monomer separation in dimer (microns)
-- `dt::Float64`: simulation time step (s)
+- `density::Float64`: number density (molecules/μm²)
+- `box_size::Float64`: simulation box size (μm)
+- `diff_monomer::Float64`: monomer diffusion coefficient (μm²/s)
+- `diff_dimer::Float64`: dimer diffusion coefficient (μm²/s)
+- `diff_dimer_rot::Float64`: dimer rotational diffusion coefficient (rad²/s)
+- `k_off::Float64`: dimer dissociation rate (s⁻¹)
+- `r_react::Float64`: reaction radius (μm)
+- `d_dimer::Float64`: monomer separation in dimer (μm)
+- `dt::Float64`: time step (s)
 - `t_max::Float64`: total simulation time (s)
 - `ndims::Int`: number of dimensions (2 or 3)
 - `boundary::String`: boundary condition type ("periodic" or "reflecting")
@@ -34,6 +32,44 @@ Base.@kwdef mutable struct SmoluchowskiParams
     t_max::Float64 = 10.0
     ndims::Int = 2
     boundary::String = "periodic"
+end
+
+"""
+    initialize_system(params::SmoluchowskiParams)
+
+Create initial DiffusingMoleculeSystem with randomly placed monomers.
+"""
+function initialize_system(params::SmoluchowskiParams)
+    # Calculate number of molecules
+    n_molecules = round(Int, params.density * params.box_size^params.ndims)
+    
+    # Create camera matching box size
+    pixel_size = 0.1  # 100nm pixels
+    n_pixels = ceil(Int, params.box_size / pixel_size)
+    camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
+    
+    # Create emitters at random positions
+    molecules = Vector{DiffusingMolecule{Emitter2D{Float64}}}(undef, n_molecules)
+    for i in 1:n_molecules
+        x = rand(Uniform(0, params.box_size))
+        y = rand(Uniform(0, params.box_size))
+        
+        # Create basic emitter with position and standard brightness
+        emitter = Emitter2D{Float64}(x, y, 1000.0)
+        molecules[i] = DiffusingMolecule(emitter, 1, i, nothing, false)
+    end
+    
+    # Create system
+    DiffusingMoleculeSystem(
+        molecules,
+        camera,
+        params.box_size,
+        1,  # Start with single frame
+        1,  # Single dataset
+        Dict{String,Any}(
+            "simulation_parameters" => params
+        )
+    )
 end
 
 """
@@ -94,9 +130,6 @@ function update_monomer_position!(mol::DiffusingMolecule, params::SmoluchowskiPa
     
     mol.x += rand(Normal(0, σ))
     mol.y += rand(Normal(0, σ))
-    if params.ndims == 3
-        mol.z += rand(Normal(0, σ))
-    end
     
     mol.updated = true
 end
@@ -107,42 +140,30 @@ function update_dimer_position!(mol1::DiffusingMolecule, mol2::DiffusingMolecule
     σ_trans = sqrt(2 * params.diff_dimer * params.dt)
     dx = rand(Normal(0, σ_trans))
     dy = rand(Normal(0, σ_trans))
-    dz = params.ndims == 3 ? rand(Normal(0, σ_trans)) : 0.0
     
     # Current center of mass
     com_x = (mol1.x + mol2.x)/2
     com_y = (mol1.y + mol2.y)/2
-    com_z = (mol1.z + mol2.z)/2
     
     # Move center of mass
     com_x += dx
     com_y += dy
-    com_z += dz
     
     # Rotational diffusion
     σ_rot = sqrt(2 * params.diff_dimer_rot * params.dt)
     ϕ = calc_ϕ(mol1, mol2)
-    θ = calc_θ(mol1, mol2)
-    
-    # Update angles
     ϕ += rand(Normal(0, σ_rot))
-    if params.ndims == 3
-        θ += rand(Normal(0, σ_rot))
-    end
     
     # Calculate new positions relative to center of mass
     r = params.d_dimer/2
-    dx = r * cos(ϕ) * sin(θ)
-    dy = r * sin(ϕ) * sin(θ)
-    dz = r * cos(θ)
+    dx = r * cos(ϕ)
+    dy = r * sin(ϕ)
     
     # Update positions
     mol1.x = com_x - dx
     mol1.y = com_y - dy
-    mol1.z = com_z - dz
     mol2.x = com_x + dx
     mol2.y = com_y + dy
-    mol2.z = com_z + dz
     
     mol1.updated = true
     mol2.updated = true
@@ -154,9 +175,6 @@ function apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiPa
         if params.boundary == "periodic"
             mol.x = mod(mol.x, params.box_size)
             mol.y = mod(mol.y, params.box_size)
-            if params.ndims == 3
-                mol.z = mod(mol.z, params.box_size)
-            end
         else  # reflecting
             if mol.x < 0
                 mol.x = -mol.x
@@ -169,55 +187,8 @@ function apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiPa
             elseif mol.y > params.box_size
                 mol.y = 2params.box_size - mol.y
             end
-            
-            if params.ndims == 3
-                if mol.z < 0
-                    mol.z = -mol.z
-                elseif mol.z > params.box_size
-                    mol.z = 2params.box_size - mol.z
-                end
-            end
         end
     end
-end
-
-"""
-    initialize_system(params::SmoluchowskiParams)
-
-Create initial DiffusingMoleculeSystem with randomly placed monomers.
-"""
-function initialize_system(params::SmoluchowskiParams)
-    # Calculate number of molecules based on density and dimensions
-    n_molecules = round(Int, params.density * params.box_size^params.ndims)
-    
-    # Create emitters at random positions
-    molecules = Vector{DiffusingMolecule{Emitter2D{Float64}}}(undef, n_molecules)
-    for i in 1:n_molecules
-        x = rand(Uniform(0, params.box_size))
-        y = rand(Uniform(0, params.box_size))
-        z = params.ndims == 3 ? rand(Uniform(0, params.box_size)) : 0.0
-        
-        # Create basic emitter with position and standard brightness
-        emitter = Emitter2D{Float64}(x, y, 1000.0)
-        molecules[i] = DiffusingMolecule(emitter, 1, nothing, false)
-    end
-    
-    # Create camera matching box size
-    pixel_size = 0.1  # 100nm pixels
-    n_pixels = ceil(Int, params.box_size / pixel_size)
-    camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
-    
-    # Create system
-    DiffusingMoleculeSystem(
-        molecules,
-        camera,
-        params.box_size,
-        1,  # Start with single frame
-        1,  # Single dataset
-        Dict{String,Any}(
-            "simulation_parameters" => params
-        )
-    )
 end
 
 """
@@ -225,7 +196,7 @@ end
 
 Run a complete Smoluchowski diffusion simulation.
 
-Returns a vector of DiffusingMoleculeSystem states at each timepoint.
+Returns vector of DiffusingMoleculeSystem states at each timepoint.
 """
 function simulate(params::SmoluchowskiParams)
     # Initialize

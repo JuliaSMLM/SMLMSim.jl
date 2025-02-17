@@ -6,7 +6,7 @@
 Generate a microscope image from a diffusing molecule system.
 
 # Arguments
-- `psf::PSF`: Point spread function model (e.g., Airy2D, Gaussian2D)
+- `psf::AbstractPSF`: Point spread function model (e.g., Airy2D, Gaussian2D)
 - `system::DiffusingMoleculeSystem`: The molecular system state
 - `frame::Int`: Frame number to generate
 
@@ -16,7 +16,7 @@ Generate a microscope image from a diffusing molecule system.
 # Returns
 - Array{Float64,2}: Generated image with dimensions matching system camera
 """
-function gen_image(psf::PSF, system::DiffusingMoleculeSystem, frame::Int;
+function gen_image(psf::AbstractPSF, system::DiffusingMoleculeSystem, frame::Int;
                   poisson_noise::Bool=true)
     
     # Get camera dimensions from pixel edges
@@ -57,7 +57,7 @@ end
 Generate a sequence of microscope images from diffusing molecule system states.
 
 # Arguments
-- `psf::PSF`: Point spread function model
+- `psf::AbstractPSF`: Point spread function model
 - `systems::Vector{DiffusingMoleculeSystem}`: Sequence of system states
 
 # Optional Arguments
@@ -67,7 +67,7 @@ Generate a sequence of microscope images from diffusing molecule system states.
 # Returns
 - Array{Float64,3}: Stack of generated images [ny, nx, frames]
 """
-function gen_image_sequence(psf::PSF, systems::Vector{DiffusingMoleculeSystem};
+function gen_image_sequence(psf::AbstractPSF, systems::Vector{<:DiffusingMoleculeSystem};
                           frame_integration::Int=1, poisson_noise::Bool=true)
     
     # Get dimensions from first system
@@ -127,7 +127,7 @@ Run a complete diffusion simulation and generate microscope images.
 
 # Arguments
 - `params::SmoluchowskiParams`: Simulation parameters
-- `psf::PSF`: Point spread function model
+- `psf::MicroscopePSFs.PSF`: Point spread function model
 
 # Optional Arguments
 - `frame_integration::Int=1`: Number of simulation frames to integrate per output frame
@@ -137,7 +137,7 @@ Run a complete diffusion simulation and generate microscope images.
 - Array{Float64,3}: Stack of generated images [ny, nx, frames]
 - Vector{DiffusingMoleculeSystem}: System states at each timestep
 """
-function simulate_and_image(params::SmoluchowskiParams, psf::PSF;
+function simulate_and_image(params::SmoluchowskiParams, psf::AbstractPSF;
                           frame_integration::Int=1, poisson_noise::Bool=true)
     
     # Run diffusion simulation

@@ -13,7 +13,7 @@ include("interface.jl")
 # Submodules
 include("diffusion/InteractionDiffusion.jl")
 
-using SMLMSim.InteractionDiffusion
+using .InteractionDiffusion
 
 
 # Core types and functions for diffusion simulation
