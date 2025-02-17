@@ -1,7 +1,7 @@
 using Revise 
 using SMLMSim
 using SMLMData
-using CairoMakie
+using GLMakie
 
 # Create camera with physical pixel size
 camera = IdealCamera(1:128, 1:256, 0.1)  # 128x256 pixels, 100nm pixels
@@ -25,7 +25,7 @@ y_noisy = [e.y for e in smld_noisy.emitters]
 photons = [e.photons for e in smld_noisy.emitters]
 
 # Create multi-panel figure
-fig = Figure(resolution=(800, 800))
+fig = Figure(size=(800, 800))
 
 # True positions
 ax1 = Axis(fig[1, 1],
