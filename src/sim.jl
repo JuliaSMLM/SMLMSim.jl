@@ -1,3 +1,5 @@
+using Distributions
+
 """
     CTMC{T<:AbstractFloat, U<:Int}
 
@@ -5,7 +7,7 @@ A Continuous Time Markov Chain representation storing the full trajectory of sta
 
 # Fields
 - `simulation_time::T`: Total simulation time span
-- `transitiontimes::Vector{T}`: Time points at which state changes occurred, starting at 0.0 
+- `transition_times::Vector{T}`: Time points at which state changes occurred, starting at 0.0 
 - `states::Vector{U}`: Sequence of states entered at each transition time, starting with initial state
 
 # Type Parameters
@@ -13,13 +15,13 @@ A Continuous Time Markov Chain representation storing the full trajectory of sta
 - `U`: Integer type for state indices
 
 # Note
-The `states` and `transitiontimes` vectors have the same length, with each entry in `states[i]`
-representing the state entered at time `transitiontimes[i]`. The system remains in `states[i]` 
-until time `transitiontimes[i+1]`.
+The `states` and `transition_times` vectors have the same length, with each entry in `states[i]`
+representing the state entered at time `transition_times[i]`. The system remains in `states[i]` 
+until time `transition_times[i+1]`.
 """
 mutable struct CTMC{T<:AbstractFloat,U<:Int}
     simulation_time::T
-    transitiontimes::Vector{T}
+    transition_times::Vector{T}
     states::Vector{U}
 end
 
@@ -46,17 +48,33 @@ Simulates a CTMC using the Gillespie algorithm:
 3. Repeat until exceeding simulation_time
 """
 function CTMC(q::Array{T}, simulation_time::T, state1::Int) where {T<:AbstractFloat}
+    # Validate inputs
+    if size(q, 1) != size(q, 2)
+        throw(ArgumentError("Rate matrix q must be square"))
+    end
+    if any(diag(q) .!= 0)
+        @warn "Diagonal elements of rate matrix should be zero"
+    end
+    if state1 < 1 || state1 > size(q, 1)
+        throw(ArgumentError("Initial state must be between 1 and size(q,1)"))
+    end
+    
     lastchange = zero(T)
     currentstate = state1
 
     states = [state1]
-    transitiontimes = [lastchange]
+    transition_times = [lastchange]
 
     sidx = Vector((1:size(q, 1)))
 
     while lastchange < simulation_time
         # get time for state change
         k_tot = sum(q[currentstate, :])
+        if k_tot ≈ 0
+            # If total rate is zero, we're in an absorbing state
+            break
+        end
+        
         Δt = rand(Exponential(1 / k_tot))
 
         # get the new state
@@ -70,14 +88,14 @@ function CTMC(q::Array{T}, simulation_time::T, state1::Int) where {T<:AbstractFl
         # update CTMC
         lastchange += Δt
         push!(states, newstate)
-        push!(transitiontimes, lastchange)
+        push!(transition_times, lastchange)
         currentstate = newstate
     end
-    return CTMC(simulation_time, transitiontimes, states)
+    return CTMC(simulation_time, transition_times, states)
 end
 
 """
-    getstate(ctmc::CTMC, t::AbstractFloat)
+    get_state(ctmc::CTMC, t::AbstractFloat)
 
 Get the state of the CTMC at a specific time point.
 
@@ -92,17 +110,24 @@ Get the state of the CTMC at a specific time point.
 Searches through transition times to find the state active at time t.
 Returns the state that was entered at the last transition before t.
 """
-function getstate(ctmc::CTMC, t::AbstractFloat)
+function get_state(ctmc::CTMC, t::AbstractFloat)
+    if t < 0 || t > ctmc.simulation_time
+        throw(ArgumentError("Time point must be between 0 and simulation_time"))
+    end
+    
     nstates = length(ctmc.states)
     for nn = 2:nstates
-        if t < ctmc.transitiontimes[nn]
+        if t < ctmc.transition_times[nn]
             return ctmc.states[nn-1]
         end
     end
+    
+    # If we get here, t is after the last transition
+    return ctmc.states[end]
 end
 
 """
-    getnext(ctmc::CTMC, t::AbstractFloat)
+    get_next(ctmc::CTMC, t::AbstractFloat)
 
 Get the next state transition after a specific time point.
 
@@ -117,17 +142,24 @@ Get the next state transition after a specific time point.
 Returns the next state that will be entered and when it will be entered,
 searching from the current time point forward.
 """
-function getnext(ctmc::CTMC, t::AbstractFloat)
+function get_next(ctmc::CTMC, t::AbstractFloat)
+    if t < 0 || t > ctmc.simulation_time
+        throw(ArgumentError("Time point must be between 0 and simulation_time"))
+    end
+    
     nstates = length(ctmc.states)
     for nn = 1:nstates
-        if t < ctmc.transitiontimes[nn]
-            return ctmc.states[nn], ctmc.transitiontimes[nn]
+        if t < ctmc.transition_times[nn]
+            return ctmc.states[nn], ctmc.transition_times[nn]
         end
     end
+    
+    # If we get here, t is after the last transition
+    return ctmc.states[end], ctmc.simulation_time
 end
 
 """
-    intensitytrace(f::GenericFluor, nframes::Int, framerate::Real; state1=1)
+    intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1)
 
 Calculate a fluorescence intensity trace by integrating emission during fluorescent state occupancy.
 
@@ -146,16 +178,30 @@ For each frame:
 2. Integrates emission (rate f.γ) during fluorescent state periods
 3. Accumulates photons within frame exposure time (1/framerate)
 
+# Example
+```julia
+fluor = GenericFluor(; γ=10000.0, q=[0 10; 1e-1 0])
+photons = intensity_trace(fluor, 1000, 10.0)
+```
+
 # Note
 - State 1 is assumed to be the fluorescent state
 - Emission only occurs in state 1 with rate f.γ
 - Frame exposure is assumed to be 1/framerate (100% duty cycle)
 """
-function intensitytrace(f::GenericFluor, nframes::Int, framerate::Real; state1=1)
+function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1)
+    # Input validation
+    if nframes <= 0
+        throw(ArgumentError("Number of frames must be positive"))
+    end
+    if framerate <= 0
+        throw(ArgumentError("Frame rate must be positive"))
+    end
+    
     simulation_time = nframes / framerate
 
     # generate CTMC
-    ctmc = SMLMSim.CTMC(f.q, simulation_time, state1)
+    ctmc = CTMC(f.q, simulation_time, state1)
 
     # generate integrated photons 
     exptime = 1 / framerate
@@ -164,8 +210,8 @@ function intensitytrace(f::GenericFluor, nframes::Int, framerate::Real; state1=1
         t = (nn - 1) * exptime
         frameend = nn * exptime
         while t < frameend
-            currentstate = SMLMSim.getstate(ctmc, t)
-            (_, nexttime) = SMLMSim.getnext(ctmc, t)
+            currentstate = get_state(ctmc, t)
+            (_, nexttime) = get_next(ctmc, t)
             tend = min(frameend, nexttime)
             if currentstate == 1  # the fluorescent state 
                 photons[nn] += f.γ * (tend - t)
@@ -177,7 +223,7 @@ function intensitytrace(f::GenericFluor, nframes::Int, framerate::Real; state1=1
 end
 
 """
-    kineticmodel(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Real;
+    kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Real;
                  ndatasets::Int=1, minphotons=50.0, state1::Int=2)
 
 Generate kinetic blinking model from existing localization data.
@@ -201,13 +247,38 @@ For each unique position in the input SMLD:
 3. Preserves track_id for linking emitters from same position
 4. Maintains camera and extends metadata from input SMLD
 
+# Example
+```julia
+camera = IdealCamera(1:128, 1:128, 0.1)
+pattern = Nmer2D()
+smld_true, _, _ = sim(ρ=1.0, pattern=pattern, camera=camera)
+
+# Add blinking kinetics
+fluor = GenericFluor(; γ=10000.0, q=[0 10; 1e-1 0])
+smld_model = kinetic_model(smld_true, fluor, 1000, 10.0)
+```
+
 # Note
 The emitter type (2D/3D) is automatically determined from the input SMLD.
 Position uncertainties are initialized to 0 and can be set using the
 noise() function.
 """
-function kineticmodel(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Real;
-                     ndatasets::Int=1, minphotons=50.0, state1::Int=2)
+function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Real;
+                      ndatasets::Int=1, minphotons=50.0, state1::Int=2)
+    # Input validation
+    if nframes <= 0
+        throw(ArgumentError("Number of frames must be positive"))
+    end
+    if framerate <= 0
+        throw(ArgumentError("Frame rate must be positive"))
+    end
+    if ndatasets <= 0
+        throw(ArgumentError("Number of datasets must be positive"))
+    end
+    if minphotons < 0
+        throw(ArgumentError("Minimum photons must be non-negative"))
+    end
+    
     emitter_type = eltype(smld.emitters)
     emitters = Vector{emitter_type}()
 
@@ -224,7 +295,7 @@ function kineticmodel(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Rea
     true_positions = sort(collect(values(grouped_emitters)), by=e -> e.track_id)
 
     for dd = 1:ndatasets, pos in true_positions
-        photons = SMLMSim.intensitytrace(f, nframes, framerate; state1=state1)
+        photons = intensity_trace(f, nframes, framerate; state1=state1)
         framenum = findall(photons .> minphotons)
 
         # Create emitter for each frame where photons > threshold
@@ -287,6 +358,17 @@ For each emitter:
 3. Updates uncertainty fields in emitter
 4. Preserves all other emitter properties (frame, dataset, track_id)
 
+# Example
+```julia
+# First create ground truth model with blinking
+camera = IdealCamera(1:128, 1:128, 0.1)
+pattern = Nmer2D()
+_, smld_model, _ = sim(ρ=1.0, pattern=pattern, camera=camera)
+
+# Then add localization noise with specific PSF width
+smld_noisy = noise(smld_model, 0.13)  # 130nm PSF width
+```
+
 # Note
 Automatically handles both 2D and 3D cases based on emitter type in SMLD.
 Input σ_psf must match dimensionality (scalar for 2D, vector for 3D).
@@ -301,9 +383,17 @@ function noise(smld::BasicSMLD, σ_psf::Union{AbstractFloat, Vector{<:AbstractFl
         error("2D emitter type requires scalar σ_psf value")
     end
     
+    if is_3d && length(σ_psf) != 3
+        error("3D emitter type requires vector of 3 σ_psf values [σx, σy, σz]")
+    end
+    
     new_emitters = similar(smld.emitters)
     
     for (i, emitter) in enumerate(smld.emitters)
+        if emitter.photons <= 0
+            error("Emitter photon count must be positive")
+        end
+        
         σ = is_3d ? σ_psf ./ sqrt(emitter.photons) : σ_psf / sqrt(emitter.photons)
         
         coords = if is_3d
@@ -343,11 +433,15 @@ function noise(smld::BasicSMLD, σ_psf::Union{AbstractFloat, Vector{<:AbstractFl
         )
     end
     
+    metadata = copy(smld.metadata)
+    metadata["simulation_type"] = "noisy_model"
+    metadata["psf_width"] = σ_psf
+    
     return BasicSMLD(
         new_emitters,
         smld.camera,
         smld.n_frames,
         smld.n_datasets,
-        copy(smld.metadata)
+        metadata
     )
 end

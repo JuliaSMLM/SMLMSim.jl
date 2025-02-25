@@ -1,5 +1,3 @@
-# src/types.jl
-
 """
     DiffusingMolecule{E<:AbstractEmitter}
 
@@ -11,6 +9,20 @@ A molecule that can diffuse and form dimers, containing an SMLM emitter.
 - `id::Int`: unique identifier for tracking
 - `link::Union{Nothing,Int}`: id of linked molecule (for dimers)
 - `updated::Bool`: flag for position updates
+
+# Type Parameters
+- `E`: Type of emitter contained in the molecule (must be a subtype of AbstractEmitter)
+
+# Examples
+```julia
+# Create a 2D diffusing molecule
+emitter = Emitter2D(1.0, 2.0, 1000.0)
+molecule = DiffusingMolecule(emitter, 1, 1, nothing, false)
+
+# Create a 3D diffusing molecule
+emitter3d = Emitter3D(1.0, 2.0, 0.5, 1000.0)
+molecule3d = DiffusingMolecule(emitter3d, 1, 2, nothing, false)
+```
 """
 mutable struct DiffusingMolecule{E<:AbstractEmitter}
     emitter::E
@@ -49,6 +61,25 @@ System of diffusing molecules built on SMLD.
 - `n_frames::Int`: Total number of frames
 - `n_datasets::Int`: Number of datasets (typically 1)
 - `metadata::Dict{String,Any}`: Additional simulation parameters
+
+# Type Parameters
+- `E`: Type of emitter contained in the molecules (must be a subtype of AbstractEmitter)
+
+# Examples
+```julia
+# Create a simple system with a single molecule
+camera = IdealCamera(1:100, 1:100, 0.1)
+emitter = Emitter2D(1.0, 2.0, 1000.0)
+molecule = DiffusingMolecule(emitter, 1, 1, nothing, false)
+system = DiffusingMoleculeSystem(
+    [molecule], 
+    camera, 
+    10.0,  # box size
+    1,     # frames
+    1,     # datasets
+    Dict{String,Any}("simulation_type" => "diffusion")
+)
+```
 """
 mutable struct DiffusingMoleculeSystem{E<:AbstractEmitter} <: SMLD
     molecules::Vector{DiffusingMolecule{E}}
@@ -69,25 +100,87 @@ function Base.getproperty(sys::DiffusingMoleculeSystem, s::Symbol)
 end
 
 # Helper functions for geometric calculations
-"""Calculate Euclidean distance between two molecules"""
+"""
+    calc_r(mol1::DiffusingMolecule{<:Emitter2D}, mol2::DiffusingMolecule{<:Emitter2D})
+
+Calculate Euclidean distance between two 2D molecules.
+
+# Arguments
+- `mol1::DiffusingMolecule{<:Emitter2D}`: First molecule
+- `mol2::DiffusingMolecule{<:Emitter2D}`: Second molecule
+
+# Returns
+- `Float64`: Distance between molecules in microns
+
+# Example
+```julia
+distance = calc_r(molecule1, molecule2)
+```
+"""
 function calc_r(mol1::DiffusingMolecule{<:Emitter2D}, mol2::DiffusingMolecule{<:Emitter2D})
     sqrt((mol1.x - mol2.x)^2 + (mol1.y - mol2.y)^2)
 end
 
+"""
+    calc_r(mol1::DiffusingMolecule{<:Emitter3D}, mol2::DiffusingMolecule{<:Emitter3D})
+
+Calculate Euclidean distance between two 3D molecules.
+
+# Arguments
+- `mol1::DiffusingMolecule{<:Emitter3D}`: First molecule
+- `mol2::DiffusingMolecule{<:Emitter3D}`: Second molecule
+
+# Returns
+- `Float64`: Distance between molecules in microns
+"""
 function calc_r(mol1::DiffusingMolecule{<:Emitter3D}, mol2::DiffusingMolecule{<:Emitter3D})
     sqrt((mol1.x - mol2.x)^2 + (mol1.y - mol2.y)^2 + (mol1.z - mol2.z)^2)
 end
 
-"""Calculate azimuthal angle between molecules"""
+"""
+    calc_ϕ(mol1::DiffusingMolecule, mol2::DiffusingMolecule)
+
+Calculate azimuthal angle between molecules.
+
+# Arguments
+- `mol1::DiffusingMolecule`: First molecule
+- `mol2::DiffusingMolecule`: Second molecule
+
+# Returns
+- `Float64`: Azimuthal angle in radians
+"""
 function calc_ϕ(mol1::DiffusingMolecule, mol2::DiffusingMolecule)
     atan(mol2.y - mol1.y, mol2.x - mol1.x)
 end
 
-"""Calculate polar angle between molecules"""
+"""
+    calc_θ(mol1::DiffusingMolecule{<:Emitter2D}, mol2::DiffusingMolecule{<:Emitter2D})
+
+Calculate polar angle between 2D molecules (always π/2 for 2D).
+
+# Arguments
+- `mol1::DiffusingMolecule{<:Emitter2D}`: First molecule
+- `mol2::DiffusingMolecule{<:Emitter2D}`: Second molecule
+
+# Returns
+- `Float64`: Polar angle in radians (always π/2 for 2D)
+"""
 function calc_θ(mol1::DiffusingMolecule{<:Emitter2D}, mol2::DiffusingMolecule{<:Emitter2D})
     π/2  # Always in xy plane for 2D
 end
 
+"""
+    calc_θ(mol1::DiffusingMolecule{<:Emitter3D}, mol2::DiffusingMolecule{<:Emitter3D})
+
+Calculate polar angle between 3D molecules.
+
+# Arguments
+- `mol1::DiffusingMolecule{<:Emitter3D}`: First molecule
+- `mol2::DiffusingMolecule{<:Emitter3D}`: Second molecule
+
+# Returns
+- `Float64`: Polar angle in radians
+"""
 function calc_θ(mol1::DiffusingMolecule{<:Emitter3D}, mol2::DiffusingMolecule{<:Emitter3D})
     r = calc_r(mol1, mol2)
     acos((mol2.z - mol1.z) / r)
@@ -98,8 +191,34 @@ end
     dimerize!(mol1::DiffusingMolecule, mol2::DiffusingMolecule, distance::Real)
 
 Form a dimer between two molecules.
+
+# Arguments
+- `mol1::DiffusingMolecule`: First molecule
+- `mol2::DiffusingMolecule`: Second molecule
+- `distance::Real`: Distance between molecules in the dimer in microns
+
+# Returns
+- `Nothing`
+
+# Example
+```julia
+dimerize!(molecule1, molecule2, 0.05)  # Form dimer with 50nm separation
+```
+
+# Note
+Molecules are repositioned to maintain the specified distance.
+The center of mass position is preserved.
 """
 function dimerize!(mol1::DiffusingMolecule, mol2::DiffusingMolecule, distance::Real)
+    # Input validation
+    if mol1.state == 2 || mol2.state == 2
+        return nothing  # Already part of dimers
+    end
+    
+    if distance <= 0
+        throw(ArgumentError("Distance must be positive"))
+    end
+    
     # Update states
     mol1.state = 2
     mol2.state = 2
@@ -131,6 +250,22 @@ end
     monomerize!(mol::DiffusingMolecule, system::DiffusingMoleculeSystem)
 
 Convert a dimer back to monomers.
+
+# Arguments
+- `mol::DiffusingMolecule`: Molecule that is part of a dimer
+- `system::DiffusingMoleculeSystem`: System containing all molecules
+
+# Returns
+- `Nothing`
+
+# Example
+```julia
+monomerize!(molecule, system)  # Break dimer into monomers
+```
+
+# Note
+Both molecules in the dimer are changed to monomer state.
+Positions are not changed.
 """
 function monomerize!(mol::DiffusingMolecule, system::DiffusingMoleculeSystem)
     if mol.state != 2 || isnothing(mol.link)

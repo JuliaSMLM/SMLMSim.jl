@@ -15,6 +15,25 @@ include("diffusion/InteractionDiffusion.jl")
 
 using .InteractionDiffusion
 
+# Export molecule types
+export
+    # Abstract molecule types
+    Molecule,
+    
+    # Concrete molecule types
+    GenericFluor
+
+# Export simulation functions
+export
+    # Kinetic simulation
+    intensitytrace,
+    kineticmodel,
+    noise,
+    
+    # CTMC type and functions
+    CTMC,
+    getstate,
+    getnext
 
 # Core types and functions for diffusion simulation
 export
@@ -60,4 +79,3 @@ export
 
 
 end
-

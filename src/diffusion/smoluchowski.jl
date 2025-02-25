@@ -1,5 +1,3 @@
-# src/diffusion/smoluchowski.jl
-
 """
     SmoluchowskiParams
 
@@ -18,6 +16,28 @@ Parameters for Smoluchowski diffusion simulation.
 - `t_max::Float64`: total simulation time (s)
 - `ndims::Int`: number of dimensions (2 or 3)
 - `boundary::String`: boundary condition type ("periodic" or "reflecting")
+
+# Examples
+```julia
+# Default parameters
+params = SmoluchowskiParams()
+
+# Custom parameters
+params = SmoluchowskiParams(
+    density = 1.0,           # 1 molecule per μm²
+    box_size = 20.0,         # 20μm × 20μm box
+    diff_monomer = 0.2,      # 0.2 μm²/s
+    diff_dimer = 0.1,        # 0.1 μm²/s
+    diff_dimer_rot = 0.8,    # 0.8 rad²/s
+    k_off = 0.1,             # 0.1 s⁻¹
+    r_react = 0.02,          # 20nm reaction radius
+    d_dimer = 0.06,          # 60nm dimer separation
+    dt = 0.005,              # 5ms time step
+    t_max = 20.0,            # 20s simulation
+    ndims = 3,               # 3D simulation
+    boundary = "reflecting"  # reflecting boundaries
+)
+```
 """
 Base.@kwdef mutable struct SmoluchowskiParams
     density::Float64 = 1.0
@@ -32,12 +52,70 @@ Base.@kwdef mutable struct SmoluchowskiParams
     t_max::Float64 = 10.0
     ndims::Int = 2
     boundary::String = "periodic"
+    
+    function SmoluchowskiParams(
+        density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
+        k_off, r_react, d_dimer, dt, t_max, ndims, boundary
+    )
+        # Input validation
+        if density <= 0
+            throw(ArgumentError("Density must be positive"))
+        end
+        if box_size <= 0
+            throw(ArgumentError("Box size must be positive"))
+        end
+        if diff_monomer < 0
+            throw(ArgumentError("Monomer diffusion coefficient must be non-negative"))
+        end
+        if diff_dimer < 0
+            throw(ArgumentError("Dimer diffusion coefficient must be non-negative"))
+        end
+        if diff_dimer_rot < 0
+            throw(ArgumentError("Dimer rotational diffusion coefficient must be non-negative"))
+        end
+        if k_off < 0
+            throw(ArgumentError("Dissociation rate must be non-negative"))
+        end
+        if r_react <= 0
+            throw(ArgumentError("Reaction radius must be positive"))
+        end
+        if d_dimer <= 0
+            throw(ArgumentError("Dimer separation must be positive"))
+        end
+        if dt <= 0
+            throw(ArgumentError("Time step must be positive"))
+        end
+        if t_max <= 0
+            throw(ArgumentError("Maximum simulation time must be positive"))
+        end
+        if ndims != 2 && ndims != 3
+            throw(ArgumentError("Number of dimensions must be 2 or 3"))
+        end
+        if boundary != "periodic" && boundary != "reflecting"
+            throw(ArgumentError("Boundary condition must be 'periodic' or 'reflecting'"))
+        end
+        
+        new(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
+            k_off, r_react, d_dimer, dt, t_max, ndims, boundary)
+    end
 end
 
 """
     initialize_system(params::SmoluchowskiParams)
 
 Create initial DiffusingMoleculeSystem with randomly placed monomers.
+
+# Arguments
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Returns
+- `DiffusingMoleculeSystem`: Initialized system with molecules
+
+# Example
+```julia
+params = SmoluchowskiParams()
+system = initialize_system(params)
+```
 """
 function initialize_system(params::SmoluchowskiParams)
     # Calculate number of molecules
@@ -76,6 +154,18 @@ end
     update_species!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
 
 Update molecular states (dimerization/dissociation) for all molecules.
+
+# Arguments
+- `system::DiffusingMoleculeSystem`: System to update
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Returns
+- `Nothing`
+
+# Details
+For each molecule:
+1. If monomer, check for possible dimerization with other monomers
+2. If dimer, check for possible dissociation based on k_off rate
 """
 function update_species!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
     for (i, mol1) in enumerate(system.molecules)
@@ -102,6 +192,19 @@ end
     update_positions!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
 
 Update positions of all molecules using appropriate diffusion models.
+
+# Arguments
+- `system::DiffusingMoleculeSystem`: System to update
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Returns
+- `Nothing`
+
+# Details
+For each molecule:
+1. If monomer, update position with Brownian motion
+2. If dimer, update position and orientation with coupled diffusion
+3. Molecule positions are only updated once per timestep
 """
 function update_positions!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
     for mol in system.molecules
@@ -124,7 +227,18 @@ function update_positions!(system::DiffusingMoleculeSystem, params::Smoluchowski
     end
 end
 
-"""Update position of a single monomer"""
+"""
+    update_monomer_position!(mol::DiffusingMolecule, params::SmoluchowskiParams)
+
+Update position of a single monomer using Brownian motion.
+
+# Arguments
+- `mol::DiffusingMolecule`: Molecule to update
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Returns
+- `Nothing`
+"""
 function update_monomer_position!(mol::DiffusingMolecule, params::SmoluchowskiParams)
     σ = sqrt(2 * params.diff_monomer * params.dt)
     
@@ -134,7 +248,24 @@ function update_monomer_position!(mol::DiffusingMolecule, params::SmoluchowskiPa
     mol.updated = true
 end
 
-"""Update position and orientation of a dimer"""
+"""
+    update_dimer_position!(mol1::DiffusingMolecule, mol2::DiffusingMolecule, params::SmoluchowskiParams)
+
+Update position and orientation of a dimer with both translational and rotational diffusion.
+
+# Arguments
+- `mol1::DiffusingMolecule`: First molecule in dimer
+- `mol2::DiffusingMolecule`: Second molecule in dimer
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Returns
+- `Nothing`
+
+# Details
+1. Translational diffusion of center of mass
+2. Rotational diffusion around center of mass
+3. Maintains fixed separation distance between molecules
+"""
 function update_dimer_position!(mol1::DiffusingMolecule, mol2::DiffusingMolecule, params::SmoluchowskiParams)
     # Translational diffusion of center of mass
     σ_trans = sqrt(2 * params.diff_dimer * params.dt)
@@ -169,7 +300,22 @@ function update_dimer_position!(mol1::DiffusingMolecule, mol2::DiffusingMolecule
     mol2.updated = true
 end
 
-"""Apply periodic or reflecting boundary conditions"""
+"""
+    apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
+
+Apply periodic or reflecting boundary conditions to keep molecules in simulation box.
+
+# Arguments
+- `system::DiffusingMoleculeSystem`: System to apply boundaries to
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Returns
+- `Nothing`
+
+# Details
+- For periodic boundaries, positions wrap around the box edges
+- For reflecting boundaries, positions are reflected back into the box
+"""
 function apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
     for mol in system.molecules
         if params.boundary == "periodic"
@@ -192,13 +338,39 @@ function apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiPa
 end
 
 """
-    simulate(params::SmoluchowskiParams)
+    simulate(params::SmoluchowskiParams; kwargs...)
 
 Run a complete Smoluchowski diffusion simulation.
 
-Returns vector of DiffusingMoleculeSystem states at each timepoint.
+# Arguments
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Keyword Arguments
+- Any additional parameters are ignored (allows unified interface with other simulate methods)
+
+# Returns
+- `Vector{DiffusingMoleculeSystem}`: System states at each timepoint
+
+# Example
+```julia
+# Set up parameters
+params = SmoluchowskiParams(
+    density = 0.5,      # molecules per μm²
+    box_size = 10.0,    # μm
+    diff_monomer = 0.1, # μm²/s
+    t_max = 5.0         # s
+)
+
+# Run simulation
+systems = simulate(params)
+
+# Access results
+n_molecules = length(systems[1].molecules)
+final_state = systems[end]
+n_dimers = count(m -> m.state == 2, final_state.molecules)
+```
 """
-function simulate(params::SmoluchowskiParams)
+function simulate(params::SmoluchowskiParams; kwargs...)
     # Initialize
     n_steps = round(Int, params.t_max / params.dt)
     system = initialize_system(params)

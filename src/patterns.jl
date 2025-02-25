@@ -1,6 +1,23 @@
 # Pattern type definitions
+"""
+    Pattern
+
+Abstract type for all molecular spatial patterns.
+"""
 abstract type Pattern end
+
+"""
+    Pattern2D <: Pattern
+
+Abstract type for 2D molecular spatial patterns.
+"""
 abstract type Pattern2D <: Pattern end
+
+"""
+    Pattern3D <: Pattern
+
+Abstract type for 3D molecular spatial patterns.
+"""
 abstract type Pattern3D <: Pattern end
 
 #==========================================================================
@@ -10,13 +27,22 @@ abstract type Pattern3D <: Pattern end
 """
     Nmer2D <: Pattern2D
 
-N molecules symmetrically organized around a circle with diameter d    
+N molecules symmetrically organized around a circle with diameter d.
 
 # Fields
-- `n`: Number of Points
-- `d`: Diameter
-- `x`: X positions
-- `y`: Y positions
+- `n::Int`: Number of molecules in the pattern
+- `d::Float64`: Diameter of the circle in microns
+- `x::Vector{Float64}`: X positions of molecules in microns
+- `y::Vector{Float64}`: Y positions of molecules in microns
+
+# Examples
+```julia
+# Create an 8-molecule pattern with 100nm diameter
+nmer = Nmer2D()
+
+# Create a custom pattern with 6 molecules and 200nm diameter
+nmer = Nmer2D(; n=6, d=0.2)
+```
 """
 mutable struct Nmer2D <: Pattern2D
     n::Int
@@ -38,14 +64,23 @@ end
 """
     Nmer3D <: Pattern3D
 
-N molecules symmetrically organized around a circle with diameter d at z=0    
+N molecules symmetrically organized around a circle with diameter d at z=0.
 
 # Fields
-- `n`: Number of Points
-- `d`: Diameter
-- `x`: X positions
-- `y`: Y positions
-- `z`: Z positions
+- `n::Int`: Number of molecules in the pattern
+- `d::Float64`: Diameter of the circle in microns
+- `x::Vector{Float64}`: X positions of molecules in microns
+- `y::Vector{Float64}`: Y positions of molecules in microns
+- `z::Vector{Float64}`: Z positions of molecules in microns
+
+# Examples
+```julia
+# Create an 8-molecule pattern with 100nm diameter
+nmer = Nmer3D()
+
+# Create a custom pattern with 6 molecules and 200nm diameter
+nmer = Nmer3D(; n=6, d=0.2)
+```
 """
 mutable struct Nmer3D <: Pattern3D
     n::Int
@@ -69,14 +104,23 @@ end
 """
     Line2D <: Pattern2D
 
-Points with uniform random distribution between 2 endpoints.    
+Points with uniform random distribution between two endpoints.
 
 # Fields
-- `λ`: Linear molecule density
-- `endpoints`: Vector of endpoint coordinates
-- `n`: Number of Points
-- `x`: X positions
-- `y`: Y positions
+- `λ::Float64`: Linear molecule density (molecules per micron)
+- `endpoints::Vector{Tuple{Float64,Float64}}`: Vector of endpoint coordinates
+- `n::Int`: Number of molecules in the pattern
+- `x::Vector{Float64}`: X positions of molecules in microns
+- `y::Vector{Float64}`: Y positions of molecules in microns
+
+# Examples
+```julia
+# Create a line with default parameters
+line = Line2D()
+
+# Create a custom line
+line = Line2D(; λ=5.0, endpoints=[(-2.0, 0.0), (2.0, 0.0)])
+```
 """
 mutable struct Line2D <: Pattern2D
     n::Int
@@ -106,15 +150,24 @@ end
 """
     Line3D <: Pattern3D
 
-Points with uniform random distribution between 2 3D endpoints.    
+Points with uniform random distribution between two 3D endpoints.
 
 # Fields
-- `λ`: Linear molecule density
-- `endpoints`: Vector of 3D endpoint coordinates
-- `n`: Number of Points
-- `x`: X positions
-- `y`: Y positions
-- `z`: Z positions
+- `λ::Float64`: Linear molecule density (molecules per micron)
+- `endpoints::Vector{Tuple{Float64,Float64,Float64}}`: Vector of 3D endpoint coordinates
+- `n::Int`: Number of molecules in the pattern
+- `x::Vector{Float64}`: X positions of molecules in microns
+- `y::Vector{Float64}`: Y positions of molecules in microns
+- `z::Vector{Float64}`: Z positions of molecules in microns
+
+# Examples
+```julia
+# Create a line with default parameters
+line = Line3D()
+
+# Create a custom 3D line
+line = Line3D(; λ=5.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)])
+```
 """
 mutable struct Line3D <: Pattern3D
     n::Int
@@ -149,18 +202,25 @@ Pattern Generation Functions
 ==========================================================================#
 
 """
-    uniform2D(ρ, p::Pattern2D, field_x::Float64, field_y::Float64)
+    uniform2D(ρ::Float64, p::Pattern2D, field_x::Float64, field_y::Float64)
 
 Create coordinate arrays for randomly placed and rotated 2D patterns.
 
 # Arguments
-- `ρ`: Pattern density (patterns per square micron)
-- `p`: Pattern to replicate
-- `field_x`: Field width in microns
-- `field_y`: Field height in microns
+- `ρ::Float64`: Pattern density (patterns per square micron)
+- `p::Pattern2D`: Pattern to replicate
+- `field_x::Float64`: Field width in microns
+- `field_y::Float64`: Field height in microns
 
 # Returns
-Tuple{Vector{Float64}, Vector{Float64}}: (x, y) coordinates in microns
+- `Tuple{Vector{Float64}, Vector{Float64}}`: (x, y) coordinates in microns
+
+# Example
+```julia
+# Generate coordinates for randomly placed Nmer2D patterns
+nmer = Nmer2D(; n=6, d=0.2)
+x, y = uniform2D(1.0, nmer, 10.0, 10.0)
+```
 """
 function uniform2D(ρ::Float64, p::Pattern2D, field_x::Float64, field_y::Float64)
     # Generate random number of patterns
@@ -189,23 +249,35 @@ function uniform2D(ρ::Float64, p::Pattern2D, field_x::Float64, field_y::Float64
 end
 
 """
-    uniform3D(ρ, p::Pattern3D, field_x::Float64, field_y::Float64; 
+    uniform3D(ρ::Float64, p::Pattern3D, field_x::Float64, field_y::Float64; 
              zrange::Vector{Float64}=[-1.0, 1.0])
 
 Create coordinate arrays for randomly placed and rotated 3D patterns.
 
 # Arguments
-- `ρ`: Pattern density (patterns per square micron)
-- `p`: Pattern to replicate
-- `field_x`: Field width in microns
-- `field_y`: Field height in microns
-- `zrange`: [min_z, max_z] range in microns
+- `ρ::Float64`: Pattern density (patterns per square micron)
+- `p::Pattern3D`: Pattern to replicate
+- `field_x::Float64`: Field width in microns
+- `field_y::Float64`: Field height in microns
+- `zrange::Vector{Float64}=[-1.0, 1.0]`: [min_z, max_z] range in microns
 
 # Returns
-Tuple{Vector{Float64}, Vector{Float64}, Vector{Float64}}: (x, y, z) coordinates
+- `Tuple{Vector{Float64}, Vector{Float64}, Vector{Float64}}`: (x, y, z) coordinates
+
+# Example
+```julia
+# Generate coordinates for randomly placed Nmer3D patterns
+nmer = Nmer3D(; n=6, d=0.2)
+x, y, z = uniform3D(1.0, nmer, 10.0, 10.0; zrange=[-2.0, 2.0])
+```
 """
 function uniform3D(ρ::Float64, p::Pattern3D, field_x::Float64, field_y::Float64;
                   zrange::Vector{Float64}=Float64[-1.0, 1.0])
+    # Input validation
+    if length(zrange) != 2 || zrange[1] >= zrange[2]
+        throw(ArgumentError("zrange must be a vector of two values [min_z, max_z] where min_z < max_z"))
+    end
+    
     # Generate random number of patterns (note: ρ is 2D density)
     npatterns = rand(Poisson(field_x * field_y * ρ))
     ntotal = npatterns * p.n
@@ -259,6 +331,16 @@ Pattern Rotation Functions
     rotate!(p::Pattern2D, θ::Float64)
 
 Rotate a 2D pattern by angle θ (in radians).
+
+# Arguments
+- `p::Pattern2D`: Pattern to rotate
+- `θ::Float64`: Rotation angle in radians
+
+# Example
+```julia
+nmer = Nmer2D()
+rotate!(nmer, π/4)  # Rotate 45 degrees
+```
 """
 function rotate!(p::Pattern2D, θ::Float64)
     for n in 1:p.n
@@ -274,8 +356,25 @@ end
     rotate!(p::Pattern3D, R::Matrix{Float64})
 
 Rotate a 3D pattern by rotation matrix R.
+
+# Arguments
+- `p::Pattern3D`: Pattern to rotate
+- `R::Matrix{Float64}`: 3x3 rotation matrix
+
+# Example
+```julia
+nmer = Nmer3D()
+# Create a rotation matrix for 90 degrees around z-axis
+θ = π/2
+R = [cos(θ) -sin(θ) 0; sin(θ) cos(θ) 0; 0 0 1]
+rotate!(nmer, R)
+```
 """
 function rotate!(p::Pattern3D, R::Matrix{Float64})
+    if size(R) != (3, 3)
+        throw(ArgumentError("Rotation matrix must be 3×3"))
+    end
+    
     for n in 1:p.n
         pos = R * [p.x[n]; p.y[n]; p.z[n]]
         p.x[n] = pos[1]
@@ -290,6 +389,18 @@ end
 
 Rotate a 3D pattern by Euler angles α, β, γ (in radians).
 Uses ZYZ convention.
+
+# Arguments
+- `p::Pattern3D`: Pattern to rotate
+- `α::Float64`: First rotation angle (around Z axis)
+- `β::Float64`: Second rotation angle (around Y' axis)
+- `γ::Float64`: Third rotation angle (around Z'' axis)
+
+# Example
+```julia
+nmer = Nmer3D()
+rotate!(nmer, π/4, π/6, π/3)
+```
 """
 function rotate!(p::Pattern3D, α::Float64, β::Float64, γ::Float64)
     # ZYZ Euler angle rotation matrix
