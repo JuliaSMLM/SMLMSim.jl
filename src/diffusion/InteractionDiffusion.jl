@@ -42,16 +42,19 @@ module InteractionDiffusion
 using SMLMData 
 using Distributions
 using MicroscopePSFs
-using SMLMSim
 
 using Printf
 using CairoMakie
+
+# Import the main simulate function to add our method
+import ..simulate
 
 include("types.jl")
 include("smoluchowski.jl")
 include("visualize.jl")
 include("microscope.jl")
 include("dimer.jl")
+
 
 # Core types and functions for diffusion simulation
 export
@@ -61,7 +64,7 @@ export
     SmoluchowskiParams,
 
     # Core simulation functions
-    simulate,
+    simulate,  # Export the function, but the implementation is a method
     simulate_and_image,
 
     # Analysis functions

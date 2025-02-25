@@ -1,10 +1,10 @@
 # using Pkg
 # Pkg.activate("dev")
 
-# using Revise
-using SMLMSim # must be 'dev'ed in the current environment
+using Revise
+using SMLMSim
 using CairoMakie
-
+using MicroscopePSFs
 #==========================================================================
 Basic Usage
 ==========================================================================#
@@ -25,7 +25,7 @@ smld_true, smld_model, smld_noisy = simulate(;
     framerate=50.0,       # frames per second
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     molecule=GenericFluor(; q=[0 50; 1e-2 0]),  # rates in 1/s
-    camera=IdealCamera(; ypixels=256, xpixels=128, pixelsize=0.1)  # pixelsize in μm
+    camera=IdealCamera(1:256, 1:128, 0.1)  # pixelsize in μm
 )
 
 #==========================================================================
@@ -77,7 +77,7 @@ params = SmoluchowskiParams(
 systems = simulate(params)
 
 # Visualize the simulation
-visualize_sequence(systems, filename="diffusion.mp4", framerate=30)
+visualize_sequence(systems, filename="diffusion.mp4", framerate=round(Int64,1/params.dt))
 
 # Generate microscope images
 psf = Gaussian2D(0.15)  # 150nm PSF width
@@ -121,7 +121,8 @@ ax = Axis(fig[1, 1],
     title="Simulated SMLM Localizations",
     xlabel="x (μm)",
     ylabel="y (μm)",
-    aspect=DataAspect()
+    aspect=DataAspect(),
+    yreversed=true  # This makes (0,0) at top-left
 )
 
 # Scatter plot with photon counts as color

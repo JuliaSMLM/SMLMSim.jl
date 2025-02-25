@@ -136,7 +136,7 @@ params = SmoluchowskiParams(
 systems = simulate(params)
 
 # Visualize the simulation
-visualize_sequence(systems, filename="diffusion.mp4", framerate=30)
+visualize_sequence(systems, filename="diffusion.mp4", framerate=round(Int64,1/params.dt))
 
 # Generate microscope images
 psf = Gaussian2D(0.15)  # 150nm PSF width
@@ -185,7 +185,8 @@ ax = Axis(fig[1, 1],
     title="Simulated SMLM Localizations",
     xlabel="x (μm)",
     ylabel="y (μm)",
-    aspect=DataAspect()
+    aspect=DataAspect(),
+    yreversed=true  # This makes (0,0) at top-left
 )
 
 # Scatter plot with photon counts as color
@@ -199,7 +200,7 @@ scatter!(ax, x_noisy, y_noisy,
 Colorbar(fig[1, 2], colormap=:viridis, label="Photons")
 
 # Show or save the figure
-# display(fig)
+display(fig)
 # save("smlm_simulation.png", fig)
 ```
 

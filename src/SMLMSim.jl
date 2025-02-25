@@ -4,6 +4,8 @@ using SMLMData
 using Distributions
 using LinearAlgebra
 
+# Re-export critical types from SMLMData to make them available to users
+export AbstractCamera, IdealCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
 
 include("molecules.jl")
 include("patterns.jl")
@@ -13,7 +15,14 @@ include("interface.jl")
 # Submodules
 include("diffusion/InteractionDiffusion.jl")
 
-using .InteractionDiffusion
+# Import specific functions from InteractionDiffusion
+using .InteractionDiffusion: DiffusingMolecule, DiffusingMoleculeSystem, 
+                            SmoluchowskiParams, get_dimers, 
+                            show_frame, visualize_sequence, visualize_simulation,
+                            gen_image, gen_image_sequence
+
+# Add this line to import the simulate method
+using .InteractionDiffusion: simulate
 
 # Export molecule types
 export
@@ -43,12 +52,13 @@ export
     SmoluchowskiParams,
 
     # Core simulation functions
-    simulate,
-    simulate_and_image,
-
+    simulate, # Will dispatch to appropriate method based on argument types
+    
     # Analysis functions
     get_dimers,
-    gen_dimer_images
+    gen_dimer_images,
+    gen_image,         # Add this
+    gen_image_sequence # Add this
 
 # Pattern simulation types and functions
 export
@@ -76,6 +86,5 @@ export
     show_frame,
     visualize_sequence,
     visualize_simulation
-
 
 end

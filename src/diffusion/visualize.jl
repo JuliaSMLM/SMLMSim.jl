@@ -164,9 +164,16 @@ function visualize_sequence(systems::Vector{<:DiffusingMoleculeSystem};
     xlims!(ax, (0, box_size))
     ylims!(ax, (box_size, 0))
     
-    # Add legend if showing dimers
+    # Store legend position for updates
+    legend_pos = (1, 2)
+    
+    # Create Observables for legend labels
     if show_dimers
-        leg = Legend(fig[1, 2], ["Monomers", "Dimers"], [:blue, :red])
+        legend_labels = Observable(["Monomers (0)", "Dimers (0)"])
+        leg = Legend(fig[legend_pos...],
+            [MarkerElement(color=:blue, marker=:circle),
+             MarkerElement(color=:red, marker=:circle)],
+            legend_labels[])
     end
     
     # Information display
@@ -185,10 +192,10 @@ function visualize_sequence(systems::Vector{<:DiffusingMoleculeSystem};
         if show_dimers
             sc.color = [mol.state == 2 ? :red : :blue for mol in systems[i].molecules]
             
-            # Update legend with counts
+            # Update legend labels
             n_monomers = count(mol -> mol.state == 1, systems[i].molecules)
             n_dimers = count(mol -> mol.state == 2, systems[i].molecules)
-            leg.labels = ["Monomers ($n_monomers)", "Dimers ($n_dimers)"]
+            legend_labels[] = ["Monomers ($n_monomers)", "Dimers ($n_dimers)"]
         end
         
         # Update info text
