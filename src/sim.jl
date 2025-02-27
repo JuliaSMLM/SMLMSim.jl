@@ -409,28 +409,32 @@ function noise(smld::BasicSMLD, σ_psf::Union{AbstractFloat, Vector{<:AbstractFl
             )
         end
         
-        uncertainties = if is_3d
-            (σ[1], σ[2], σ[3])
+        # Create new emitter with correct parameter order
+        if is_3d
+            new_emitters[i] = etype(
+                coords[1], coords[2], coords[3],  # x, y, z
+                emitter.photons,                  # photons
+                emitter.bg,                       # background
+                σ[1], σ[2], σ[3],                 # σ_x, σ_y, σ_z
+                emitter.σ_photons, emitter.σ_bg;  # σ_photons, σ_bg
+                frame=emitter.frame,
+                dataset=emitter.dataset,
+                track_id=emitter.track_id,
+                id=emitter.id
+            )
         else
-            (σ, σ)
+            new_emitters[i] = etype(
+                coords[1], coords[2],             # x, y
+                emitter.photons,                  # photons
+                emitter.bg,                       # background
+                σ, σ,                             # σ_x, σ_y
+                emitter.σ_photons, emitter.σ_bg;  # σ_photons, σ_bg
+                frame=emitter.frame,
+                dataset=emitter.dataset,
+                track_id=emitter.track_id,
+                id=emitter.id
+            )
         end
-        
-        common_params = (
-            emitter.photons,
-            emitter.bg,
-            emitter.σ_photons,
-            emitter.σ_bg
-        )
-        
-        new_emitters[i] = etype(
-            coords...,            # Position coordinates
-            common_params...,     # Photons and background
-            uncertainties...,     # Position uncertainties
-            frame=emitter.frame,
-            dataset=emitter.dataset,
-            track_id=emitter.track_id,
-            id=emitter.id
-        )
     end
     
     metadata = copy(smld.metadata)
