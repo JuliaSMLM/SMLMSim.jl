@@ -14,7 +14,7 @@ function test_imaging_and_analysis()
         )
         
         # Create PSF and generate image
-        psf = Gaussian2D(0.15)
+        psf = GaussianPSF(0.15)
         img = gen_image(psf, system, 1, photons=1000.0, bg=5.0, poisson_noise=false)
         
         # Test basic image properties
@@ -73,7 +73,7 @@ function test_imaging_and_analysis()
         systems = [system]
         
         # Create PSF and generate dimer images
-        psf = Gaussian2D(0.15)
+        psf = GaussianPSF(0.15)
         dimer_images = gen_dimer_images(systems, psf, 
                                        photons=1000.0, bg=5.0,
                                        frame_integration=1, poisson_noise=false)
@@ -95,7 +95,7 @@ function test_imaging_and_analysis()
         )
         
         # Create PSF
-        psf = Gaussian2D(0.15)
+        psf = GaussianPSF(0.15)
         
         # Run simulation and imaging
         images, systems = simulate_and_image(params, psf,
@@ -109,15 +109,15 @@ function test_imaging_and_analysis()
     end
     
     @testset "Core Interface" begin
-        # Test the main simulate interfaces
+        # Test the main simulate interfaces with StaticSMLMParams
         camera = IdealCamera(1:20, 1:20, 0.1)
         
-        # Basic interface
-        smld_true, smld_model, smld_noisy = SMLMSim.simulate(
-            ρ=1.0, 
-            camera=camera,
+        # Basic interface with StaticSMLMParams
+        params = StaticSMLMParams(
+            ρ=1.0,
             nframes=5  # Minimal
         )
+        smld_true, smld_model, smld_noisy = simulate(params, camera=camera)
         
         # Test basic outputs
         @test smld_true isa BasicSMLD
@@ -126,12 +126,11 @@ function test_imaging_and_analysis()
         
         # With explicit pattern
         pattern = Nmer2D(n=4, d=0.1)
-        smld_true, smld_model, smld_noisy = SMLMSim.simulate(
-            pattern,
+        params = StaticSMLMParams(
             ρ=1.0,
-            camera=camera,
             nframes=5
         )
+        smld_true, smld_model, smld_noisy = simulate(params, pattern=pattern, camera=camera)
         
         @test smld_true isa BasicSMLD
     end

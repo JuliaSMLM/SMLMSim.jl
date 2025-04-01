@@ -58,8 +58,8 @@ GenericFluor
 
 ```@docs
 CTMC
-getstate
-getnext
+get_state
+get_next
 intensitytrace
 kineticmodel
 ```

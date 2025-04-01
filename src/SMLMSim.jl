@@ -7,12 +7,18 @@ using LinearAlgebra
 # Re-export critical types from SMLMData to make them available to users
 export AbstractCamera, IdealCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
 
-include("molecules.jl")
-include("patterns.jl")
-include("sim.jl")
+# Core module (includes molecules.jl and patterns.jl internally)
+include("core/Core.jl")
+
 include("interface.jl")
 
-# Submodules
+# Import specific functions from Core
+using .Core: CTMC, get_state, get_next, intensity_trace, kinetic_model
+using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
+using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
+
+# Include submodules after the Core imports are available
+include("static/StaticSMLM.jl")
 include("diffusion/InteractionDiffusion.jl")
 
 # Import specific functions from InteractionDiffusion
@@ -21,28 +27,24 @@ using .InteractionDiffusion: DiffusingMolecule, DiffusingMoleculeSystem,
                             show_frame, visualize_sequence, visualize_simulation,
                             gen_image, gen_image_sequence
 
-# Add this line to import the simulate method
-using .InteractionDiffusion: simulate
+# Import from StaticSMLM
+using .StaticSMLM: StaticSMLMParams, apply_noise
 
-# Export molecule types
-export
-    # Abstract molecule types
-    Molecule,
-    
-    # Concrete molecule types
-    GenericFluor
+# Add this line to import the simulate methods
+using .InteractionDiffusion: simulate
+using .StaticSMLM: simulate
 
 # Export simulation functions
 export
     # Kinetic simulation
-    intensitytrace,
-    kineticmodel,
+    intensity_trace, # Renamed from intensitytrace to match function name
+    kinetic_model,   # Renamed from kineticmodel to match function name
     noise,
     
     # CTMC type and functions
     CTMC,
-    getstate,
-    getnext
+    get_state,
+    get_next
 
 # Core types and functions for diffusion simulation
 export
@@ -57,8 +59,8 @@ export
     # Analysis functions
     get_dimers,
     gen_dimer_images,
-    gen_image,         # Add this
-    gen_image_sequence # Add this
+    gen_image,         
+    gen_image_sequence 
 
 # Pattern simulation types and functions
 export
@@ -80,6 +82,18 @@ export
 
     # Full simulation pipeline
     sim
+
+# Export molecule types
+export
+    # Abstract molecule types
+    Molecule,
+    
+    # Concrete molecule types
+    GenericFluor,
+    
+    # Static SMLM types
+    StaticSMLMParams,
+    apply_noise
 
 # Visualization
 export

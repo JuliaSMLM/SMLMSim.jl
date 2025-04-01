@@ -28,14 +28,16 @@ Pkg.add("SMLMSim")
 
 ## Basic Usage
 
-The high-level interface for simulating SMLM super-resolution coordinate data is the `simulate()` function (or the alias `sim()`).
+The high-level interface for simulating SMLM super-resolution coordinate data is the `simulate()` function with a `StaticSMLMParams` object.
 
 ```julia
 using SMLMSim
 
 # Basic simulation with default parameters
 camera = IdealCamera(1:128, 1:128, 0.1)  # 128×128 pixels, 100nm pixels
+params = StaticSMLMParams()  # Default parameters
 smld_true, smld_model, smld_noisy = simulate(
+    params,
     camera=camera
 )
 ```
@@ -57,16 +59,20 @@ For more control, you can customize the parameters:
 
 ```julia
 # More customized simulation
-smld_true, smld_model, smld_noisy = simulate(;
+params = StaticSMLMParams(
     ρ=1.0,                # emitters per μm²
     σ_psf=0.13,           # PSF width in μm (130nm)
     minphotons=50,        # minimum photons for detection
     ndatasets=10,         # number of independent datasets
     nframes=1000,         # frames per dataset
-    framerate=50.0,       # frames per second
+    framerate=50.0        # frames per second
+)
+
+smld_true, smld_model, smld_noisy = simulate(
+    params,
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     molecule=GenericFluor(; q=[0 50; 1e-2 0]),  # rates in 1/s
-    camera=IdealCamera(; ypixels=256, xpixels=128, pixelsize=0.1)  # pixelsize in μm
+    camera=IdealCamera(1:256, 1:128, 0.1)  # 128×256 pixels, 100nm pixels
 )
 ```
 
@@ -166,10 +172,15 @@ using CairoMakie
 # Create camera with physical pixel size
 camera = IdealCamera(1:128, 1:256, 0.1)  # 128×256 pixels, 100nm pixels
 
-# Simulation parameters in physical units
-smld_true, smld_model, smld_noisy = simulate(;
+# Create simulation parameters
+params = StaticSMLMParams(
     ρ=1.0,                # emitters per μm²
-    σ_psf=0.13,           # PSF width in μm
+    σ_psf=0.13            # PSF width in μm
+)
+
+# Run simulation
+smld_true, smld_model, smld_noisy = simulate(
+    params,
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     camera=camera
 )
@@ -212,12 +223,18 @@ using SMLMSim
 # Create camera with physical pixel size
 camera = IdealCamera(1:128, 1:256, 0.1)  # 128×256 pixels, 100nm pixels
 
-# Simulation parameters in physical units
-smld_true, smld_model, smld_noisy = simulate(;
+# Create 3D simulation parameters
+params = StaticSMLMParams(
     ρ=0.5,                # emitters per μm²
-    pattern=Nmer3D(n=8, d=0.3),  # 3D pattern
-    camera=camera,
+    ndims=3,              # 3D simulation
     zrange=[-2.0, 2.0]    # 4μm axial range
+)
+
+# Run simulation
+smld_true, smld_model, smld_noisy = simulate(
+    params,
+    pattern=Nmer3D(n=8, d=0.3),  # 3D pattern
+    camera=camera
 )
 ```
 

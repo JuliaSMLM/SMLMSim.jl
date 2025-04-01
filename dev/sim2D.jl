@@ -6,16 +6,24 @@ using GLMakie
 # Create camera with physical pixel size
 camera = IdealCamera(1:128, 1:256, 0.1)  # 128x256 pixels, 100nm pixels
 
-# Simulation parameters in physical units
-smld_true, smld_model, smld_noisy = SMLMSim.sim(;
+# Create StaticSMLMParams with simulation parameters
+params = StaticSMLMParams(
     ρ=1.0,                # emitters per μm²
     σ_psf=0.13,          # PSF width in μm
     minphotons=50,       # minimum photons for detection
     ndatasets=10,        # number of independent datasets
     nframes=1000,        # frames per dataset
-    framerate=50.0,      # frames per second
-    pattern=SMLMSim.Nmer2D(),
-    molecule=SMLMSim.GenericFluor(; q=[0 50; 1e-2 0]),  # rates in 1/s
+    framerate=50.0      # frames per second
+)
+
+# Run simulation with type-based interface
+pattern = SMLMSim.Nmer2D()
+molecule = SMLMSim.GenericFluor(; q=[0 50; 1e-2 0])  # rates in 1/s
+
+smld_true, smld_model, smld_noisy = simulate(
+    params,
+    pattern=pattern,
+    molecule=molecule,
     camera=camera
 )
 

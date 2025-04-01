@@ -6,18 +6,27 @@ using GLMakie
 # Create camera with physical pixel size
 camera = IdealCamera(1:128, 1:256, 0.1)  # 128x256 pixels, 100nm pixels
 
-# Simulation parameters in physical units
-smld_true, smld_model, smld_noisy = SMLMSim.sim(;
-    ρ=100.0,                # emitters per μm²
-    σ_psf=0.13,          # PSF width in μm
-    minphotons=50,       # minimum photons for detection
-    ndatasets=10,        # number of independent datasets
-    nframes=1000,        # frames per dataset
-    framerate=50.0,      # frames per second
-    pattern=SMLMSim.Nmer3D(),  # Using 3D pattern
-    molecule=SMLMSim.GenericFluor(; q=[0 50; 1e-2 0]),
-    camera=camera,
-    zrange=[-1.0, 1.0]   # Set z range for 3D patterns
+# Create StaticSMLMParams with simulation parameters
+params = StaticSMLMParams(
+    ρ=100.0,              # emitters per μm²
+    σ_psf=0.13,           # PSF width in μm
+    minphotons=50,        # minimum photons for detection
+    ndatasets=10,         # number of independent datasets
+    nframes=1000,         # frames per dataset
+    framerate=50.0,       # frames per second
+    ndims=3,              # 3D simulation
+    zrange=[-1.0, 1.0]    # Set z range for 3D patterns
+)
+
+# Run simulation with type-based interface
+pattern = SMLMSim.Nmer3D()  # Using 3D pattern
+molecule = SMLMSim.GenericFluor(; q=[0 50; 1e-2 0])
+
+smld_true, smld_model, smld_noisy = simulate(
+    params,
+    pattern=pattern,
+    molecule=molecule,
+    camera=camera
 )
 
 # Extract coordinates from emitters

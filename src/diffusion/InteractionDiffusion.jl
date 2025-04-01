@@ -48,6 +48,7 @@ using CairoMakie
 
 # Import the main simulate function to add our method
 import ..simulate
+import ..SMLMSim: AbstractSim
 
 include("types.jl")
 include("smoluchowski.jl")
