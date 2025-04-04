@@ -51,10 +51,12 @@ import ..simulate
 import ..SMLMSim: AbstractSim
 
 include("types.jl")
+include("helpers.jl")
 include("smoluchowski.jl")
 include("visualize.jl")
 include("microscope.jl")
 include("dimer.jl")
+include("analysis.jl")
 
 
 # Core types and functions for diffusion simulation
@@ -72,6 +74,14 @@ export
     get_dimers,
     gen_dimer_images,
     analyze_dimer_fraction,
+    analyze_dimer_lifetime,
+
+    # Helper functions
+    calc_r,
+    calc_ϕ,
+    calc_θ,
+    dimerize!,
+    monomerize!,
 
     # Visualization functions
     show_frame,

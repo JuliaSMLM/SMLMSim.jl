@@ -5,7 +5,7 @@
 """
     simulate(params::StaticSMLMParams; 
              pattern::Pattern=nothing,
-             molecule::Molecule=GenericFluor(; q=[0 50; 1e-2 0]),
+             molecule::Molecule=GenericFluor(; q=[-50.0 50.0; 1e-2 -1e-2]),
              camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
 
 Generate simulated static SMLM data with realistic blinking kinetics
@@ -42,7 +42,7 @@ smld_true, smld_model, smld_noisy = simulate(params; pattern=pattern)
 """
 function simulate(params::StaticSMLMParams; 
                  pattern::Union{Pattern,Nothing}=nothing,
-                 molecule::Molecule=GenericFluor(; q=[0 50; 1e-2 0]),
+                 molecule::Molecule=GenericFluor(; q=[-50.0 50.0; 1e-2 -1e-2]),
                  camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
     
     # Use appropriate default pattern if none provided

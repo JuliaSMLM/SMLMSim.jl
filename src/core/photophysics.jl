@@ -2,7 +2,10 @@
     Photophysics Module
 
 This module provides functions for modeling the photophysics of fluorescent molecules,
-including blinking kinetics, intensity traces, and related phenomena.
+including blinking kinetics, intensity traces, and sampling from equilibrium distributions.
+
+# Make sure LinearAlgebra and Distributions are imported at the Core module level
+# for norm() and rand() functions
 """
 
 
@@ -28,7 +31,7 @@ For each frame:
 
 # Example
 ```julia
-fluor = GenericFluor(; γ=10000.0, q=[0 10; 1e-1 0])
+fluor = GenericFluor(; γ=10000.0, q=[-10.0 10.0; 1e-1 -1e-1])
 photons = intensity_trace(fluor, 1000, 10.0)
 ```
 
@@ -83,7 +86,9 @@ Generate kinetic blinking model from existing localization data.
 - `framerate::Real`: Frame rate in Hz
 - `ndatasets::Int=1`: Number of independent datasets to generate
 - `minphotons::Float64=50.0`: Minimum photons for detection
-- `state1::Int=2`: Initial state (default: 2 for dark state)
+- `state1::Union{Int, Symbol}=:equilibrium`: Initial state specification:
+  - `::Int`: Specific state to start in (1=on, 2=off typically)
+  - `:equilibrium`: Sample from equilibrium distribution (default)
 
 # Returns
 - `BasicSMLD`: New SMLD with simulated blinking kinetics
@@ -102,7 +107,7 @@ pattern = Nmer2D()
 smld_true, _, _ = simulate(pattern=pattern, camera=camera)
 
 # Add blinking kinetics
-fluor = GenericFluor(; γ=10000.0, q=[0 10; 1e-1 0])
+fluor = GenericFluor(; γ=10000.0, q=[-10.0 10.0; 1e-1 -1e-1])
 smld_model = kinetic_model(smld_true, fluor, 1000, 10.0)
 ```
 
@@ -112,7 +117,7 @@ Position uncertainties are initialized to 0 and can be set using the
 apply_noise() function.
 """
 function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Real;
-                      ndatasets::Int=1, minphotons=50.0, state1::Int=2)
+                      ndatasets::Int=1, minphotons=50.0, state1::Union{Int, Symbol}=:equilibrium)
     # Input validation
     if nframes <= 0
         throw(ArgumentError("Number of frames must be positive"))
@@ -142,8 +147,40 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
     # Sort by track_id to maintain order
     true_positions = sort(collect(values(grouped_emitters)), by=e -> e.track_id)
 
+    # Precompute equilibrium distribution if needed (do once, not per emitter)
+    initial_state_dist = if state1 == :equilibrium
+        q = f.q
+        if size(q, 1) == 2  # Common 2-state case (on/off)
+            # For 2-state case with negative diagonals
+            k_on = q[2, 1]      # off->on rate
+            k_off = q[1, 2]     # on->off rate
+            # Verify proper structure of rate matrix
+            if q[1,1] > 0 || q[2,2] > 0
+                @warn "Diagonal elements should be negative; equilibrium calculation may be incorrect"
+            end
+            
+            # Equilibrium probabilities
+            p_on = k_on / (k_on + k_off)  # Probability of being in ON state
+            [p_on, 1.0 - p_on]  # Distribution vector [p_state1, p_state2]
+        else
+            # For n-state case, use general algorithm
+            compute_equilibrium_distribution(q)
+        end
+    else
+        nothing  # Not needed for explicit state
+    end
+
     for dd = 1:ndatasets, pos in true_positions
-        photons = intensity_trace(f, nframes, framerate; state1=state1)
+        # Determine initial state based on the option provided
+        initial_state = if state1 == :equilibrium
+            # Use pre-computed distribution for sampling
+            sample_discrete(initial_state_dist)
+        else
+            # Use specified initial state
+            state1
+        end
+        
+        photons = intensity_trace(f, nframes, framerate; state1=initial_state)
         framenum = findall(photons .> minphotons)
 
         # Create emitter for each frame where photons > threshold
@@ -181,6 +218,81 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
     metadata = copy(smld.metadata)
     metadata["simulation_type"] = "kinetic_model"
     metadata["framerate"] = framerate
+    metadata["initial_state"] = string(state1)
 
     return BasicSMLD(emitters, smld.camera, nframes, ndatasets, metadata)
+end
+
+"""
+    compute_equilibrium_distribution(q::Matrix{<:AbstractFloat})
+
+Calculate the equilibrium probability distribution for a CTMC rate matrix.
+
+# Arguments
+- `q::Matrix{<:AbstractFloat}`: Rate matrix where q[i,j] for i≠j is the transition rate from state i to j,
+  and q[i,i] is the negative exit rate from state i
+
+# Returns
+- `Vector{Float64}`: Equilibrium probabilities for each state
+
+# Details
+For a rate matrix Q, the equilibrium distribution π satisfies π·Q = 0 subject to Σπ = 1.
+This function solves the linear system directly to find the equilibrium distribution.
+"""
+function compute_equilibrium_distribution(q::Matrix{<:AbstractFloat})
+    n_states = size(q, 1)
+    
+    # Check for proper rate matrix structure (negative diagonals, rows sum to zero)
+    row_sums = sum(q, dims=2)
+    if any(diag(q) .>= 0)
+        @warn "Some diagonal elements of rate matrix are non-negative"
+    end
+    if !all(abs.(row_sums) .< 1e-10)
+        @warn "Rate matrix rows do not sum to zero (maximum deviation: $(maximum(abs.(row_sums))))"
+    end
+    
+    # Create the linear system A⋅π = b for equilibrium distribution
+    # Replace last row with constraint that probabilities sum to 1
+    A = copy(q')
+    A[end, :] .= 1.0
+    
+    # Right-hand side: all zeros except last element = 1
+    b = zeros(n_states)
+    b[end] = 1.0
+    
+    # Solve the system
+    π = A \ b
+    
+    # Ensure probabilities are valid (non-negative and sum to 1)
+    # This handles numerical precision issues
+    π = max.(π, 0)  # Ensure non-negative
+    π = π ./ sum(π)  # Normalize to sum to 1
+    
+    return π
+end
+
+"""
+    sample_discrete(p::Vector{<:AbstractFloat})
+
+Sample from a discrete probability distribution.
+
+# Arguments
+- `p::Vector{<:AbstractFloat}`: Probability distribution
+
+# Returns
+- `Int`: Sampled state index
+
+# Details
+Samples a state index i with probability p[i] using the inverse CDF method.
+"""
+function sample_discrete(p::Vector{<:AbstractFloat})
+    u = rand()
+    cdf = 0.0
+    for i in 1:length(p)
+        cdf += p[i]
+        if u <= cdf
+            return i
+        end
+    end
+    return length(p)  # Fallback for numerical precision issues
 end

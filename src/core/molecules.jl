@@ -14,8 +14,10 @@ abstract type Molecule end
 Defines a fluorophore with photophysical properties.
 
 # Fields
-- `γ::AbstractFloat`: Photon emission rate in Hz. Default: 1e3
-- `q::Array{<:AbstractFloat}`: State transition matrix. Default: q=[1.0]
+- `γ::AbstractFloat`: Photon emission rate in Hz. Default: 1e5
+- `q::Array{<:AbstractFloat}`: Rate matrix where q[i,j] for i≠j is the transition rate from state i to j,
+  and q[i,i] is the negative exit rate from state i. Default: standard 2-state model with
+  on->off rate of 50Hz and off->on rate of 1e-2Hz
 
 # Examples
 ```julia
@@ -23,10 +25,10 @@ Defines a fluorophore with photophysical properties.
 fluor = GenericFluor()
 
 # Create a fluorophore with custom parameters
-fluor = GenericFluor(1e5, [0 10; 1e-1 0])
+fluor = GenericFluor(1e5, [-50.0 50.0; 1e-2 -1e-2])
 
 # Create a fluorophore using keyword arguments
-fluor = GenericFluor(; γ=1e5, q=[0 10; 1e-1 0])
+fluor = GenericFluor(; γ=1e5, q=[-10.0 10.0; 1e-1 -1e-1])
 ```
 """
 mutable struct GenericFluor <: Molecule
@@ -36,7 +38,7 @@ end
 
 function GenericFluor(;
     γ::AbstractFloat=1e5,
-    q::Array{<:AbstractFloat}=[1]
+    q::Array{<:AbstractFloat}=[-50.0 50.0; 1e-2 -1e-2]
 )
     return GenericFluor(γ, q)
 end

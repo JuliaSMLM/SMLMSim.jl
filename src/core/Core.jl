@@ -67,6 +67,8 @@ export
 # Export photophysics functions
 export
     intensity_trace,
-    kinetic_model
+    kinetic_model,
+    compute_equilibrium_distribution,
+    sample_discrete
 
 end # module

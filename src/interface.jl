@@ -46,14 +46,3 @@ function simulate(sim::AbstractSim; kwargs...)
     error("No simulate method implemented for $(typeof(sim))")
 end
 
-"""
-    sim(args...; kwargs...)
-
-Alias for `simulate` function. Provided for backward compatibility.
-
-See `simulate` for full documentation and parameters.
-"""
-function sim(args...; kwargs...)
-    @warn "The `sim` function is deprecated, use `simulate` instead."
-    return simulate(args...; kwargs...)
-end

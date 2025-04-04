@@ -39,7 +39,8 @@ end
 Construct a Continuous Time Markov Chain simulation from a rate matrix.
 
 # Arguments
-- `q::Array{T}`: Rate matrix where q[i,j] is the transition rate from state i to j
+- `q::Array{T}`: Rate matrix where q[i,j] for i≠j is the transition rate from state i to j,
+  and q[i,i] is the negative exit rate from state i
 - `simulation_time::T`: Total time to simulate
 - `state1::Int`: Initial state
 
@@ -60,9 +61,16 @@ function CTMC(q::Array{T}, simulation_time::T, state1::Int) where {T<:AbstractFl
     if size(q, 1) != size(q, 2)
         throw(ArgumentError("Rate matrix q must be square"))
     end
-    if any(diag(q) .!= 0)
-        @warn "Diagonal elements of rate matrix should be zero"
+    if any(diag(q) .>= 0)
+        @warn "Diagonal elements of rate matrix should be negative (representing exit rates)"
     end
+    
+    # Check for row sums approximately zero (rate matrix property)
+    row_sums = sum(q, dims=2)
+    if !all(abs.(row_sums) .< 1e-10)
+        @warn "Rate matrix rows should sum to zero; matrix may not represent a valid CTMC"
+    end
+    
     if state1 < 1 || state1 > size(q, 1)
         throw(ArgumentError("Initial state must be between 1 and size(q,1)"))
     end
@@ -76,8 +84,8 @@ function CTMC(q::Array{T}, simulation_time::T, state1::Int) where {T<:AbstractFl
     sidx = Vector((1:size(q, 1)))
 
     while lastchange < simulation_time
-        # get time for state change
-        k_tot = sum(q[currentstate, :])
+        # get time for state change (negative of diagonal element)
+        k_tot = -q[currentstate, currentstate]
         if k_tot ≈ 0
             # If total rate is zero, we're in an absorbing state
             break
@@ -86,12 +94,29 @@ function CTMC(q::Array{T}, simulation_time::T, state1::Int) where {T<:AbstractFl
         Δt = rand(Exponential(1 / k_tot))
 
         # get the new state
-        ps = q[currentstate, :]
-        ps = ps ./ sum(ps)
-        deleteat!(ps, currentstate)
-        xs = sidx[:]
-        deleteat!(xs, currentstate)
-        newstate = rand(DiscreteNonParametric(xs, ps))
+        ps = copy(q[currentstate, :])
+        ps[currentstate] = 0.0  # Zero out the diagonal element
+        sum_ps = sum(ps)
+        
+        if sum_ps ≈ 0
+            # No valid transitions
+            break
+        end
+        
+        ps = ps ./ sum_ps  # Normalize probabilities
+        
+        # Create a vector without the current state
+        valid_indices = [i for i in 1:length(ps) if i != currentstate && ps[i] > 0]
+        
+        if isempty(valid_indices)
+            break  # No valid transitions
+        end
+        
+        valid_probs = ps[valid_indices]
+        valid_probs = valid_probs ./ sum(valid_probs)  # Re-normalize
+        
+        # Sample the new state
+        newstate = sample_discrete_with_probs(valid_indices, valid_probs)
 
         # update CTMC
         lastchange += Δt
@@ -100,6 +125,30 @@ function CTMC(q::Array{T}, simulation_time::T, state1::Int) where {T<:AbstractFl
         currentstate = newstate
     end
     return CTMC(simulation_time, transition_times, states)
+end
+
+"""
+    sample_discrete_with_probs(indices, probs)
+
+Sample a discrete value from indices with corresponding probabilities.
+
+# Arguments
+- `indices::Vector{Int}`: Vector of possible indices to sample
+- `probs::Vector{<:AbstractFloat}`: Corresponding probabilities
+
+# Returns
+- `Int`: Sampled index
+"""
+function sample_discrete_with_probs(indices, probs)
+    r = rand()
+    cdf = 0.0
+    for i in 1:length(indices)
+        cdf += probs[i]
+        if r <= cdf
+            return indices[i]
+        end
+    end
+    return indices[end]  # Fallback for numerical precision issues
 end
 
 """

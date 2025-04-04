@@ -1,16 +1,31 @@
+using Pkg
+Pkg.activate("dev")
+
 using Revise
 using SMLMSim
 using SMLMData
+using MicroscopePSFs
+using CairoMakie
 
 # 2D Example
 camera = IdealCamera(1:512, 1:512, 0.1)
 pattern = SMLMSim.Nmer2D(n=6, d=0.2)
-params = StaticSMLMParams(ρ=1.0)
+params = StaticSMLMParams(ρ=1.0, nframes = 100)
 smld_true, smld_model, smld_noisy = simulate(
     params,
     pattern=pattern,
     camera=camera
 )
+
+# generate images
+psf = AiryPSF(1.2, .555)
+psf_spline = SplinePSF(psf, -1:.1:1, -1:.1:1)
+img = gen_images(smld_model, psf_spline; dataset=1,  support = 1.0)
+
+image(img[:, :, 1])
+
+
+
 
 # 3D Example
 pattern3d = SMLMSim.Nmer3D(n=8, d=0.3)
@@ -37,3 +52,4 @@ smld_true, smld_model, smld_noisy = simulate(
     pattern=line3d,
     camera=camera
 )
+

@@ -20,6 +20,7 @@ using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
 # Include submodules after the Core imports are available
 include("static/StaticSMLM.jl")
 include("diffusion/InteractionDiffusion.jl")
+include("camera_images/CameraImages.jl")
 
 # Import specific functions from InteractionDiffusion
 using .InteractionDiffusion: DiffusingMolecule, DiffusingMoleculeSystem, 
@@ -29,6 +30,9 @@ using .InteractionDiffusion: DiffusingMolecule, DiffusingMoleculeSystem,
 
 # Import from StaticSMLM
 using .StaticSMLM: StaticSMLMParams, apply_noise
+
+# Import from CameraImages
+using .CameraImages: gen_images, gen_image
 
 # Add this line to import the simulate methods
 using .InteractionDiffusion: simulate
@@ -95,10 +99,12 @@ export
     StaticSMLMParams,
     apply_noise
 
-# Visualization
+# Visualization and imaging
 export
     show_frame,
     visualize_sequence,
-    visualize_simulation
+    visualize_simulation,
+    gen_images,
+    gen_image
 
 end
