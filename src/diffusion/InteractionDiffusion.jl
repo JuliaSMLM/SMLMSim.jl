@@ -10,6 +10,7 @@ visualizing particle dynamics.
 
 # Components
 - Core simulation types (DiffusingMolecule, DiffusingMoleculeSystem)
+- Diffusing emitter types (DiffusingEmitter2D, DiffusingEmitter3D)
 - Smoluchowski dynamics simulation
 - Visualization tools
 - Microscope image generation
@@ -19,22 +20,28 @@ visualizing particle dynamics.
 ```julia
 # Set up simulation parameters
 params = SmoluchowskiParams(
-    density = 0.5,        # molecules per μm²
-    box_size = 10.0,      # μm
-    diff_monomer = 0.1,   # μm²/s
-    diff_dimer = 0.05,    # μm²/s
-    k_off = 0.2,          # s⁻¹
-    r_react = 0.01,       # μm
-    d_dimer = 0.05,       # μm
-    dt = 0.01,            # s
-    t_max = 10.0          # s
+    density = 0.5,            # molecules per μm²
+    box_size = 10.0,          # μm
+    diff_monomer = 0.1,       # μm²/s
+    diff_dimer = 0.05,        # μm²/s
+    k_off = 0.2,              # s⁻¹
+    r_react = 0.01,           # μm
+    d_dimer = 0.05,           # μm
+    dt = 0.01,                # s
+    t_max = 10.0,             # s
+    camera_framerate = 20.0,  # fps
+    camera_exposure = 0.04    # s
 )
 
-# Run simulation
-systems = simulate(params)
+# Run simulation - returns a single SMLD with all emitters
+smld = simulate(params)
 
-# Visualize the simulation
-visualize_sequence(systems, filename="diffusion.mp4")
+# Generate images for microscopy
+psf = Gaussian2D(0.15)  # 150nm PSF width
+images = gen_images(psf, smld)
+
+# Visualize the simulation results
+visualize_simulation(smld)
 ```
 """
 module InteractionDiffusion
@@ -53,8 +60,6 @@ import ..SMLMSim: AbstractSim
 include("types.jl")
 include("helpers.jl")
 include("smoluchowski.jl")
-include("visualize.jl")
-include("microscope.jl")
 include("dimer.jl")
 include("analysis.jl")
 
@@ -65,11 +70,14 @@ export
     DiffusingMolecule,
     DiffusingMoleculeSystem,
     SmoluchowskiParams,
+    
+    # Diffusing emitter types for imaging
+    DiffusingEmitter2D,
+    DiffusingEmitter3D,
 
     # Core simulation functions
-    simulate,  # Export the function, but the implementation is a method
-    simulate_and_image,
-
+    simulate,              # Returns a BasicSMLD with diffusing emitters
+    
     # Analysis functions
     get_dimers,
     gen_dimer_images,

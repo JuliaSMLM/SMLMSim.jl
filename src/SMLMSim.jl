@@ -26,7 +26,8 @@ include("camera_images/CameraImages.jl")
 using .InteractionDiffusion: DiffusingMolecule, DiffusingMoleculeSystem, 
                             SmoluchowskiParams, get_dimers, 
                             show_frame, visualize_sequence, visualize_simulation,
-                            gen_image, gen_image_sequence
+                            gen_image, gen_image_sequence, 
+                            DiffusingEmitter2D, DiffusingEmitter3D
 
 # Import from StaticSMLM
 using .StaticSMLM: StaticSMLMParams, apply_noise
@@ -56,6 +57,10 @@ export
     DiffusingMolecule,
     DiffusingMoleculeSystem,
     SmoluchowskiParams,
+    
+    # New diffusing emitter types for imaging
+    DiffusingEmitter2D,
+    DiffusingEmitter3D,
 
     # Core simulation functions
     simulate, # Will dispatch to appropriate method based on argument types

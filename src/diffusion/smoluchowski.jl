@@ -16,6 +16,8 @@ Parameters for Smoluchowski diffusion simulation.
 - `t_max::Float64`: total simulation time (s)
 - `ndims::Int`: number of dimensions (2 or 3)
 - `boundary::String`: boundary condition type ("periodic" or "reflecting")
+- `camera_framerate::Float64`: camera frames per second (Hz)
+- `camera_exposure::Float64`: camera exposure time per frame (s)
 
 # Examples
 ```julia
@@ -35,7 +37,9 @@ params = SmoluchowskiParams(
     dt = 0.005,              # 5ms time step
     t_max = 20.0,            # 20s simulation
     ndims = 3,               # 3D simulation
-    boundary = "reflecting"  # reflecting boundaries
+    boundary = "reflecting", # reflecting boundaries
+    camera_framerate = 20.0, # 20 frames per second
+    camera_exposure = 0.04   # 40ms exposure per frame
 )
 ```
 """
@@ -53,9 +57,14 @@ Base.@kwdef mutable struct SmoluchowskiParams
     ndims::Int = 2
     boundary::String = "periodic"
     
+    # Camera imaging parameters
+    camera_framerate::Float64 = 10.0     # Frames per second
+    camera_exposure::Float64 = 0.1       # Exposure time in seconds
+    
     function SmoluchowskiParams(
         density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
-        k_off, r_react, d_dimer, dt, t_max, ndims, boundary
+        k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
+        camera_framerate, camera_exposure
     )
         # Input validation
         if density <= 0
@@ -94,9 +103,17 @@ Base.@kwdef mutable struct SmoluchowskiParams
         if boundary != "periodic" && boundary != "reflecting"
             throw(ArgumentError("Boundary condition must be 'periodic' or 'reflecting'"))
         end
+        # Camera parameter validation
+        if camera_framerate <= 0
+            throw(ArgumentError("Camera framerate must be positive"))
+        end
+        if camera_exposure <= 0
+            throw(ArgumentError("Camera exposure time must be positive"))
+        end
         
         new(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
-            k_off, r_react, d_dimer, dt, t_max, ndims, boundary)
+            k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
+            camera_framerate, camera_exposure)
     end
 end
 
@@ -110,12 +127,6 @@ Create initial DiffusingMoleculeSystem with randomly placed monomers.
 
 # Returns
 - `DiffusingMoleculeSystem`: Initialized system with molecules
-
-# Example
-```julia
-params = SmoluchowskiParams()
-system = initialize_system(params)
-```
 """
 function initialize_system(params::SmoluchowskiParams)
     # Calculate number of molecules
@@ -338,57 +349,152 @@ function apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiPa
 end
 
 """
-    simulate(params::SmoluchowskiParams; kwargs...)
+    simulate(params::SmoluchowskiParams; photons::Float64=1000.0, kwargs...)
 
-Run a complete Smoluchowski diffusion simulation.
+Run a Smoluchowski diffusion simulation and return a BasicSMLD object
+with emitters that have both frame number and timestamp information.
 
 # Arguments
 - `params::SmoluchowskiParams`: Simulation parameters
+- `photons::Float64=1000.0`: Number of photons per emitter
 
 # Keyword Arguments
 - Any additional parameters are ignored (allows unified interface with other simulate methods)
 
 # Returns
-- `Vector{DiffusingMoleculeSystem}`: System states at each timepoint
+- `BasicSMLD`: Single SMLD object containing all emitters across all frames
 
 # Example
 ```julia
-# Set up parameters
+# Set up parameters with camera settings
 params = SmoluchowskiParams(
-    density = 0.5,      # molecules per μm²
-    box_size = 10.0,    # μm
-    diff_monomer = 0.1, # μm²/s
-    t_max = 5.0         # s
+    density = 0.5,           # molecules per μm²
+    box_size = 10.0,         # μm
+    camera_framerate = 20.0, # 20 fps
+    camera_exposure = 0.04   # 40ms exposure
 )
 
 # Run simulation
-systems = simulate(params)
+smld = simulate(params)
 
-# Access results
-n_molecules = length(systems[1].molecules)
-final_state = systems[end]
-n_dimers = count(m -> m.state == 2, final_state.molecules)
+# Generate images
+psf = Gaussian2D(0.15)  # 150nm PSF width
+images = gen_images(psf, smld)
 ```
 """
-function simulate(params::SmoluchowskiParams; kwargs...)
+function simulate(params::SmoluchowskiParams; photons::Float64=1000.0, kwargs...)
     # Initialize
     n_steps = round(Int, params.t_max / params.dt)
     system = initialize_system(params)
     
-    # Store system states
-    systems = Vector{typeof(system)}(undef, n_steps)
-    systems[1] = deepcopy(system)
+    # Use appropriate emitter type based on dimensions
+    EmitterType = params.ndims == 3 ? DiffusingEmitter3D{Float64} : DiffusingEmitter2D{Float64}
+    all_emitters = Vector{EmitterType}()
+    
+    # Calculate maximum frame number
+    max_frame = ceil(Int, params.t_max * params.camera_framerate)
+    
+    # Add initial state to emitters - need to modify for 3D if ndims=3
+    time_val = 0.0
+    frame_num = 1
+    
+    # Check if initial timepoint falls within a camera exposure window
+    exposure_start = 0.0
+    exposure_end = params.camera_exposure
+    
+    if time_val >= exposure_start && time_val <= exposure_end
+        for mol in system.molecules
+            if params.ndims == 2
+                # Create 2D emitter
+                emitter = DiffusingEmitter2D{Float64}(
+                    mol.x, mol.y,        # spatial coordinates
+                    photons,             # photon count
+                    time_val,            # actual timestamp
+                    frame_num,           # frame number
+                    1,                   # dataset
+                    mol.id,              # track_id 
+                    mol.state,           # monomer/dimer state
+                    mol.link             # linked molecule id
+                )
+            else
+                # Create 3D emitter (assuming z=0 for now, can be extended for 3D)
+                emitter = DiffusingEmitter3D{Float64}(
+                    mol.x, mol.y, 0.0,   # spatial coordinates
+                    photons,             # photon count
+                    time_val,            # actual timestamp
+                    frame_num,           # frame number
+                    1,                   # dataset
+                    mol.id,              # track_id 
+                    mol.state,           # monomer/dimer state
+                    mol.link             # linked molecule id
+                )
+            end
+            push!(all_emitters, emitter)
+        end
+    end
     
     # Run simulation
     for t in 2:n_steps
+        # Update molecule positions and states
         update_species!(system, params)
         update_positions!(system, params)
         apply_boundary!(system, params)
         
-        # Store copy of current state
-        systems[t] = deepcopy(system)
-        systems[t].metadata["time"] = (t-1) * params.dt
+        # Calculate time and frame for this timepoint
+        time_val = (t-1) * params.dt
+        frame_num = ceil(Int, time_val * params.camera_framerate)
+        
+        # Skip if frame is past max frames
+        frame_num > max_frame && continue
+        
+        # Check if this timepoint falls within a camera exposure window
+        exposure_start = (frame_num - 1) / params.camera_framerate
+        exposure_end = exposure_start + params.camera_exposure
+        
+        if time_val >= exposure_start && time_val <= exposure_end
+            # Create emitters for all molecules at this timepoint
+            for mol in system.molecules
+                if params.ndims == 2
+                    # Create 2D emitter
+                    emitter = DiffusingEmitter2D{Float64}(
+                        mol.x, mol.y,        # spatial coordinates
+                        photons,             # photon count
+                        time_val,            # actual timestamp
+                        frame_num,           # frame number
+                        1,                   # dataset
+                        mol.id,              # track_id 
+                        mol.state,           # monomer/dimer state
+                        mol.link             # linked molecule id
+                    )
+                else
+                    # Create 3D emitter (assuming z=0 for now, can be extended for 3D)
+                    emitter = DiffusingEmitter3D{Float64}(
+                        mol.x, mol.y, 0.0,   # spatial coordinates
+                        photons,             # photon count
+                        time_val,            # actual timestamp
+                        frame_num,           # frame number
+                        1,                   # dataset
+                        mol.id,              # track_id 
+                        mol.state,           # monomer/dimer state
+                        mol.link             # linked molecule id
+                    )
+                end
+                push!(all_emitters, emitter)
+            end
+        end
     end
     
-    return systems
+    # Create a single SMLD with all emitters
+    return BasicSMLD(
+        all_emitters,
+        system.camera,
+        max_frame,       # nframes based on camera framerate
+        1,               # ndatasets
+        Dict{String,Any}(
+            "simulation_parameters" => params,
+            "simulation_type" => "diffusion",
+            "camera_framerate" => params.camera_framerate,
+            "camera_exposure" => params.camera_exposure
+        )
+    )
 end
