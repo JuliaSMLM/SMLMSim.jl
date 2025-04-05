@@ -43,7 +43,7 @@ params = SmoluchowskiParams(
 )
 ```
 """
-Base.@kwdef mutable struct SmoluchowskiParams
+Base.@kwdef mutable struct SmoluchowskiParams <: AbstractSim
     density::Float64 = 1.0
     box_size::Float64 = 10.0
     diff_monomer::Float64 = 0.1
@@ -118,234 +118,218 @@ Base.@kwdef mutable struct SmoluchowskiParams
 end
 
 """
-    initialize_system(params::SmoluchowskiParams)
+    initialize_emitters(params::SmoluchowskiParams, photons::Float64=1000.0)
 
-Create initial DiffusingMoleculeSystem with randomly placed monomers.
+Create initial emitter positions for the simulation.
 
 # Arguments
 - `params::SmoluchowskiParams`: Simulation parameters
+- `photons::Float64=1000.0`: Number of photons per emitter
 
 # Returns
-- `DiffusingMoleculeSystem`: Initialized system with molecules
+- `Vector{<:AbstractDiffusingEmitter}`: Vector of initialized emitters
 """
-function initialize_system(params::SmoluchowskiParams)
+function initialize_emitters(params::SmoluchowskiParams, photons::Float64=1000.0)
     # Calculate number of molecules
     n_molecules = round(Int, params.density * params.box_size^params.ndims)
     
-    # Create camera matching box size
-    pixel_size = 0.1  # 100nm pixels
-    n_pixels = ceil(Int, params.box_size / pixel_size)
-    camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
-    
-    # Create emitters at random positions
-    molecules = Vector{DiffusingMolecule{Emitter2D{Float64}}}(undef, n_molecules)
-    for i in 1:n_molecules
-        x = rand(Uniform(0, params.box_size))
-        y = rand(Uniform(0, params.box_size))
+    # Create array for emitters
+    if params.ndims == 2
+        emitters = Vector{DiffusingEmitter2D{Float64}}(undef, n_molecules)
         
-        # Create basic emitter with position and standard brightness
-        emitter = Emitter2D{Float64}(x, y, 1000.0)
-        molecules[i] = DiffusingMolecule(emitter, 1, i, nothing, false)
-    end
-    
-    # Create system
-    DiffusingMoleculeSystem(
-        molecules,
-        camera,
-        params.box_size,
-        1,  # Start with single frame
-        1,  # Single dataset
-        Dict{String,Any}(
-            "simulation_parameters" => params
-        )
-    )
-end
-
-"""
-    update_species!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
-
-Update molecular states (dimerization/dissociation) for all molecules.
-
-# Arguments
-- `system::DiffusingMoleculeSystem`: System to update
-- `params::SmoluchowskiParams`: Simulation parameters
-
-# Returns
-- `Nothing`
-
-# Details
-For each molecule:
-1. If monomer, check for possible dimerization with other monomers
-2. If dimer, check for possible dissociation based on k_off rate
-"""
-function update_species!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
-    for (i, mol1) in enumerate(system.molecules)
-        if mol1.state == 1  # monomer
-            # Check for dimerization with other monomers
-            for mol2 in @view system.molecules[i+1:end]
-                if mol2.state == 1  # also a monomer
-                    if calc_r(mol1, mol2) < params.r_react
-                        dimerize!(mol1, mol2, params.d_dimer)
-                        break  # Only one dimerization per molecule per step
-                    end
-                end
-            end
-        elseif mol1.state == 2  # dimer
-            # Check for dissociation
-            if rand() < params.k_off * params.dt
-                monomerize!(mol1, system)
-            end
+        # Create emitters at random positions
+        for i in 1:n_molecules
+            x = rand(Uniform(0, params.box_size))
+            y = rand(Uniform(0, params.box_size))
+            
+            # Create emitter with initial properties
+            emitters[i] = DiffusingEmitter2D{Float64}(
+                x, y,                      # Position
+                photons,                   # Photons
+                0.0,                       # Initial timestamp
+                1,                         # Initial frame
+                1,                         # Dataset
+                i,                         # ID
+                :monomer,                  # Initial state
+                nothing                    # No partner initially
+            )
         end
-    end
-end
-
-"""
-    update_positions!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
-
-Update positions of all molecules using appropriate diffusion models.
-
-# Arguments
-- `system::DiffusingMoleculeSystem`: System to update
-- `params::SmoluchowskiParams`: Simulation parameters
-
-# Returns
-- `Nothing`
-
-# Details
-For each molecule:
-1. If monomer, update position with Brownian motion
-2. If dimer, update position and orientation with coupled diffusion
-3. Molecule positions are only updated once per timestep
-"""
-function update_positions!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
-    for mol in system.molecules
-        if !mol.updated  # Skip if already updated through dimer
-            if mol.state == 1
-                update_monomer_position!(mol, params)
-            else  # state == 2
-                # Find linked molecule and update dimer
-                linked_idx = findfirst(m -> m.id == mol.link, system.molecules)
-                if !isnothing(linked_idx)
-                    update_dimer_position!(mol, system.molecules[linked_idx], params)
-                end
-            end
+    else  # 3D
+        emitters = Vector{DiffusingEmitter3D{Float64}}(undef, n_molecules)
+        
+        # Create emitters at random positions
+        for i in 1:n_molecules
+            x = rand(Uniform(0, params.box_size))
+            y = rand(Uniform(0, params.box_size))
+            z = rand(Uniform(0, params.box_size))
+            
+            # Create emitter with initial properties
+            emitters[i] = DiffusingEmitter3D{Float64}(
+                x, y, z,                   # Position
+                photons,                   # Photons
+                0.0,                       # Initial timestamp
+                1,                         # Initial frame
+                1,                         # Dataset
+                i,                         # ID
+                :monomer,                  # Initial state
+                nothing                    # No partner initially
+            )
         end
     end
     
-    # Reset update flags
-    for mol in system.molecules
-        mol.updated = false
-    end
+    return emitters
 end
 
 """
-    update_monomer_position!(mol::DiffusingMolecule, params::SmoluchowskiParams)
+    update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::SmoluchowskiParams, dt::Float64) 
 
-Update position of a single monomer using Brownian motion.
-
-# Arguments
-- `mol::DiffusingMolecule`: Molecule to update
-- `params::SmoluchowskiParams`: Simulation parameters
-
-# Returns
-- `Nothing`
-"""
-function update_monomer_position!(mol::DiffusingMolecule, params::SmoluchowskiParams)
-    σ = sqrt(2 * params.diff_monomer * params.dt)
-    
-    mol.x += rand(Normal(0, σ))
-    mol.y += rand(Normal(0, σ))
-    
-    mol.updated = true
-end
-
-"""
-    update_dimer_position!(mol1::DiffusingMolecule, mol2::DiffusingMolecule, params::SmoluchowskiParams)
-
-Update position and orientation of a dimer with both translational and rotational diffusion.
+Update all emitters based on Smoluchowski diffusion dynamics.
 
 # Arguments
-- `mol1::DiffusingMolecule`: First molecule in dimer
-- `mol2::DiffusingMolecule`: Second molecule in dimer
+- `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters state
 - `params::SmoluchowskiParams`: Simulation parameters
+- `dt::Float64`: Time step
 
 # Returns
-- `Nothing`
-
-# Details
-1. Translational diffusion of center of mass
-2. Rotational diffusion around center of mass
-3. Maintains fixed separation distance between molecules
+- `Vector{<:AbstractDiffusingEmitter}`: Updated emitters
 """
-function update_dimer_position!(mol1::DiffusingMolecule, mol2::DiffusingMolecule, params::SmoluchowskiParams)
-    # Translational diffusion of center of mass
-    σ_trans = sqrt(2 * params.diff_dimer * params.dt)
-    dx = rand(Normal(0, σ_trans))
-    dy = rand(Normal(0, σ_trans))
+function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::SmoluchowskiParams, dt::Float64)
+    # Create new array for updated emitters
+    new_emitters = Vector{eltype(emitters)}()
     
-    # Current center of mass
-    com_x = (mol1.x + mol2.x)/2
-    com_y = (mol1.y + mol2.y)/2
+    # Create a set of IDs that have been processed
+    processed = Set{Int}()
     
-    # Move center of mass
-    com_x += dx
-    com_y += dy
-    
-    # Rotational diffusion
-    σ_rot = sqrt(2 * params.diff_dimer_rot * params.dt)
-    ϕ = calc_ϕ(mol1, mol2)
-    ϕ += rand(Normal(0, σ_rot))
-    
-    # Calculate new positions relative to center of mass
-    r = params.d_dimer/2
-    dx = r * cos(ϕ)
-    dy = r * sin(ϕ)
-    
-    # Update positions
-    mol1.x = com_x - dx
-    mol1.y = com_y - dy
-    mol2.x = com_x + dx
-    mol2.y = com_y + dy
-    
-    mol1.updated = true
-    mol2.updated = true
-end
-
-"""
-    apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
-
-Apply periodic or reflecting boundary conditions to keep molecules in simulation box.
-
-# Arguments
-- `system::DiffusingMoleculeSystem`: System to apply boundaries to
-- `params::SmoluchowskiParams`: Simulation parameters
-
-# Returns
-- `Nothing`
-
-# Details
-- For periodic boundaries, positions wrap around the box edges
-- For reflecting boundaries, positions are reflected back into the box
-"""
-function apply_boundary!(system::DiffusingMoleculeSystem, params::SmoluchowskiParams)
-    for mol in system.molecules
-        if params.boundary == "periodic"
-            mol.x = mod(mol.x, params.box_size)
-            mol.y = mod(mol.y, params.box_size)
-        else  # reflecting
-            if mol.x < 0
-                mol.x = -mol.x
-            elseif mol.x > params.box_size
-                mol.x = 2params.box_size - mol.x
+    # Process all emitters
+    for (i, e1) in enumerate(emitters)
+        e1.id in processed && continue
+        
+        if e1.state == :monomer
+            # Check if this monomer forms a dimer with any other monomer
+            found_dimer = false
+            
+            for (j, e2) in enumerate(emitters[i+1:end])
+                e2.id in processed && continue
+                e2.state == :monomer || continue
+                
+                if can_dimerize(e1, e2, params.r_react)
+                    # Create new dimer pair
+                    d1, d2 = dimerize(e1, e2, params.d_dimer)
+                    push!(new_emitters, d1, d2)
+                    push!(processed, e1.id, e2.id)
+                    found_dimer = true
+                    break
+                end
             end
             
-            if mol.y < 0
-                mol.y = -mol.y
-            elseif mol.y > params.box_size
-                mol.y = 2params.box_size - mol.y
+            # If didn't form a dimer, update as monomer
+            if !found_dimer
+                # Apply diffusion
+                new_e = diffuse(e1, params.diff_monomer, dt)
+                
+                # Apply boundary conditions
+                new_e = apply_boundary(new_e, params.box_size, params.boundary)
+                
+                push!(new_emitters, new_e)
+                push!(processed, e1.id)
+            end
+        elseif e1.state == :dimer && !(e1.id in processed)
+            # Check for dissociation
+            if should_dissociate(e1, params.k_off, dt)
+                # Find partner and create two new monomers
+                m1, m2 = dissociate(e1, emitters)
+                
+                # Apply diffusion to each new monomer
+                m1 = diffuse(m1, params.diff_monomer, dt)
+                m2 = diffuse(m2, params.diff_monomer, dt)
+                
+                # Apply boundary conditions
+                m1 = apply_boundary(m1, params.box_size, params.boundary)
+                m2 = apply_boundary(m2, params.box_size, params.boundary)
+                
+                push!(new_emitters, m1, m2)
+                push!(processed, e1.id, e1.partner_id)
+            else
+                # Find partner and update dimer
+                partner_idx = findfirst(e -> e.id == e1.partner_id, emitters)
+                if !isnothing(partner_idx) && !(emitters[partner_idx].id in processed)
+                    e2 = emitters[partner_idx]
+                    
+                    # Apply dimer diffusion
+                    d1, d2 = diffuse_dimer(
+                        e1, e2, 
+                        params.diff_dimer, 
+                        params.diff_dimer_rot, 
+                        params.d_dimer, 
+                        dt
+                    )
+                    
+                    # Apply boundary conditions
+                    d1 = apply_boundary(d1, params.box_size, params.boundary)
+                    d2 = apply_boundary(d2, params.box_size, params.boundary)
+                    
+                    push!(new_emitters, d1, d2)
+                    push!(processed, e1.id, e2.id)
+                end
             end
         end
     end
+    
+    return new_emitters
+end
+
+"""
+    add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params)
+
+Add emitters to camera frames when they fall within an exposure window.
+
+# Arguments
+- `camera_emitters::Vector{<:AbstractDiffusingEmitter}`: Collection of emitters for camera frames
+- `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters from simulation
+- `time::Float64`: Current simulation time
+- `frame_num::Int`: Current frame number
+- `params::SmoluchowskiParams`: Simulation parameters
+
+# Returns
+- `Nothing`
+"""
+function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params)
+    # Check if this timepoint falls within a camera exposure window
+    exposure_start = (frame_num - 1) / params.camera_framerate
+    exposure_end = exposure_start + params.camera_exposure
+    
+    if time >= exposure_start && time <= exposure_end
+        # Add all current emitters to the camera frame
+        for e in emitters
+            # Create a copy with the correct frame number
+            if isa(e, DiffusingEmitter2D)
+                camera_emitter = DiffusingEmitter2D{typeof(e.x)}(
+                    e.x, e.y,           # Position
+                    e.photons,          # Photons
+                    time,               # Current timestamp
+                    frame_num,          # Frame number
+                    e.dataset,          # Dataset
+                    e.id,               # ID
+                    e.state,            # State
+                    e.partner_id        # Partner ID
+                )
+            else  # 3D
+                camera_emitter = DiffusingEmitter3D{typeof(e.x)}(
+                    e.x, e.y, e.z,      # Position
+                    e.photons,          # Photons
+                    time,               # Current timestamp
+                    frame_num,          # Frame number
+                    e.dataset,          # Dataset
+                    e.id,               # ID
+                    e.state,            # State
+                    e.partner_id        # Partner ID
+                )
+            end
+            push!(camera_emitters, camera_emitter)
+        end
+    end
+    
+    return nothing
 end
 
 """
@@ -385,116 +369,37 @@ images = gen_images(psf, smld)
 function simulate(params::SmoluchowskiParams; photons::Float64=1000.0, kwargs...)
     # Initialize
     n_steps = round(Int, params.t_max / params.dt)
-    system = initialize_system(params)
     
-    # Use appropriate emitter type based on dimensions
-    EmitterType = params.ndims == 3 ? DiffusingEmitter3D{Float64} : DiffusingEmitter2D{Float64}
-    all_emitters = Vector{EmitterType}()
+    # Create camera
+    pixel_size = 0.1  # 100nm pixels
+    n_pixels = ceil(Int, params.box_size / pixel_size)
+    camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
     
-    # Calculate maximum frame number
-    max_frame = ceil(Int, params.t_max * params.camera_framerate)
+    # Initialize emitters
+    emitters = initialize_emitters(params, photons)
     
-    # Add initial state to emitters - need to modify for 3D if ndims=3
-    time_val = 0.0
-    frame_num = 1
+    # Store camera-frame emitters
+    camera_emitters = Vector{eltype(emitters)}()
     
-    # Check if initial timepoint falls within a camera exposure window
-    exposure_start = 0.0
-    exposure_end = params.camera_exposure
+    # Add initial state to camera frames if in exposure window
+    add_camera_frame_emitters!(camera_emitters, emitters, 0.0, 1, params)
     
-    if time_val >= exposure_start && time_val <= exposure_end
-        for mol in system.molecules
-            if params.ndims == 2
-                # Create 2D emitter
-                emitter = DiffusingEmitter2D{Float64}(
-                    mol.x, mol.y,        # spatial coordinates
-                    photons,             # photon count
-                    time_val,            # actual timestamp
-                    frame_num,           # frame number
-                    1,                   # dataset
-                    mol.id,              # track_id 
-                    mol.state,           # monomer/dimer state
-                    mol.link             # linked molecule id
-                )
-            else
-                # Create 3D emitter (assuming z=0 for now, can be extended for 3D)
-                emitter = DiffusingEmitter3D{Float64}(
-                    mol.x, mol.y, 0.0,   # spatial coordinates
-                    photons,             # photon count
-                    time_val,            # actual timestamp
-                    frame_num,           # frame number
-                    1,                   # dataset
-                    mol.id,              # track_id 
-                    mol.state,           # monomer/dimer state
-                    mol.link             # linked molecule id
-                )
-            end
-            push!(all_emitters, emitter)
-        end
+    # Simulation loop
+    time = 0.0
+    while time < params.t_max
+        # Update time
+        time += params.dt
+        
+        # Update emitter states and positions
+        emitters = update_system(emitters, params, params.dt)
+        
+        # Calculate frame number for this timepoint
+        frame_num = ceil(Int, time * params.camera_framerate)
+        
+        # Add to camera frames if in exposure window
+        add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params)
     end
     
-    # Run simulation
-    for t in 2:n_steps
-        # Update molecule positions and states
-        update_species!(system, params)
-        update_positions!(system, params)
-        apply_boundary!(system, params)
-        
-        # Calculate time and frame for this timepoint
-        time_val = (t-1) * params.dt
-        frame_num = ceil(Int, time_val * params.camera_framerate)
-        
-        # Skip if frame is past max frames
-        frame_num > max_frame && continue
-        
-        # Check if this timepoint falls within a camera exposure window
-        exposure_start = (frame_num - 1) / params.camera_framerate
-        exposure_end = exposure_start + params.camera_exposure
-        
-        if time_val >= exposure_start && time_val <= exposure_end
-            # Create emitters for all molecules at this timepoint
-            for mol in system.molecules
-                if params.ndims == 2
-                    # Create 2D emitter
-                    emitter = DiffusingEmitter2D{Float64}(
-                        mol.x, mol.y,        # spatial coordinates
-                        photons,             # photon count
-                        time_val,            # actual timestamp
-                        frame_num,           # frame number
-                        1,                   # dataset
-                        mol.id,              # track_id 
-                        mol.state,           # monomer/dimer state
-                        mol.link             # linked molecule id
-                    )
-                else
-                    # Create 3D emitter (assuming z=0 for now, can be extended for 3D)
-                    emitter = DiffusingEmitter3D{Float64}(
-                        mol.x, mol.y, 0.0,   # spatial coordinates
-                        photons,             # photon count
-                        time_val,            # actual timestamp
-                        frame_num,           # frame number
-                        1,                   # dataset
-                        mol.id,              # track_id 
-                        mol.state,           # monomer/dimer state
-                        mol.link             # linked molecule id
-                    )
-                end
-                push!(all_emitters, emitter)
-            end
-        end
-    end
-    
-    # Create a single SMLD with all emitters
-    return BasicSMLD(
-        all_emitters,
-        system.camera,
-        max_frame,       # nframes based on camera framerate
-        1,               # ndatasets
-        Dict{String,Any}(
-            "simulation_parameters" => params,
-            "simulation_type" => "diffusion",
-            "camera_framerate" => params.camera_framerate,
-            "camera_exposure" => params.camera_exposure
-        )
-    )
+    # Convert to SMLD
+    return create_smld(camera_emitters, camera, params)
 end

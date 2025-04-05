@@ -9,12 +9,10 @@ Includes functionality for generating microscope images, analyzing dimers, and
 visualizing particle dynamics.
 
 # Components
-- Core simulation types (DiffusingMolecule, DiffusingMoleculeSystem)
-- Diffusing emitter types (DiffusingEmitter2D, DiffusingEmitter3D)
+- Abstract and concrete emitter types (AbstractDiffusingEmitter, DiffusingEmitter2D, DiffusingEmitter3D)
 - Smoluchowski dynamics simulation
-- Visualization tools
-- Microscope image generation
-- Dimer analysis and extraction
+- Analysis tools for dimers and state transitions
+- SMLD conversion utilities
 
 # Examples
 ```julia
@@ -40,8 +38,9 @@ smld = simulate(params)
 psf = Gaussian2D(0.15)  # 150nm PSF width
 images = gen_images(psf, smld)
 
-# Visualize the simulation results
-visualize_simulation(smld)
+# Analyze results
+dimer_smld = get_dimers(smld)
+frames, dimer_fractions = analyze_dimer_fraction(smld)
 ```
 """
 module InteractionDiffusion
@@ -49,6 +48,7 @@ module InteractionDiffusion
 using SMLMData 
 using Distributions
 using MicroscopePSFs
+using Statistics
 
 using Printf
 using CairoMakie
@@ -60,18 +60,15 @@ import ..SMLMSim: AbstractSim
 include("types.jl")
 include("helpers.jl")
 include("smoluchowski.jl")
-include("dimer.jl")
 include("analysis.jl")
-
 
 # Core types and functions for diffusion simulation
 export
-    # Core types
-    DiffusingMolecule,
-    DiffusingMoleculeSystem,
+    # Core simulation parameters
     SmoluchowskiParams,
     
-    # Diffusing emitter types for imaging
+    # Emitter types
+    AbstractDiffusingEmitter,
     DiffusingEmitter2D,
     DiffusingEmitter3D,
 
@@ -80,24 +77,22 @@ export
     
     # Analysis functions
     get_dimers,
-    gen_dimer_images,
+    get_monomers,
     analyze_dimer_fraction,
     analyze_dimer_lifetime,
+    track_state_changes,
 
     # Helper functions
-    calc_r,
-    calc_ϕ,
-    calc_θ,
-    dimerize!,
-    monomerize!,
-
-    # Visualization functions
-    show_frame,
-    visualize_sequence,
-    visualize_simulation,
+    distance,
+    angle,
+    dimerize,
+    dissociate,
+    diffuse,
+    diffuse_dimer,
+    apply_boundary,
     
-    # Microscope image generation
-    gen_image,
-    gen_image_sequence
+    # SMLD conversion utilities
+    create_smld,
+    get_frame
 
 end

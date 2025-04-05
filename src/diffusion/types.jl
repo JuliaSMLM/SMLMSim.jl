@@ -2,7 +2,15 @@
 # directly inherit from SMLMData.AbstractEmitter
 
 """
-    DiffusingEmitter2D{T<:AbstractFloat} <: AbstractEmitter
+    AbstractDiffusingEmitter <: AbstractEmitter
+
+Abstract type for all diffusing emitters to enable dispatch-based operations.
+This provides a common parent for 2D and 3D diffusing emitters.
+"""
+abstract type AbstractDiffusingEmitter <: AbstractEmitter end
+
+"""
+    DiffusingEmitter2D{T<:AbstractFloat} <: AbstractDiffusingEmitter
 
 A 2D emitter type for diffusion simulations that contains both spatial
 and temporal information, plus molecular state information.
@@ -14,11 +22,11 @@ and temporal information, plus molecular state information.
 - `timestamp::T`: actual simulation time in seconds
 - `frame::Int`: camera frame number based on framerate and exposure
 - `dataset::Int`: dataset identifier
-- `track_id::Int`: unique molecule identifier for tracking
-- `state::Int`: molecular state (1=monomer, 2=dimer)
-- `link_id::Union{Int,Nothing}`: ID of linked molecule (for dimers), or nothing for monomers
+- `id::Int`: unique molecule identifier 
+- `state::Symbol`: molecular state (:monomer or :dimer)
+- `partner_id::Union{Int,Nothing}`: ID of linked molecule (for dimers), or nothing for monomers
 """
-struct DiffusingEmitter2D{T<:AbstractFloat} <: AbstractEmitter
+struct DiffusingEmitter2D{T<:AbstractFloat} <: AbstractDiffusingEmitter
     # Core spatial and intensity properties required by integrate_pixels
     x::T
     y::T
@@ -30,15 +38,15 @@ struct DiffusingEmitter2D{T<:AbstractFloat} <: AbstractEmitter
     
     # Bookkeeping properties
     dataset::Int
-    track_id::Int
+    id::Int
     
     # Diffusion-specific properties
-    state::Int              # 1=monomer, 2=dimer
-    link_id::Union{Int,Nothing}   # ID of linked molecule (for dimers)
+    state::Symbol              # :monomer or :dimer
+    partner_id::Union{Int,Nothing}   # ID of linked molecule (for dimers)
 end
 
 """
-    DiffusingEmitter3D{T<:AbstractFloat} <: AbstractEmitter
+    DiffusingEmitter3D{T<:AbstractFloat} <: AbstractDiffusingEmitter
 
 A 3D emitter type for diffusion simulations that contains both spatial
 and temporal information, plus molecular state information.
@@ -51,11 +59,11 @@ and temporal information, plus molecular state information.
 - `timestamp::T`: actual simulation time in seconds
 - `frame::Int`: camera frame number based on framerate and exposure
 - `dataset::Int`: dataset identifier
-- `track_id::Int`: unique molecule identifier for tracking
-- `state::Int`: molecular state (1=monomer, 2=dimer)
-- `link_id::Union{Int,Nothing}`: ID of linked molecule (for dimers), or nothing for monomers
+- `id::Int`: unique molecule identifier
+- `state::Symbol`: molecular state (:monomer or :dimer)
+- `partner_id::Union{Int,Nothing}`: ID of linked molecule (for dimers), or nothing for monomers
 """
-struct DiffusingEmitter3D{T<:AbstractFloat} <: AbstractEmitter
+struct DiffusingEmitter3D{T<:AbstractFloat} <: AbstractDiffusingEmitter
     # Core spatial and intensity properties
     x::T
     y::T
@@ -66,44 +74,40 @@ struct DiffusingEmitter3D{T<:AbstractFloat} <: AbstractEmitter
     timestamp::T
     frame::Int
     dataset::Int
-    track_id::Int
-    state::Int
-    link_id::Union{Int,Nothing}
+    id::Int
+    state::Symbol
+    partner_id::Union{Int,Nothing}
 end
 
 # Display methods
 function Base.show(io::IO, e::DiffusingEmitter2D{T}) where T
-    state_str = e.state == 1 ? "monomer" : "dimer"
-    print(io, "DiffusingEmitter2D{$T}($(e.x), $(e.y) μm, t=$(e.timestamp)s, frame=$(e.frame), $state_str)")
+    print(io, "DiffusingEmitter2D{$T}($(e.x), $(e.y) μm, t=$(e.timestamp)s, frame=$(e.frame), $(e.state))")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", e::DiffusingEmitter2D{T}) where T
-    state_str = e.state == 1 ? "monomer" : "dimer"
-    link_str = isnothing(e.link_id) ? "unlinked" : "linked to $(e.link_id)"
+    link_str = isnothing(e.partner_id) ? "unlinked" : "linked to $(e.partner_id)"
     
     println(io, "DiffusingEmitter2D{$T}:")
     println(io, "  Position: ($(e.x), $(e.y)) μm")
     println(io, "  Photons: $(e.photons)")
     println(io, "  Time: $(e.timestamp) s, frame: $(e.frame)")
-    println(io, "  State: $state_str")
-    println(io, "  Track ID: $(e.track_id)")
+    println(io, "  State: $(e.state)")
+    println(io, "  ID: $(e.id)")
     print(io, "  Link: $link_str")
 end
 
 function Base.show(io::IO, e::DiffusingEmitter3D{T}) where T
-    state_str = e.state == 1 ? "monomer" : "dimer"
-    print(io, "DiffusingEmitter3D{$T}($(e.x), $(e.y), $(e.z) μm, t=$(e.timestamp)s, frame=$(e.frame), $state_str)")
+    print(io, "DiffusingEmitter3D{$T}($(e.x), $(e.y), $(e.z) μm, t=$(e.timestamp)s, frame=$(e.frame), $(e.state))")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", e::DiffusingEmitter3D{T}) where T
-    state_str = e.state == 1 ? "monomer" : "dimer"
-    link_str = isnothing(e.link_id) ? "unlinked" : "linked to $(e.link_id)"
+    link_str = isnothing(e.partner_id) ? "unlinked" : "linked to $(e.partner_id)"
     
     println(io, "DiffusingEmitter3D{$T}:")
     println(io, "  Position: ($(e.x), $(e.y), $(e.z)) μm")
     println(io, "  Photons: $(e.photons)")
     println(io, "  Time: $(e.timestamp) s, frame: $(e.frame)")
-    println(io, "  State: $state_str")
-    println(io, "  Track ID: $(e.track_id)")
+    println(io, "  State: $(e.state)")
+    println(io, "  ID: $(e.id)")
     print(io, "  Link: $link_str")
 end
