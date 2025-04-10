@@ -21,6 +21,7 @@ module Core
 using SMLMData
 using Distributions
 using LinearAlgebra
+using Printf
 using ..SMLMSim
 
 include("molecules.jl")

@@ -42,3 +42,75 @@ function GenericFluor(;
 )
     return GenericFluor(γ, q)
 end
+
+"""
+    Base.show(io::IO, fluor::GenericFluor)
+
+Custom display method for GenericFluor showing basic properties.
+"""
+function Base.show(io::IO, fluor::GenericFluor)
+    n_states = size(fluor.q, 1)
+    print(io, "GenericFluor($(n_states) states, γ=$(fluor.γ) Hz)")
+end
+
+"""
+    Base.show(io::IO, ::MIME"text/plain", fluor::GenericFluor)
+
+Extended display method for GenericFluor in REPL and other text contexts.
+"""
+function Base.show(io::IO, ::MIME"text/plain", fluor::GenericFluor)
+    n_states = size(fluor.q, 1)
+    println(io, "GenericFluor with $n_states states:")
+    println(io, "  Photon emission rate (γ) = $(fluor.γ) Hz")
+    println(io, "  Rate matrix (q):")
+    
+    # Format the rate matrix with aligned columns
+    for i in 1:n_states
+        print(io, "    ")
+        for j in 1:n_states
+            val = fluor.q[i, j]
+            # Format the rate value with appropriate precision
+            val_str = abs(val) < 0.01 ? @sprintf("%.2e", val) : @sprintf("%.3f", val)
+            print(io, lpad(val_str, 10))
+        end
+        if i < n_states
+            println(io)
+        end
+    end
+end
+
+"""
+    Base.show(io::IO, fluor::GenericFluor)
+
+Custom display method for GenericFluor showing basic properties.
+"""
+function Base.show(io::IO, fluor::GenericFluor)
+    n_states = size(fluor.q, 1)
+    print(io, "GenericFluor($(n_states) states, γ=$(fluor.γ) Hz)")
+end
+
+"""
+    Base.show(io::IO, ::MIME"text/plain", fluor::GenericFluor)
+
+Extended display method for GenericFluor in REPL and other text contexts.
+"""
+function Base.show(io::IO, ::MIME"text/plain", fluor::GenericFluor)
+    n_states = size(fluor.q, 1)
+    println(io, "GenericFluor with $n_states states:")
+    println(io, "  Photon emission rate (γ) = $(fluor.γ) Hz")
+    println(io, "  Rate matrix (q):")
+    
+    # Format the rate matrix with aligned columns
+    for i in 1:n_states
+        print(io, "    ")
+        for j in 1:n_states
+            val = fluor.q[i, j]
+            # Format the rate value with appropriate precision
+            val_str = abs(val) < 0.01 ? @sprintf("%.2e", val) : @sprintf("%.3f", val)
+            print(io, lpad(val_str, 10))
+        end
+        if i < n_states
+            println(io)
+        end
+    end
+end

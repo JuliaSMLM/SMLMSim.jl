@@ -7,6 +7,7 @@ using Revise
 using SMLMSim
 using MicroscopePSFs
 using GLMakie
+using Statistics
 include("stack_viewer.jl")
 
 
@@ -25,8 +26,8 @@ params = StaticSMLMParams(
     σ_psf = 0.13,      # 130nm PSF width (realistic for visible light)
     minphotons = 50,   # Default minimum photon count for detection
     ndatasets = 1,     # Generate 1 dataset
-    nframes = 100,     # Generate 100 frames
-    framerate = 20.0,  # 20 frames per second
+    nframes = 1000,    # Generate 1000 frames
+    framerate = 10.0,  # 10 frames per second
     ndims = 2,         # 2D simulation
     zrange = [-1.0, 1.0]  # Not used for 2D, but required parameter
 )
@@ -35,12 +36,20 @@ println("Running SMLM simulation with hexamer pattern...")
 
 # Create a fluorophore model with custom blinking kinetics
 
-# Number of blinking events per fluorophore
-n_blinks_per_fluor = 5 
-total_time = params.nframes / params.framerate  # Total time in seconds
+# Simulation parameters from test_photophysics.jl
+nframes = params.nframes
+framerate = params.framerate
+total_time = nframes / framerate  # Total time in seconds
 
-k_on = 1/(total_time / n_blinks_per_fluor)  # On state rate (Hz)
-k_off = params.framerate  # Off state rate (Hz)
+# Kinetics parameters
+k_off = framerate        # Off state rate (Hz) - corresponds to 1 frame duration
+n_blinks_per_fluor = 10  # Desired number of events per 1000 frames
+k_on = n_blinks_per_fluor / total_time  # On state rate (Hz)
+
+println("Fluorophore parameters:")
+println("- Off rate: $k_off Hz (average on time: $(1/k_off) seconds)")
+println("- On rate: $k_on Hz (average off time: $(1/k_on) seconds)")
+println("- Expected events per $nframes frames: $n_blinks_per_fluor")
 fluor = GenericFluor(
     1e3,                        # Photon emission rate (Hz)
     [-k_off k_off; k_on -k_on]    # Rate matrix: [k_on→off, k_off→on; k_on←off, k_off←on]
@@ -88,7 +97,7 @@ psf = MicroscopePSFs.GaussianPSF(0.13)  # 130nm PSF width
 println("Generating camera images...")
 images = gen_images(smld_noisy, psf;
     support = 1.0,  # PSF support radius in μm
-    bg=10.0,             # Background photons
+    bg=2.0,             # Background photons
     poisson_noise=true   # Add realistic Poisson noise
 )
 
@@ -100,10 +109,41 @@ fig2 = view_stack(images, title="SMLM 2D Simulation (Hexamer Pattern)")
 
 println("Stack viewer is now interactive. Close the window to exit.")
 
-# # Check fluorophores per frame 
+# Count fluorophores per frame using emitter data
+molecules_per_frame = zeros(Int, nframes)
+for emitter in smld_noisy.emitters
+    frame = Int(emitter.frame)
+    if 1 <= frame <= nframes
+        molecules_per_frame[frame] += 1
+    end
+end
 
-# fluor_per_frame = vec(sum(images, dims = [1,2]))
-# fig3 = Figure()
-# ax3 = Axis(fig3[1, 1], title="Fluorophores per Frame", xlabel="Frame", ylabel="Fluorophores")
-# lines!(ax3, 1:length(fluor_per_frame), fluor_per_frame)
-# display(fig3)
+# Plot molecules per frame
+fig3 = Figure()
+ax3 = Axis(fig3[1, 1], 
+    title="Fluorophores per Frame", 
+    xlabel="Frame", 
+    ylabel="Number of Molecules",
+    yticklabelsize=14)
+
+# Plot the molecule count
+lines!(ax3, 1:nframes, molecules_per_frame, linewidth=2, color=:blue)
+
+# Add annotation for rates
+text!(ax3, 0.05, 0.95, 
+    text="k_off = $(round(k_off, digits=2)) Hz\nk_on = $(round(k_on, digits=2)) Hz\nTotal molecules: $(length(smld_true.emitters))",
+    align=(:left, :top), 
+    space=:relative, 
+    fontsize=14)
+
+display(fig3)
+
+# Calculate statistics
+avg_molecules = mean(molecules_per_frame)
+max_molecules = maximum(molecules_per_frame)
+total_activations = sum(molecules_per_frame)
+
+println("\nMolecule activation statistics:")
+println("- Average molecules per frame: $(round(avg_molecules, digits=2))")
+println("- Maximum molecules per frame: $max_molecules")
+println("- Total molecule activations: $total_activations")

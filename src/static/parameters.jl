@@ -80,3 +80,37 @@ Base.@kwdef mutable struct StaticSMLMParams <: AbstractSim
         new(ρ, σ_psf, minphotons, ndatasets, nframes, framerate, ndims, zrange)
     end
 end
+
+"""
+    Base.show(io::IO, params::StaticSMLMParams)
+
+Custom display method for StaticSMLMParams showing all simulation parameters.
+"""
+function Base.show(io::IO, params::StaticSMLMParams)
+    println(io, "StaticSMLMParams:")
+    println(io, "  ρ         = $(params.ρ) particles/μm²")
+    println(io, "  σ_psf     = $(params.σ_psf) μm")
+    println(io, "  minphotons = $(params.minphotons)")
+    println(io, "  ndatasets = $(params.ndatasets)")
+    println(io, "  nframes   = $(params.nframes)")
+    println(io, "  framerate = $(params.framerate) Hz")
+    println(io, "  ndims     = $(params.ndims)D")
+    print(io,   "  zrange    = [$(params.zrange[1]), $(params.zrange[2])] μm")
+end
+
+"""
+    Base.show(io::IO, ::MIME"text/plain", params::StaticSMLMParams)
+
+Extended display method for StaticSMLMParams in REPL and other text contexts.
+"""
+function Base.show(io::IO, ::MIME"text/plain", params::StaticSMLMParams)
+    println(io, "StaticSMLMParams:")
+    println(io, "  Density (ρ)       = $(params.ρ) particles/μm²")
+    println(io, "  PSF width (σ)     = $(params.σ_psf) μm ($(params.σ_psf*1000) nm)")
+    println(io, "  Min photons       = $(params.minphotons)")
+    println(io, "  Datasets          = $(params.ndatasets)")
+    println(io, "  Frames per dataset= $(params.nframes)")
+    println(io, "  Frame rate        = $(params.framerate) Hz ($(1000/params.framerate) ms/frame)")
+    println(io, "  Dimensions        = $(params.ndims)D")
+    print(io,   "  Z-range           = [$(params.zrange[1]), $(params.zrange[2])] μm")
+end

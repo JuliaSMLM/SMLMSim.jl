@@ -34,6 +34,44 @@ mutable struct CTMC{T<:AbstractFloat,U<:Int}
 end
 
 """
+    Base.show(io::IO, ctmc::CTMC)
+
+Custom display method for CTMC showing basic properties.
+"""
+function Base.show(io::IO, ctmc::CTMC)
+    num_transitions = length(ctmc.states) - 1
+    print(io, "CTMC(time=$(round(ctmc.simulation_time, digits=2)), $(num_transitions) transitions)")
+end
+
+"""
+    Base.show(io::IO, ::MIME"text/plain", ctmc::CTMC)
+
+Extended display method for CTMC in REPL and other text contexts.
+"""
+function Base.show(io::IO, ::MIME"text/plain", ctmc::CTMC)
+    num_transitions = length(ctmc.states) - 1
+    unique_states = length(Set(ctmc.states))
+    
+    println(io, "CTMC (Continuous Time Markov Chain):")
+    println(io, "  Simulation time: $(ctmc.simulation_time)")
+    println(io, "  Number of transitions: $(num_transitions)")
+    println(io, "  Number of unique states: $(unique_states)")
+    println(io, "  Initial state: $(ctmc.states[1])")
+    println(io, "  Final state: $(ctmc.states[end])")
+    
+    # Show detailed transition information if there are not too many
+    if num_transitions <= 10
+        println(io, "  Transitions:")
+        for i in 1:num_transitions
+            from_state = ctmc.states[i]
+            to_state = ctmc.states[i+1]
+            time = ctmc.transition_times[i+1]
+            println(io, "    [$(round(time, digits=3))s] $(from_state) → $(to_state)")
+        end
+    end
+end
+
+"""
     CTMC(q::Array{T}, simulation_time::T, state1::Int) where {T<:AbstractFloat}
 
 Construct a Continuous Time Markov Chain simulation from a rate matrix.

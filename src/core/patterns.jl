@@ -62,6 +62,37 @@ function Nmer2D(; n::Int=8, d::Float64=0.1)
 end
 
 """
+    Base.show(io::IO, nmer::Nmer2D)
+
+Custom display method for Nmer2D pattern showing basic properties.
+"""
+function Base.show(io::IO, nmer::Nmer2D)
+    print(io, "Nmer2D(n=$(nmer.n), d=$(nmer.d) μm)")
+end
+
+"""
+    Base.show(io::IO, ::MIME"text/plain", nmer::Nmer2D)
+
+Extended display method for Nmer2D in REPL and other text contexts.
+"""
+function Base.show(io::IO, ::MIME"text/plain", nmer::Nmer2D)
+    println(io, "Nmer2D pattern:")
+    println(io, "  Number of molecules (n) = $(nmer.n)")
+    println(io, "  Diameter (d) = $(nmer.d) μm ($(nmer.d*1000) nm)")
+    
+    if nmer.n <= 10  # Only show coordinates for small patterns
+        println(io, "  Coordinates (μm):")
+        for i in 1:nmer.n
+            print(io, "    [$(i)]: (")
+            print(io, @sprintf("%.3f", nmer.x[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", nmer.y[i]))
+            println(io, ")")
+        end
+    end
+end
+
+"""
     Nmer3D <: Pattern3D
 
 N molecules symmetrically organized around a circle with diameter d at z=0.
@@ -99,6 +130,39 @@ function Nmer3D(; n::Int=8, d::Float64=0.1)
         nmer.z[nn] = 0.0
     end
     return nmer
+end
+
+"""
+    Base.show(io::IO, nmer::Nmer3D)
+
+Custom display method for Nmer3D pattern showing basic properties.
+"""
+function Base.show(io::IO, nmer::Nmer3D)
+    print(io, "Nmer3D(n=$(nmer.n), d=$(nmer.d) μm)")
+end
+
+"""
+    Base.show(io::IO, ::MIME"text/plain", nmer::Nmer3D)
+
+Extended display method for Nmer3D in REPL and other text contexts.
+"""
+function Base.show(io::IO, ::MIME"text/plain", nmer::Nmer3D)
+    println(io, "Nmer3D pattern:")
+    println(io, "  Number of molecules (n) = $(nmer.n)")
+    println(io, "  Diameter (d) = $(nmer.d) μm ($(nmer.d*1000) nm)")
+    
+    if nmer.n <= 10  # Only show coordinates for small patterns
+        println(io, "  Coordinates (μm):")
+        for i in 1:nmer.n
+            print(io, "    [$(i)]: (")
+            print(io, @sprintf("%.3f", nmer.x[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", nmer.y[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", nmer.z[i]))
+            println(io, ")")
+        end
+    end
 end
 
 """
@@ -145,6 +209,48 @@ function Line2D(; λ::Float64=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
         line.y[nn] = endpoints[1][2] + d / l * ly
     end
     return line
+end
+
+"""
+    Base.show(io::IO, line::Line2D)
+
+Custom display method for Line2D pattern showing basic properties.
+"""
+function Base.show(io::IO, line::Line2D)
+    p1 = line.endpoints[1]
+    p2 = line.endpoints[2]
+    length = sqrt((p2[1] - p1[1])^2 + (p2[2] - p1[2])^2)
+    print(io, "Line2D(n=$(line.n), λ=$(line.λ)/μm, length=$(round(length, digits=2)) μm)")
+end
+
+"""
+    Base.show(io::IO, ::MIME"text/plain", line::Line2D)
+
+Extended display method for Line2D in REPL and other text contexts.
+"""
+function Base.show(io::IO, ::MIME"text/plain", line::Line2D)
+    p1 = line.endpoints[1]
+    p2 = line.endpoints[2]
+    length = sqrt((p2[1] - p1[1])^2 + (p2[2] - p1[2])^2)
+    
+    println(io, "Line2D pattern:")
+    println(io, "  Number of molecules (n) = $(line.n)")
+    println(io, "  Linear density (λ) = $(line.λ) molecules/μm")
+    println(io, "  Length = $(round(length, digits=3)) μm")
+    println(io, "  Endpoints:")
+    println(io, "    Start: ($(p1[1]), $(p1[2])) μm")
+    println(io, "    End:   ($(p2[1]), $(p2[2])) μm")
+    
+    if line.n <= 10  # Only show coordinates for small patterns
+        println(io, "  Molecule coordinates (μm):")
+        for i in 1:line.n
+            print(io, "    [$(i)]: (")
+            print(io, @sprintf("%.3f", line.x[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", line.y[i]))
+            println(io, ")")
+        end
+    end
 end
 
 """
@@ -195,6 +301,50 @@ function Line3D(; λ::Float64=10.0, endpoints=[(-1.0, 0.0, 0.0), (1.0, 0.0, 0.0)
         line.z[nn] = endpoints[1][3] + d / l * lz
     end
     return line
+end
+
+"""
+    Base.show(io::IO, line::Line3D)
+
+Custom display method for Line3D pattern showing basic properties.
+"""
+function Base.show(io::IO, line::Line3D)
+    p1 = line.endpoints[1]
+    p2 = line.endpoints[2]
+    length = sqrt((p2[1] - p1[1])^2 + (p2[2] - p1[2])^2 + (p2[3] - p1[3])^2)
+    print(io, "Line3D(n=$(line.n), λ=$(line.λ)/μm, length=$(round(length, digits=2)) μm)")
+end
+
+"""
+    Base.show(io::IO, ::MIME"text/plain", line::Line3D)
+
+Extended display method for Line3D in REPL and other text contexts.
+"""
+function Base.show(io::IO, ::MIME"text/plain", line::Line3D)
+    p1 = line.endpoints[1]
+    p2 = line.endpoints[2]
+    length = sqrt((p2[1] - p1[1])^2 + (p2[2] - p1[2])^2 + (p2[3] - p1[3])^2)
+    
+    println(io, "Line3D pattern:")
+    println(io, "  Number of molecules (n) = $(line.n)")
+    println(io, "  Linear density (λ) = $(line.λ) molecules/μm")
+    println(io, "  Length = $(round(length, digits=3)) μm")
+    println(io, "  Endpoints:")
+    println(io, "    Start: ($(p1[1]), $(p1[2]), $(p1[3])) μm")
+    println(io, "    End:   ($(p2[1]), $(p2[2]), $(p2[3])) μm")
+    
+    if line.n <= 10  # Only show coordinates for small patterns
+        println(io, "  Molecule coordinates (μm):")
+        for i in 1:line.n
+            print(io, "    [$(i)]: (")
+            print(io, @sprintf("%.3f", line.x[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", line.y[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", line.z[i]))
+            println(io, ")")
+        end
+    end
 end
 
 #==========================================================================

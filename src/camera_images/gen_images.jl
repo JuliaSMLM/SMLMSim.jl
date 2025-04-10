@@ -94,6 +94,25 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
         images[:,:,i] .+= img
     end
     
+    # Apply Poisson noise if requested
+    if poisson_noise
+        # Loop through each pixel and apply Poisson noise
+        for i in eachindex(images)
+            # Apply Poisson noise directly
+            λ = max(images[i], 0.0)
+            if λ > 0.0
+                images[i] = Float64(rand(Poisson(λ)))
+            else
+                images[i] = 0.0
+            end
+        end
+    end
+    
+    # TODO: Apply camera noise if requested
+    if camera_noise
+        @warn "Camera noise model not yet implemented"
+    end
+    
     return images
 end
 
