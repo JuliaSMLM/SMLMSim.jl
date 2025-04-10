@@ -706,27 +706,4 @@ function get_frame(smld::BasicSMLD, frame_num::Int)
     )
 end
 
-"""
-    get_dimers(smld::BasicSMLD)
-
-Extract only emitters in dimer state.
-
-# Arguments
-- `smld::BasicSMLD`: SMLD containing all emitters
-
-# Returns
-- `BasicSMLD`: New SMLD containing only dimer emitters
-"""
-function get_dimers(smld::BasicSMLD)
-    # Filter emitters by state
-    dimer_emitters = filter(e -> e.state == :dimer, smld.emitters)
-    
-    # Create new SMLD with same metadata
-    return BasicSMLD(
-        dimer_emitters,
-        smld.camera,
-        smld.n_frames,
-        smld.n_datasets,
-        copy(smld.metadata)
-    )
-end
+# The get_dimers function has been moved to analysis.jl

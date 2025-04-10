@@ -49,7 +49,7 @@ Fluorophores in SMLMSim are modeled using stochastic kinetic models:
 - **Photon emission**: Occurs during ON states with specified rate γ (in Hz)
 - **Continuous Time Markov Chain (CTMC)**: Used to simulate state transitions
 
-The photophysical behavior is critical for generating realistic blinking patterns observed in SMLM experiments.
+The photophysical behavior is used for generating realistic blinking patterns observed in SMLM experiments.
 
 ## Simulation Pipeline
 

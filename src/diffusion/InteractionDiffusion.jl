@@ -51,15 +51,14 @@ using MicroscopePSFs
 using Statistics
 
 using Printf
-using CairoMakie
 
 # Import the main simulate function to add our method
 import ..simulate
 import ..SMLMSim: AbstractSim
 
 include("types.jl")
-include("helpers.jl")
 include("smoluchowski.jl")
+include("helpers.jl")
 include("analysis.jl")
 
 # Core types and functions for diffusion simulation

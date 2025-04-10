@@ -174,12 +174,6 @@ Calculate the average lifetime of dimers.
 # Returns
 - `Float64`: Average dimer lifetime in seconds
 
-# Example
-```julia
-# Calculate average dimer lifetime
-avg_lifetime = analyze_dimer_lifetime(smld)
-println("Average dimer lifetime: $(avg_lifetime) seconds")
-```
 """
 function analyze_dimer_lifetime(smld::BasicSMLD)
     # Track state changes
