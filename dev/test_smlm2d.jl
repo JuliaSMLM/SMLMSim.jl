@@ -26,7 +26,7 @@ params = StaticSMLMParams(
     σ_psf=0.13,      # 130nm PSF width (realistic for visible light)
     minphotons=50,   # Default minimum photon count for detection
     ndatasets=1,     # Generate 1 dataset
-    nframes=1000,    # Generate 1000 frames
+    nframes=100,    # Generate 1000 frames
     framerate=10.0,  # 10 frames per second
     ndims=2,         # 2D simulation
     zrange=[-1.0, 1.0]  # Not used for 2D, but required parameter
@@ -43,7 +43,7 @@ total_time = nframes / framerate  # Total time in seconds
 
 # Kinetics parameters
 k_off = framerate        # Off state rate (Hz) - corresponds to 1 frame duration
-n_blinks_per_fluor = 10  # Desired number of events per 1000 frames
+n_blinks_per_fluor = 5  # Desired number of events per 1000 frames
 k_on = n_blinks_per_fluor / total_time  # On state rate (Hz)
 photons_per_frame = 1000  
 photons = photons_per_frame * framerate  # Photon emission rate (Hz)
