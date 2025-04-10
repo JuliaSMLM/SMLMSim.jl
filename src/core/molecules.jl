@@ -36,11 +36,46 @@ mutable struct GenericFluor <: Molecule
     q::Array{<:AbstractFloat}
 end
 
+"""
+    GenericFluor(; γ::AbstractFloat=1e5, q::Array{<:AbstractFloat}=[-50.0 50.0; 1e-2 -1e-2])
+
+Create a generic fluorophore with specified photon emission rate and rate matrix.
+
+# Arguments
+- `γ::AbstractFloat`: Photon emission rate in Hz
+- `q::Array{<:AbstractFloat}`: Rate matrix where q[i,j] for i≠j is the transition rate from state i to j
+"""
 function GenericFluor(;
     γ::AbstractFloat=1e5,
     q::Array{<:AbstractFloat}=[-50.0 50.0; 1e-2 -1e-2]
 )
     return GenericFluor(γ, q)
+end
+
+"""
+    GenericFluor(; photons::AbstractFloat=1000, k_off::AbstractFloat=50.0, k_on::AbstractFloat=1e-2)
+
+Create a simple two-state (on/off) fluorophore with specified parameters.
+
+# Arguments
+- `photons::AbstractFloat`: Photon emission rate in Hz
+- `k_off::AbstractFloat`: Off-switching rate (on→off) in Hz
+- `k_on::AbstractFloat`: On-switching rate (off→on) in Hz
+
+# Details
+Creates a fluorophore with a 2-state model and the specified rates.
+State 1 is the on (bright) state, and state 2 is the off (dark) state.
+The rate matrix is constructed as: q = [-k_off k_off; k_on -k_on]
+"""
+function GenericFluor(; 
+    photons::AbstractFloat=1000, 
+    k_off::AbstractFloat=50.0, 
+    k_on::AbstractFloat=1e-2
+)
+    # Create rate matrix for 2-state system
+    q = [-k_off k_off; k_on -k_on]
+    
+    return GenericFluor(photons, q)
 end
 
 """

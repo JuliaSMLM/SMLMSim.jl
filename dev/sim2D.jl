@@ -18,7 +18,7 @@ params = StaticSMLMParams(
 
 # Run simulation with type-based interface
 pattern = SMLMSim.Nmer2D()
-molecule = SMLMSim.GenericFluor(; q=[0 50; 1e-2 0])  # rates in 1/s
+molecule = SMLMSim.GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2)  # rates in 1/s
 
 smld_true, smld_model, smld_noisy = simulate(
     params,

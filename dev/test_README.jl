@@ -24,7 +24,7 @@ smld_true, smld_model, smld_noisy = simulate(;
     nframes=1000,         # frames per dataset
     framerate=50.0,       # frames per second
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
-    molecule=GenericFluor(; q=[0 50; 1e-2 0]),  # rates in 1/s
+    molecule=GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2),  # rates in 1/s
     camera=IdealCamera(1:256, 1:128, 0.1)  # pixelsize in μm
 )
 
@@ -52,8 +52,9 @@ Molecule Models
 
 # Generic fluorophore with two-state kinetics
 fluor = GenericFluor(
-    γ=10000.0,           # photon emission rate in Hz
-    q=[0 10; 1e-2 0]     # transition rate matrix: state 1 ↔ state 2
+    photons=10000.0,     # photon emission rate in Hz
+    k_off=10.0,          # off rate in Hz (state 1 → state 2)
+    k_on=1e-2            # on rate in Hz (state 2 → state 1)
 )
 
 #==========================================================================

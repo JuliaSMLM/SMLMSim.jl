@@ -26,11 +26,11 @@ println("- Off rate: $k_off Hz (average on time: $(1/k_off) seconds)")
 println("- On rate: $k_on Hz (average off time: $(1/k_on) seconds)")
 println("- Expected events per $nframes frames: $n_blinks_per_fluor")
 
-# Create fluorophore model with on/off blinking
-# Rate matrix: [on→off on←off; off→on off←on]
+# Create fluorophore model with on/off blinking using the new keyword constructor
 fluor = GenericFluor(
-    1e3,                        # Photon emission rate (Hz)
-    [-k_off k_off; k_on -k_on]  # Rate matrix
+    photons=1e3,  # Photon emission rate (Hz)
+    k_off=k_off,  # Off rate (on→off) (Hz) 
+    k_on=k_on     # On rate (off→on) (Hz)
 )
 
 # Directly simulate intensity trace using the photophysics functions

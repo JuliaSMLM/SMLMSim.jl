@@ -4,17 +4,19 @@ function test_molecules()
     @testset "GenericFluor" begin
         # Test various constructors with minimal checks
         # Use Float64 values for q to match AbstractFloat requirement
-        fluor_default = GenericFluor(γ=1e5, q=[1.0])  # Use explicit Float64 value
+        fluor_default = GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2)  # Use new constructor
         @test fluor_default.γ == 1e5
         
-        # Custom parameters
-        fluor_custom = GenericFluor(2e4, [0.0 5.0; 0.1 0.0])  # Use explicit Float64 values
+        # Custom parameters with traditional constructor
+        fluor_custom = GenericFluor(2e4, [0.0 5.0; 0.1 0.0])  # Use traditional constructor
         @test fluor_custom.γ == 2e4
         @test fluor_custom.q[1,2] == 5.0
         
-        # Keyword constructor
-        fluor_kw = GenericFluor(γ=5e4, q=[0.0 10.0; 0.2 0.0])  # Use explicit Float64 values
+        # New keyword constructor
+        fluor_kw = GenericFluor(photons=5e4, k_off=10.0, k_on=0.2)  # Use new keyword constructor
         @test fluor_kw.γ == 5e4
+        @test fluor_kw.q[1,2] == 10.0
+        @test fluor_kw.q[2,1] == 0.2
     end
     
     @testset "DiffusingMolecule" begin

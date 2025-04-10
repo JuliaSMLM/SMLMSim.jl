@@ -31,7 +31,7 @@ function test_kinetics()
     
     @testset "intensity_trace" begin
         # Create fluorophore with simple on/off kinetics
-        fluor = GenericFluor(γ=10000.0, q=[-10.0 10.0; 0.1 -0.1])  # Use explicit Float64 values
+        fluor = GenericFluor(photons=10000.0, k_off=10.0, k_on=0.1)  # Use new constructor
         nframes = 100
         framerate = 10.0
         
@@ -51,7 +51,7 @@ function test_kinetics()
         smld_true = BasicSMLD([emitter], camera, 1, 1, Dict{String,Any}())
         
         # Create fluorophore model
-        fluor = GenericFluor(γ=5000.0, q=[-5.0 5.0; 1.0 -1.0])  # Float64 values
+        fluor = GenericFluor(photons=5000.0, k_off=5.0, k_on=1.0)  # Using new constructor
         nframes = 10
         framerate = 10.0
         
@@ -157,7 +157,7 @@ function test_kinetics()
         smld_true = BasicSMLD([emitter], camera, 1, 1, Dict{String,Any}())
         
         # Create fluorophore model with known equilibrium
-        fluor = GenericFluor(γ=5000.0, q=[-5.0 5.0; 1.0 -1.0])  # k_on=1, k_off=5
+        fluor = GenericFluor(photons=5000.0, k_off=5.0, k_on=1.0)  # k_on=1, k_off=5
         nframes = 5
         framerate = 10.0
         
