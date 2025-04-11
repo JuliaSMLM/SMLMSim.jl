@@ -130,12 +130,14 @@ function view_stack(img; title="Image Viewer")
         if event.action == Keyboard.press || event.action == Keyboard.repeat
             # Left/right arrow keys for frame navigation (only for stacks)
             if is_stack && event.key == Keyboard.left && current_frame[] > 1
-                current_frame[] -= 1
-                slider.value[] = current_frame[]
+                # Just update the slider value - this handles both the current_frame and the slider position
+                # as they are connected with the connect! function
+                current_frame[] = current_frame[] - 1
                 return true
             elseif is_stack && event.key == Keyboard.right && current_frame[] < n_frames
-                current_frame[] += 1
-                slider.value[] = current_frame[]
+                # Just update the slider value - this handles both the current_frame and the slider position
+                # as they are connected with the connect! function
+                current_frame[] = current_frame[] + 1
                 return true
             # 'r' key to reset the axis view (works for both 2D and 3D)
             elseif event.key == Keyboard.r
