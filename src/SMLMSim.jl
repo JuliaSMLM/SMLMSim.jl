@@ -24,7 +24,7 @@ include("camera_images/CameraImages.jl")
 
 # Import specific functions from InteractionDiffusion
 using .InteractionDiffusion: DiffusingMolecule, DiffusingMoleculeSystem, 
-                            SmoluchowskiParams, get_dimers, 
+                            DiffusionSMLMParams, get_dimers,  # Changed here 
                             show_frame, visualize_sequence, visualize_simulation,
                             gen_image, gen_image_sequence, 
                             DiffusingEmitter2D, DiffusingEmitter3D
@@ -38,6 +38,12 @@ using .CameraImages: gen_images, gen_image
 # Add this line to import the simulate methods
 using .InteractionDiffusion: simulate
 using .StaticSMLM: simulate
+
+# Export simulation interfaces
+export
+    # Simulation interfaces
+    AbstractSim,
+    SMLMSimParams  # Add this export
 
 # Export simulation functions
 export
@@ -56,7 +62,7 @@ export
     # Core types
     DiffusingMolecule,
     DiffusingMoleculeSystem,
-    SmoluchowskiParams,
+    DiffusionSMLMParams,  # Changed here
     
     # New diffusing emitter types for imaging
     DiffusingEmitter2D,

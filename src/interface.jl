@@ -15,6 +15,14 @@ Concrete subtypes should implement their own simulate methods.
 abstract type AbstractSim end
 
 """
+    SMLMSimParams <: AbstractSim
+
+Abstract type for all SMLM simulation parameter types.
+Provides a common parent for different types of SMLM simulations.
+"""
+abstract type SMLMSimParams <: AbstractSim end
+
+"""
     simulate(sim::AbstractSim; kwargs...)
 
 Generic interface for all simulation types.
@@ -34,10 +42,9 @@ params = StaticSMLMParams(
     ρ = 1.0,
     σ_psf = 0.13
 )
-sim_obj = StaticSim(params)
 
 # Run the simulation
-results = simulate(sim_obj)
+results = simulate(params)
 ```
 """
 function simulate(sim::AbstractSim; kwargs...)
@@ -45,4 +52,3 @@ function simulate(sim::AbstractSim; kwargs...)
     # appropriate method based on the concrete type of sim
     error("No simulate method implemented for $(typeof(sim))")
 end
-

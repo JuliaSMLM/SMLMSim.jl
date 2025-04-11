@@ -4,16 +4,16 @@ using Random
 using SMLMSim.InteractionDiffusion: initialize_system
 
 function test_diffusion()
-    @testset "SmoluchowskiParams" begin
+    @testset "DiffusionSMLMParams" begin
         # Test default constructor
-        params = SmoluchowskiParams()
+        params = DiffusionSMLMParams()
         @test params.density == 1.0
         @test params.box_size == 10.0
         @test params.dt == 0.01
         @test params.boundary == "periodic"
         
         # Test custom constructor with a few key parameters
-        params = SmoluchowskiParams(
+        params = DiffusionSMLMParams(
             density = 2.0,
             box_size = 20.0,
             ndims = 3,
@@ -26,12 +26,12 @@ function test_diffusion()
         @test params.boundary == "reflecting"
         
         # Test one invalid parameter case
-        @test_throws ArgumentError SmoluchowskiParams(density = -1.0)
+        @test_throws ArgumentError DiffusionSMLMParams(density = -1.0)
     end
     
     @testset "Diffusion Simulation" begin
         # Create small system for quick tests
-        params = SmoluchowskiParams(
+        params = DiffusionSMLMParams(
             density = 1.0,
             box_size = 1.0,
             dt = 0.01,
@@ -48,7 +48,7 @@ function test_diffusion()
         @test length(systems) == round(Int, params.t_max / params.dt)
         
         # Test dimer formation with parameters favoring dimers
-        params_dimer = SmoluchowskiParams(
+        params_dimer = DiffusionSMLMParams(
             density = 10.0,     # High density
             box_size = 1.0,     # Small box
             r_react = 0.1,      # Large reaction radius
@@ -69,7 +69,7 @@ function test_diffusion()
     
     @testset "Dimer Analysis" begin
         # Create a system with some dimers
-        params = SmoluchowskiParams(box_size = 1.0, density = 5.0)
+        params = DiffusionSMLMParams(box_size = 1.0, density = 5.0)
         system = initialize_system(params)
         
         # Make some molecules into dimers

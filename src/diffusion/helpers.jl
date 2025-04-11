@@ -646,7 +646,7 @@ end
 
 # SMLD conversion utilities
 """
-    create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::SmoluchowskiParams)
+    create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::DiffusionSMLMParams)
 
 Convert a collection of diffusing emitters to a BasicSMLD object.
 
@@ -658,7 +658,7 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 # Returns
 - `BasicSMLD`: SMLD containing all emitters for further analysis or visualization
 """
-function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::SmoluchowskiParams)
+function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::DiffusionSMLMParams)
     # Determine max frame number
     max_frame = isempty(emitters) ? 0 : maximum(e -> e.frame, emitters)
     

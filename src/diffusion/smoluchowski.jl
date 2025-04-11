@@ -1,7 +1,7 @@
 """
-    SmoluchowskiParams
+    DiffusionSMLMParams <: SMLMSimParams
 
-Parameters for Smoluchowski diffusion simulation.
+Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 # Fields
 - `density::Float64`: number density (molecules/μm²)
@@ -22,10 +22,10 @@ Parameters for Smoluchowski diffusion simulation.
 # Examples
 ```julia
 # Default parameters
-params = SmoluchowskiParams()
+params = DiffusionSMLMParams()
 
 # Custom parameters
-params = SmoluchowskiParams(
+params = DiffusionSMLMParams(
     density = 1.0,           # 1 molecule per μm²
     box_size = 20.0,         # 20μm × 20μm box
     diff_monomer = 0.2,      # 0.2 μm²/s
@@ -43,7 +43,7 @@ params = SmoluchowskiParams(
 )
 ```
 """
-Base.@kwdef mutable struct SmoluchowskiParams <: AbstractSim
+Base.@kwdef mutable struct DiffusionSMLMParams <: SMLMSimParams
     density::Float64 = 1.0
     box_size::Float64 = 10.0
     diff_monomer::Float64 = 0.1
@@ -61,7 +61,7 @@ Base.@kwdef mutable struct SmoluchowskiParams <: AbstractSim
     camera_framerate::Float64 = 10.0     # Frames per second
     camera_exposure::Float64 = 0.1       # Exposure time in seconds
     
-    function SmoluchowskiParams(
+    function DiffusionSMLMParams(
         density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
         k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
         camera_framerate, camera_exposure
@@ -118,18 +118,18 @@ Base.@kwdef mutable struct SmoluchowskiParams <: AbstractSim
 end
 
 """
-    initialize_emitters(params::SmoluchowskiParams, photons::Float64=1000.0)
+    initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.0)
 
 Create initial emitter positions for the simulation.
 
 # Arguments
-- `params::SmoluchowskiParams`: Simulation parameters
+- `params::DiffusionSMLMParams`: Simulation parameters
 - `photons::Float64=1000.0`: Number of photons per emitter
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Vector of initialized emitters
 """
-function initialize_emitters(params::SmoluchowskiParams, photons::Float64=1000.0)
+function initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.0)
     # Calculate number of molecules
     n_molecules = round(Int, params.density * params.box_size^params.ndims)
     
@@ -181,19 +181,19 @@ function initialize_emitters(params::SmoluchowskiParams, photons::Float64=1000.0
 end
 
 """
-    update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::SmoluchowskiParams, dt::Float64) 
+    update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMParams, dt::Float64) 
 
 Update all emitters based on Smoluchowski diffusion dynamics.
 
 # Arguments
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters state
-- `params::SmoluchowskiParams`: Simulation parameters
+- `params::DiffusionSMLMParams`: Simulation parameters
 - `dt::Float64`: Time step
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Updated emitters
 """
-function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::SmoluchowskiParams, dt::Float64)
+function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMParams, dt::Float64)
     # Create new array for updated emitters
     new_emitters = Vector{eltype(emitters)}()
     
@@ -288,12 +288,12 @@ Add emitters to camera frames when they fall within an exposure window.
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters from simulation
 - `time::Float64`: Current simulation time
 - `frame_num::Int`: Current frame number
-- `params::SmoluchowskiParams`: Simulation parameters
+- `params::DiffusionSMLMParams`: Simulation parameters
 
 # Returns
 - `Nothing`
 """
-function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params)
+function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params::DiffusionSMLMParams)
     # Check if this timepoint falls within a camera exposure window
     exposure_start = (frame_num - 1) / params.camera_framerate
     exposure_end = exposure_start + params.camera_exposure
@@ -333,13 +333,13 @@ function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, 
 end
 
 """
-    simulate(params::SmoluchowskiParams; photons::Float64=1000.0, kwargs...)
+    simulate(params::DiffusionSMLMParams; photons::Float64=1000.0, kwargs...)
 
 Run a Smoluchowski diffusion simulation and return a BasicSMLD object
 with emitters that have both frame number and timestamp information.
 
 # Arguments
-- `params::SmoluchowskiParams`: Simulation parameters
+- `params::DiffusionSMLMParams`: Simulation parameters
 - `photons::Float64=1000.0`: Number of photons per emitter
 
 # Keyword Arguments
@@ -351,7 +351,7 @@ with emitters that have both frame number and timestamp information.
 # Example
 ```julia
 # Set up parameters with camera settings
-params = SmoluchowskiParams(
+params = DiffusionSMLMParams(
     density = 0.5,           # molecules per μm²
     box_size = 10.0,         # μm
     camera_framerate = 20.0, # 20 fps
@@ -366,7 +366,7 @@ psf = Gaussian2D(0.15)  # 150nm PSF width
 images = gen_images(psf, smld)
 ```
 """
-function simulate(params::SmoluchowskiParams; photons::Float64=1000.0, kwargs...)
+function simulate(params::DiffusionSMLMParams; photons::Float64=1000.0, kwargs...)
     # Initialize
     n_steps = round(Int, params.t_max / params.dt)
     

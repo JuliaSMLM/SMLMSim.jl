@@ -16,7 +16,7 @@ println("Setting up diffusion simulation parameters...")
 # Create simulation parameters
 temporal_sampling = 10
 frame_rate = 100.0
-params = SmoluchowskiParams(
+params = DiffusionSMLMParams(
     density = 1.0,        # molecules per μm²
     box_size = 5.0,       # 5μm box 
     diff_monomer = 0.1,   # Diffusion coefficient for monomers (μm²/s)
@@ -86,4 +86,3 @@ println("Dimer lifetime: $(dimer_lifetime)")
 
 
 println("Analysis complete.")
-

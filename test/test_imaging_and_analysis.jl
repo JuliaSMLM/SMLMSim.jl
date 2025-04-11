@@ -23,7 +23,7 @@ function test_imaging_and_analysis()
         
         # Test image sequence generation
         # Create a minimal simulation
-        params = SmoluchowskiParams(
+        params = DiffusionSMLMParams(
             density = 1.0,
             box_size = 2.0,
             dt = 0.01,
@@ -49,7 +49,7 @@ function test_imaging_and_analysis()
     
     @testset "Dimer Imaging" begin
         # Create a system with dimers
-        params = SmoluchowskiParams(
+        params = DiffusionSMLMParams(
             density = 5.0,
             box_size = 1.0,
             dt = 0.01,
@@ -87,7 +87,7 @@ function test_imaging_and_analysis()
         # This is a crucial test as it ensures all components work together
         
         # Create simulation parameters
-        params = SmoluchowskiParams(
+        params = DiffusionSMLMParams(
             density = 1.0,
             box_size = 1.0,
             dt = 0.01,
@@ -139,7 +139,7 @@ function test_imaging_and_analysis()
     if get(ENV, "RUN_VISUALIZATION_TESTS", "false") == "true"
         @testset "Visualization" begin
             # Create a small simulation
-            params = SmoluchowskiParams(
+            params = DiffusionSMLMParams(
                 density = 2.0,
                 box_size = 1.0,
                 dt = 0.01,

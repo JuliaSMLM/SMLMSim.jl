@@ -1,5 +1,5 @@
 """
-    StaticSMLMParams <: AbstractSim
+    StaticSMLMParams <: SMLMSimParams
 
 Parameters for static SMLM simulation.
 
@@ -31,7 +31,7 @@ params = StaticSMLMParams(
 )
 ```
 """
-Base.@kwdef mutable struct StaticSMLMParams <: AbstractSim
+Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
     ρ::Float64 = 1.0
     σ_psf::Float64 = 0.13
     minphotons::Int = 50

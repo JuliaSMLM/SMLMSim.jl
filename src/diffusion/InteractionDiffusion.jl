@@ -17,7 +17,7 @@ visualizing particle dynamics.
 # Examples
 ```julia
 # Set up simulation parameters
-params = SmoluchowskiParams(
+params = DiffusionSMLMParams(
     density = 0.5,            # molecules per μm²
     box_size = 10.0,          # μm
     diff_monomer = 0.1,       # μm²/s
@@ -55,6 +55,7 @@ using Printf
 # Import the main simulate function to add our method
 import ..simulate
 import ..SMLMSim: AbstractSim
+import ..SMLMSim: SMLMSimParams # Add this import
 
 include("types.jl")
 include("smoluchowski.jl")
@@ -64,7 +65,7 @@ include("analysis.jl")
 # Core types and functions for diffusion simulation
 export
     # Core simulation parameters
-    SmoluchowskiParams,
+    DiffusionSMLMParams,
     
     # Emitter types
     AbstractDiffusingEmitter,

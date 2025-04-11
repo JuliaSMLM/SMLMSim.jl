@@ -61,8 +61,8 @@ fluor = GenericFluor(
 Diffusion and Interaction Simulation
 ==========================================================================#
 
-# Set up parameters for Smoluchowski diffusion simulation
-params = SmoluchowskiParams(
+# Set up parameters for diffusion simulation using Smoluchowski dynamics
+params = DiffusionSMLMParams(
     density = 0.5,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
