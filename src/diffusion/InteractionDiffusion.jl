@@ -54,8 +54,8 @@ using Printf
 
 # Import the main simulate function to add our method
 import ..simulate
-import ..SMLMSim: AbstractSim
-import ..SMLMSim: SMLMSimParams # Add this import
+import ..Core: AbstractSim
+import ..Core: SMLMSimParams
 
 include("types.jl")
 include("smoluchowski.jl")
@@ -81,15 +81,6 @@ export
     analyze_dimer_fraction,
     analyze_dimer_lifetime,
     track_state_changes,
-
-    # Helper functions
-    distance,
-    angle,
-    dimerize,
-    dissociate,
-    diffuse,
-    diffuse_dimer,
-    apply_boundary,
     
     # SMLD conversion utilities
     create_smld,

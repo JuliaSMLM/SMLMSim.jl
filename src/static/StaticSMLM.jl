@@ -23,8 +23,8 @@ using Distributions
 import ..Core: Pattern, Pattern2D, Pattern3D, uniform2D, uniform3D
 import ..Core: Molecule, GenericFluor, kinetic_model
 import ..Core: Nmer2D, Nmer3D  # Add this line
-import ..SMLMSim: simulate
-import ..SMLMSim: AbstractSim
+import ..Core: AbstractSim, SMLMSimParams
+import ..simulate
 
 include("parameters.jl")
 include("coordinate_noise.jl")

@@ -22,8 +22,10 @@ using SMLMData
 using Distributions
 using LinearAlgebra
 using Printf
-using ..SMLMSim
+# Removed circular dependency
+# using ..SMLMSim
 
+include("abstract_types.jl")
 include("molecules.jl")
 include("patterns.jl")
 include("ctmc.jl")
@@ -31,7 +33,8 @@ include("photophysics.jl")
 
 # Export abstract types
 export
-    AbstractSim
+    AbstractSim,
+    SMLMSimParams
 
 # Export molecule types
 export

@@ -6,21 +6,10 @@ dispatching to the appropriate specialized modules based on the
 simulation type and parameters.
 """
 
-"""
-    AbstractSim
+# Import the abstract types directly from Core
+import ..Core: AbstractSim
 
-Abstract type for all simulation types in SMLMSim.
-Concrete subtypes should implement their own simulate methods.
-"""
-abstract type AbstractSim end
-
-"""
-    SMLMSimParams <: AbstractSim
-
-Abstract type for all SMLM simulation parameter types.
-Provides a common parent for different types of SMLM simulations.
-"""
-abstract type SMLMSimParams <: AbstractSim end
+# Abstract types are now defined in Core.abstract_types.jl
 
 """
     simulate(sim::AbstractSim; kwargs...)

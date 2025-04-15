@@ -16,6 +16,7 @@ include("interface.jl")
 using .Core: CTMC, get_state, get_next, intensity_trace, kinetic_model
 using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
 using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
+using .Core: AbstractSim, SMLMSimParams # Add abstract types import
 
 # Include submodules after the Core imports are available
 include("static/StaticSMLM.jl")
@@ -23,10 +24,8 @@ include("diffusion/InteractionDiffusion.jl")
 include("camera_images/CameraImages.jl")
 
 # Import specific functions from InteractionDiffusion
-using .InteractionDiffusion: DiffusingMolecule, DiffusingMoleculeSystem, 
-                            DiffusionSMLMParams, get_dimers,  # Changed here 
-                            show_frame, visualize_sequence, visualize_simulation,
-                            gen_image, gen_image_sequence, 
+using .InteractionDiffusion: DiffusionSMLMParams, get_dimers, 
+                            get_monomers, analyze_dimer_fraction, analyze_dimer_lifetime,
                             DiffusingEmitter2D, DiffusingEmitter3D
 
 # Import from StaticSMLM
@@ -60,8 +59,6 @@ export
 # Core types and functions for diffusion simulation
 export
     # Core types
-    DiffusingMolecule,
-    DiffusingMoleculeSystem,
     DiffusionSMLMParams,  # Changed here
     
     # New diffusing emitter types for imaging
@@ -73,9 +70,9 @@ export
     
     # Analysis functions
     get_dimers,
-    gen_dimer_images,
-    gen_image,         
-    gen_image_sequence 
+    get_monomers,
+    analyze_dimer_fraction,
+    analyze_dimer_lifetime
 
 # Pattern simulation types and functions
 export
@@ -93,10 +90,7 @@ export
     # Pattern generation
     uniform2D,
     uniform3D,
-    rotate!,
-
-    # Full simulation pipeline
-    sim
+    rotate!
 
 # Export molecule types
 export
@@ -112,9 +106,6 @@ export
 
 # Visualization and imaging
 export
-    show_frame,
-    visualize_sequence,
-    visualize_simulation,
     gen_images,
     gen_image
 
