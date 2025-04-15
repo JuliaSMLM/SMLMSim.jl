@@ -4,7 +4,7 @@
 Parameters for static SMLM simulation.
 
 # Fields
-- `ρ::Float64`: density in particles per square micron
+- `density::Float64`: density in particles per square micron
 - `σ_psf::Float64`: PSF width in microns
 - `minphotons::Int`: minimum photons for detection
 - `ndatasets::Int`: number of datasets to simulate
@@ -20,7 +20,7 @@ params = StaticSMLMParams()
 
 # Custom parameters
 params = StaticSMLMParams(
-    ρ = 2.0,              # 2 particles per μm²
+    density = 2.0,              # 2 particles per μm²
     σ_psf = 0.15,         # 150nm PSF width
     minphotons = 100,     # minimum photons for detection
     ndatasets = 5,        # 5 independent datasets
@@ -32,7 +32,7 @@ params = StaticSMLMParams(
 ```
 """
 Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
-    ρ::Float64 = 1.0
+    density::Float64 = 1.0
     σ_psf::Float64 = 0.13
     minphotons::Int = 50
     ndatasets::Int = 10
@@ -42,11 +42,11 @@ Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
     zrange::Vector{Float64} = [-1.0, 1.0]
     
     function StaticSMLMParams(
-        ρ, σ_psf, minphotons, ndatasets, nframes, framerate, ndims, zrange
+        density, σ_psf, minphotons, ndatasets, nframes, framerate, ndims, zrange
     )
         # Input validation
-        if ρ <= 0
-            throw(ArgumentError("Density (ρ) must be positive"))
+        if density <= 0
+            throw(ArgumentError("Density must be positive"))
         end
         
         if σ_psf <= 0
@@ -77,7 +77,7 @@ Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
             throw(ArgumentError("zrange must be a vector of two values [min_z, max_z] where min_z < max_z"))
         end
         
-        new(ρ, σ_psf, minphotons, ndatasets, nframes, framerate, ndims, zrange)
+        new(density, σ_psf, minphotons, ndatasets, nframes, framerate, ndims, zrange)
     end
 end
 
@@ -88,7 +88,7 @@ Custom display method for StaticSMLMParams showing all simulation parameters.
 """
 function Base.show(io::IO, params::StaticSMLMParams)
     println(io, "StaticSMLMParams:")
-    println(io, "  ρ         = $(params.ρ) particles/μm²")
+    println(io, "  density    = $(params.density) particles/μm²")
     println(io, "  σ_psf     = $(params.σ_psf) μm")
     println(io, "  minphotons = $(params.minphotons)")
     println(io, "  ndatasets = $(params.ndatasets)")
@@ -105,7 +105,7 @@ Extended display method for StaticSMLMParams in REPL and other text contexts.
 """
 function Base.show(io::IO, ::MIME"text/plain", params::StaticSMLMParams)
     println(io, "StaticSMLMParams:")
-    println(io, "  Density (ρ)       = $(params.ρ) particles/μm²")
+    println(io, "  Density           = $(params.density) particles/μm²")
     println(io, "  PSF width (σ)     = $(params.σ_psf) μm ($(params.σ_psf*1000) nm)")
     println(io, "  Min photons       = $(params.minphotons)")
     println(io, "  Datasets          = $(params.ndatasets)")

@@ -21,7 +21,7 @@ pattern = Nmer3D(n=8, d=0.3)  # 8 molecules in a 300nm circle at z=0
 
 # Create static SMLM parameters for 3D simulation
 params = StaticSMLMParams(
-    ρ = 0.5,           # 0.5 patterns per square micron (less dense than 2D example)
+    density = 0.5,           # 0.5 patterns per square micron (less dense than 2D example)
     σ_psf = 0.13,      # 130nm PSF width (realistic for visible light)
     minphotons = 100,  # Minimum photon count for detection
     ndatasets = 1,     # Generate 1 dataset

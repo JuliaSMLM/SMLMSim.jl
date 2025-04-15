@@ -27,7 +27,7 @@ and localization uncertainty.
 ```julia
 # Create parameters
 params = StaticSMLMParams(
-    ρ = 2.0,              # 2 patterns per μm²
+    density = 2.0,              # 2 patterns per μm²
     σ_psf = 0.15,         # 150nm PSF width
     minphotons = 100,     # 100 photons for detection
     ndatasets = 5,        # 5 independent datasets
@@ -57,9 +57,9 @@ function simulate(params::StaticSMLMParams;
 
     # Generate coordinates based on pattern type
     coords = if pattern isa Pattern2D
-        uniform2D(params.ρ, pattern, field_x, field_y)
+        uniform2D(params.density, pattern, field_x, field_y)
     else
-        uniform3D(params.ρ, pattern, field_x, field_y; zrange=params.zrange)
+        uniform3D(params.density, pattern, field_x, field_y; zrange=params.zrange)
     end
 
     # Create emitters for true positions
@@ -92,7 +92,7 @@ function simulate(params::StaticSMLMParams;
     # Create SMLD with true positions
     metadata = Dict{String,Any}(
         "simulation_type" => "ground_truth",
-        "density" => params.ρ,
+        "density" => params.density,
         "pattern_type" => string(typeof(pattern)),
         "pattern_params" => Dict(
             fn => getfield(pattern, fn) 

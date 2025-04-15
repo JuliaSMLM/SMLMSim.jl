@@ -114,7 +114,7 @@ function test_imaging_and_analysis()
         
         # Basic interface with StaticSMLMParams
         params = StaticSMLMParams(
-            ρ=1.0,
+            density=1.0,
             nframes=5  # Minimal
         )
         smld_true, smld_model, smld_noisy = simulate(params, camera=camera)
@@ -127,7 +127,7 @@ function test_imaging_and_analysis()
         # With explicit pattern
         pattern = Nmer2D(n=4, d=0.1)
         params = StaticSMLMParams(
-            ρ=1.0,
+            density=1.0,
             nframes=5
         )
         smld_true, smld_model, smld_noisy = simulate(params, pattern=pattern, camera=camera)

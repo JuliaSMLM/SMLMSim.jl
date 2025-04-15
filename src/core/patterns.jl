@@ -372,14 +372,14 @@ nmer = Nmer2D(; n=6, d=0.2)
 x, y = uniform2D(1.0, nmer, 10.0, 10.0)
 ```
 """
-function uniform2D(ρ::Float64, p::Pattern2D, field_x::Float64, field_y::Float64)
+function uniform2D(ρ::T, p::Pattern2D, field_x::T, field_y::T) where T <: AbstractFloat
     # Generate random number of patterns
     npatterns = rand(Poisson(field_x * field_y * ρ))
     ntotal = npatterns * p.n
 
     # Initialize coordinate arrays
-    x = Vector{Float64}(undef, ntotal)
-    y = Vector{Float64}(undef, ntotal)
+    x = Vector{T}(undef, ntotal)
+    y = Vector{T}(undef, ntotal)
     
     idx = 1
     for nn = 1:npatterns
@@ -421,8 +421,8 @@ nmer = Nmer3D(; n=6, d=0.2)
 x, y, z = uniform3D(1.0, nmer, 10.0, 10.0; zrange=[-2.0, 2.0])
 ```
 """
-function uniform3D(ρ::Float64, p::Pattern3D, field_x::Float64, field_y::Float64;
-                  zrange::Vector{Float64}=Float64[-1.0, 1.0])
+function uniform3D(ρ::T, p::Pattern3D, field_x::T, field_y::T;
+                  zrange::Vector{T}=T[-1.0, 1.0]) where T <: AbstractFloat
     # Input validation
     if length(zrange) != 2 || zrange[1] >= zrange[2]
         throw(ArgumentError("zrange must be a vector of two values [min_z, max_z] where min_z < max_z"))
@@ -433,9 +433,9 @@ function uniform3D(ρ::Float64, p::Pattern3D, field_x::Float64, field_y::Float64
     ntotal = npatterns * p.n
 
     # Initialize coordinate arrays
-    x = Vector{Float64}(undef, ntotal)
-    y = Vector{Float64}(undef, ntotal)
-    z = Vector{Float64}(undef, ntotal)
+    x = Vector{T}(undef, ntotal)
+    y = Vector{T}(undef, ntotal)
+    z = Vector{T}(undef, ntotal)
     
     idx = 1
     for nn = 1:npatterns
@@ -492,7 +492,7 @@ nmer = Nmer2D()
 rotate!(nmer, π/4)  # Rotate 45 degrees
 ```
 """
-function rotate!(p::Pattern2D, θ::Float64)
+function rotate!(p::Pattern2D, θ::T) where T <: AbstractFloat
     for n in 1:p.n
         x_new = p.x[n] * cos(θ) - p.y[n] * sin(θ)
         y_new = p.x[n] * sin(θ) + p.y[n] * cos(θ)
@@ -520,7 +520,7 @@ R = [cos(θ) -sin(θ) 0; sin(θ) cos(θ) 0; 0 0 1]
 rotate!(nmer, R)
 ```
 """
-function rotate!(p::Pattern3D, R::Matrix{Float64})
+function rotate!(p::Pattern3D, R::Matrix{T}) where T <: AbstractFloat
     if size(R) != (3, 3)
         throw(ArgumentError("Rotation matrix must be 3×3"))
     end
@@ -552,7 +552,7 @@ nmer = Nmer3D()
 rotate!(nmer, π/4, π/6, π/3)
 ```
 """
-function rotate!(p::Pattern3D, α::Float64, β::Float64, γ::Float64)
+function rotate!(p::Pattern3D, α::T, β::T, γ::T) where T <: AbstractFloat
     # ZYZ Euler angle rotation matrix
     R = [
         cos(α)*cos(β)*cos(γ)-sin(α)*sin(γ) -cos(α)*cos(β)*sin(γ)-sin(α)*cos(γ) cos(α)*sin(β);

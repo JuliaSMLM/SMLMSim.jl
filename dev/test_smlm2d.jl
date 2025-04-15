@@ -22,7 +22,7 @@ pattern = Nmer2D(n=6, d=0.2)  # 6 molecules in a 200nm circle
 
 # Create static SMLM parameters
 params = StaticSMLMParams(
-    ρ=1.0,           # 1 pattern per square micron
+    density=1.0,           # 1 pattern per square micron
     σ_psf=0.13,      # 130nm PSF width (realistic for visible light)
     minphotons=50,   # Default minimum photon count for detection
     ndatasets=1,     # Generate 1 dataset

@@ -205,20 +205,14 @@ Get the state of the CTMC at a specific time point.
 Searches through transition times to find the state active at time t.
 Returns the state that was entered at the last transition before t.
 """
-function get_state(ctmc::CTMC, t::AbstractFloat)
-    if t < 0 || t > ctmc.simulation_time
+function get_state(ctmc::CTMC{T}, t::T) where T <: AbstractFloat
+    if t < zero(T) || t > ctmc.simulation_time
         throw(ArgumentError("Time point must be between 0 and simulation_time"))
     end
     
-    nstates = length(ctmc.states)
-    for nn = 2:nstates
-        if t < ctmc.transition_times[nn]
-            return ctmc.states[nn-1]
-        end
-    end
-    
-    # If we get here, t is after the last transition
-    return ctmc.states[end]
+    # Use binary search to find the correct time interval
+    idx = searchsortedlast(ctmc.transition_times, t)
+    return ctmc.states[max(1, idx)]
 end
 
 """
@@ -237,18 +231,18 @@ Get the next state transition after a specific time point.
 Returns the next state that will be entered and when it will be entered,
 searching from the current time point forward.
 """
-function get_next(ctmc::CTMC, t::AbstractFloat)
-    if t < 0 || t > ctmc.simulation_time
+function get_next(ctmc::CTMC{T}, t::T) where T <: AbstractFloat
+    if t < zero(T) || t > ctmc.simulation_time
         throw(ArgumentError("Time point must be between 0 and simulation_time"))
     end
     
-    nstates = length(ctmc.states)
-    for nn = 1:nstates
-        if t < ctmc.transition_times[nn]
-            return ctmc.states[nn], ctmc.transition_times[nn]
-        end
-    end
+    # Use binary search to find the next transition
+    idx = searchsortedfirst(ctmc.transition_times, t)
     
-    # If we get here, t is after the last transition
-    return ctmc.states[end], ctmc.simulation_time
+    if idx > length(ctmc.transition_times)
+        # No more transitions after t
+        return ctmc.states[end], ctmc.simulation_time
+    else
+        return ctmc.states[idx], ctmc.transition_times[idx]
+    end
 end
