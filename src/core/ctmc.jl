@@ -239,6 +239,11 @@ function get_next(ctmc::CTMC{T}, t::T) where T <: AbstractFloat
     # Use binary search to find the next transition
     idx = searchsortedfirst(ctmc.transition_times, t)
     
+    # Adjust index if t is exactly at a transition time
+    if idx <= length(ctmc.transition_times) && ctmc.transition_times[idx] == t
+        idx += 1
+    end
+
     if idx > length(ctmc.transition_times)
         # No more transitions after t
         return ctmc.states[end], ctmc.simulation_time
