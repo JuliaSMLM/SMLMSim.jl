@@ -28,7 +28,7 @@ Dispatches to the appropriate method based on the concrete simulation type.
 ```julia
 # Create a static SMLM simulation configuration
 params = StaticSMLMParams(
-    ρ = 1.0,
+    density = 1.0,        # Changed from ρ to density
     σ_psf = 0.13
 )
 

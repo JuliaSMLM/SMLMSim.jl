@@ -154,7 +154,7 @@ The diffusion simulation can be converted into realistic microscope images using
 # Set up camera and PSF
 pixelsize = 0.1  # 100nm pixels
 pixels = Int64(round(params.box_size/pixelsize))
-camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
+camera = IdealCamera(128, 128, pixelsize)
 
 # Set up PSF (Gaussian with 150nm width)
 using MicroscopePSFs
@@ -260,7 +260,7 @@ The diffusion simulation integrates well with other SMLMSim components:
 
 ```julia
 # Generate super-resolution data from diffusion simulation
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 
 # Extract emitters from a simulation time point
 emitters = [mol.emitter for mol in systems[50].molecules]
@@ -269,9 +269,12 @@ emitters = [mol.emitter for mol in systems[50].molecules]
 smld = BasicSMLD(emitters, camera, 1, 1, Dict("source" => "diffusion"))
 
 # Apply photophysics and localization uncertainty
-fluor = GenericFluor(γ=1e4, q=[0 10; 1 0])
-smld_model = kinetic_model(smld, fluor, 100, 50.0)
-smld_noisy = noise(smld_model, 0.13)
+using SMLMSim, MicroscopePSFs
+
+# Define fluorophore using positional constructor
+fluor = GenericFluor(1e4, [-10.0 10.0; 1.0 -1.0]) # γ=1e4, k_off=10, k_on=1
+
+# ... rest of the example ...
 ```
 
 ## Examples
@@ -314,7 +317,7 @@ systems = simulate(params)
 
 # Generate tracking movie with high framerate
 psf = MicroscopePSFs.Gaussian2D(0.15)
-camera = IdealCamera(1:200, 1:200, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 
 tracking_movie = gen_image_sequence(psf, systems;
     photons=2000.0,

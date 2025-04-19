@@ -15,7 +15,7 @@ using SMLMSim
 using CairoMakie
 
 # Create camera with physical pixel size
-camera = IdealCamera(1:128, 1:256, 0.1)  # 128×256 pixels, 100nm pixels
+camera = IdealCamera(128, 256, 0.1)  # 128×256 pixels, 100nm pixels
 
 # Simulation parameters in physical units
 smld_true, smld_model, smld_noisy = simulate(
@@ -84,7 +84,7 @@ using SMLMSim
 using CairoMakie
 
 # Create camera with physical pixel size
-camera = IdealCamera(1:128, 1:128, 0.1)  # 128×128 pixels, 100nm pixels
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # 3D simulation parameters
 smld_true, smld_model, smld_noisy = simulate(
@@ -155,7 +155,7 @@ using MicroscopePSFs
 using CairoMakie
 
 # Create camera with physical pixel size
-camera = IdealCamera(1:128, 1:128, 0.1)  # 128×128 pixels, 100nm pixels
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # Run a simulation
 smld_true, smld_model, smld_noisy = simulate(
@@ -227,7 +227,7 @@ using SMLMSim
 using CairoMakie
 
 # Create camera
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 
 # Define different fluorophore models
 # 1. Slow blinking (long on/off times)
@@ -375,7 +375,7 @@ function JitteredGrid2D(; nx=5, ny=5, dx=0.05, dy=0.05, jitter=0.01)
 end
 
 # Create camera
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 
 # Create custom pattern
 grid = JitteredGrid2D(nx=8, ny=8, dx=0.05, dy=0.05, jitter=0.01)

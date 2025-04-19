@@ -52,7 +52,7 @@ The high-level `simulate()` function provides a simple interface for static simu
 
 ```julia
 # Define a camera
-camera = IdealCamera(1:128, 1:128, 0.1)  # 128×128 pixels, 100nm pixels
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # Run simulation with parameters
 smld_true, smld_model, smld_noisy = simulate(
@@ -72,6 +72,7 @@ smld_true, smld_model, smld_noisy = simulate(
     nframes=1000,         # frames
     framerate=50.0,       # frames per second
     pattern=Nmer2D(n=8, d=0.1),  # pattern type
+    molecule=GenericFluor(1e4, [-10.0 10.0; 0.5 -0.5]), # γ=1e4, k_off=10, k_on=0.5
     camera=camera
 )
 ```

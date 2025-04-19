@@ -21,14 +21,14 @@ Defines a fluorophore with photophysical properties.
 
 # Examples
 ```julia
-# Create a fluorophore with default parameters
+# Create a fluorophore with default parameters (using the 2-state keyword constructor)
 fluor = GenericFluor()
 
-# Create a fluorophore with custom parameters
+# Create a fluorophore with custom parameters using the positional constructor
 fluor = GenericFluor(1e5, [-50.0 50.0; 1e-2 -1e-2])
 
-# Create a fluorophore using keyword arguments
-fluor = GenericFluor(; γ=1e5, q=[-10.0 10.0; 1e-1 -1e-1])
+# Create a fluorophore using the 2-state keyword constructor
+fluor = GenericFluor(; photons=1e5, k_off=10.0, k_on=1e-1)
 ```
 """
 mutable struct GenericFluor <: Molecule
@@ -38,7 +38,7 @@ end
 
 
 """
-    GenericFluor(; photons::AbstractFloat=1000, k_off::AbstractFloat=50.0, k_on::AbstractFloat=1e-2)
+    GenericFluor(; photons::AbstractFloat=1e5, k_off::AbstractFloat=50.0, k_on::AbstractFloat=1e-2)
 
 Create a simple two-state (on/off) fluorophore with specified parameters.
 
@@ -53,7 +53,7 @@ State 1 is the on (bright) state, and state 2 is the off (dark) state.
 The rate matrix is constructed as: q = [-k_off k_off; k_on -k_on]
 """
 function GenericFluor(; 
-    photons::AbstractFloat=1000.0, 
+    photons::AbstractFloat=1e5, 
     k_off::AbstractFloat=50.0, 
     k_on::AbstractFloat=1e-2
 )

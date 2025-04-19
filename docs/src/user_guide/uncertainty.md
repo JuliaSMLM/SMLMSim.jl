@@ -57,7 +57,7 @@ The high-level `simulate()` function handles uncertainty automatically:
 smld_true, smld_model, smld_noisy = simulate(
     σ_psf=0.13,           # PSF width in μm (130nm)
     pattern=Nmer2D(),
-    camera=IdealCamera(1:128, 1:128, 0.1)
+    camera=IdealCamera(128, 128, 0.1)
 )
 ```
 
@@ -119,12 +119,16 @@ The number of photons is controlled by:
 3. **Detection threshold**: Set with minphotons
 
 ```julia
+using SMLMSim
+
+# Define bright and dim fluorophores using the positional constructor
+bright_fluor = GenericFluor(5e4, [-5.0 5.0; 1.0 -1.0]) # γ=5e4, k_off=5, k_on=1
+dim_fluor = GenericFluor(5e3, [-5.0 5.0; 1.0 -1.0])   # γ=5e3, k_off=5, k_on=1
+
 # Bright emitters with lower uncertainty
-bright_fluor = GenericFluor(γ=5e4, q=[0 5; 1 0])
 smld_true, smld_model, smld_bright = simulate(molecule=bright_fluor)
 
 # Dim emitters with higher uncertainty
-dim_fluor = GenericFluor(γ=5e3, q=[0 5; 1 0])
 smld_true, smld_model, smld_dim = simulate(molecule=dim_fluor)
 ```
 

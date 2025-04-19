@@ -57,7 +57,7 @@ Pkg.add("SMLMSim")
 using SMLMSim
 
 # Define a camera with 100nm pixel size
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 
 # Run a basic static simulation
 smld_true, smld_model, smld_noisy = simulate(

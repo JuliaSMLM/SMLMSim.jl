@@ -17,8 +17,8 @@ Generate camera images from SMLD data using the specified PSF model.
 - `sampling::Int=2`: Supersampling factor for PSF integration
 - `threaded::Bool=true`: Enable multithreading for faster computation
 - `bg::Float64=0.0`: Background signal level (photons per pixel)
-- `poisson_noise::Bool=false`: Apply Poisson noise (not yet implemented)
-- `camera_noise::Bool=false`: Apply camera read noise (not yet implemented)
+- `poisson_noise::Bool=false`: Apply Poisson noise
+- `camera_noise::Bool=false`: Apply camera read noise (Note: This feature is not yet implemented)
 
 # Returns
 - 3D array of camera images with dimensions [height, width, num_frames]

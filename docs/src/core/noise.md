@@ -123,12 +123,17 @@ The number of photons is controlled by:
 3. **Detection threshold**: Set with minphotons
 
 ```julia
+using SMLMSim
+
+# Define bright and dim fluorophores
+# Note: q matrices already had correct diagonal elements, just removed γ=
+bright_fluor = GenericFluor(5e4, [-5.0 5.0; 1.0 -1.0])
+dim_fluor = GenericFluor(5e3, [-5.0 5.0; 1.0 -1.0])
+
 # Bright emitters with lower uncertainty
-bright_fluor = GenericFluor(γ=5e4, q=[-5 5; 1 -1])
 smld_true, smld_model, smld_bright = simulate(molecule=bright_fluor)
 
 # Dim emitters with higher uncertainty
-dim_fluor = GenericFluor(γ=5e3, q=[-5 5; 1 -1])
 smld_true, smld_model, smld_dim = simulate(molecule=dim_fluor)
 ```
 

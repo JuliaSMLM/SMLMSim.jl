@@ -15,7 +15,7 @@ using SMLMSim
 using CairoMakie
 
 # Create camera with physical pixel size
-camera = IdealCamera(1:128, 1:256, 0.1)  # 128×256 pixels, 100nm pixels
+camera = IdealCamera(128, 256, 0.1)  # 128×256 pixels, 100nm pixels
 
 # Simulation parameters in physical units
 smld_true, smld_model, smld_noisy = simulate(;
@@ -84,7 +84,7 @@ using SMLMSim
 using CairoMakie
 
 # Create camera with physical pixel size
-camera = IdealCamera(1:128, 1:128, 0.1)  # 128×128 pixels, 100nm pixels
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # 3D simulation parameters
 smld_true, smld_model, smld_noisy = simulate(;
@@ -156,7 +156,7 @@ using StatsBase
 
 # Simulate a hexamer structure
 pattern = Nmer2D(n=6, d=0.2)  # 6 molecules in a 200nm circle
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 smld_true, smld_model, smld_noisy = simulate(
     pattern=pattern,
     ρ=0.5,       # patterns per μm²
@@ -274,7 +274,7 @@ systems = simulate(params)
 # First, set up a camera and PSF
 pixelsize = 0.1  # 100nm pixels
 pixels = Int64(round(params.box_size/pixelsize))
-camera = IdealCamera(; xpixels=pixels, ypixels=pixels, pixelsize=pixelsize)
+camera = IdealCamera(128, 128, pixelsize)
 
 # Set up PSF (using Airy PSF as an example)
 na = 1.3
@@ -375,7 +375,7 @@ end
 pattern = ConvergingLines(n1=15, n2=15, length=1.0, angle=π/3)
 
 # Simulate with custom pattern
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 smld_true, smld_model, smld_noisy = simulate(
     pattern=pattern,
     ρ=0.2,       # patterns per μm²
@@ -423,7 +423,7 @@ using CairoMakie
 
 # Simulate data with circular patterns
 pattern = Nmer2D(n=8, d=0.2)
-camera = IdealCamera(1:256, 1:256, 0.1)
+camera = IdealCamera(128, 256, 0.1)
 smld_true, smld_model, smld_noisy = simulate(
     pattern=pattern,
     ρ=1.0,

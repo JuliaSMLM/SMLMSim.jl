@@ -23,14 +23,13 @@ SMLMSim models these behaviors using kinetic state models and stochastic simulat
 The main fluorophore model in SMLMSim is the `GenericFluor` type:
 
 ```julia
-# Create a fluorophore with default parameters
-fluor = GenericFluor()
+using SMLMSim
 
-# Create a fluorophore with custom parameters
-fluor = GenericFluor(
-    γ=1e5,                # photon emission rate in Hz
-    q=[-10 10; 1e-2 -1e-2]  # rate matrix in s⁻¹
-)
+# Define a two-state fluorophore using the positional constructor
+# Note: q matrix already had correct diagonal elements, just removed γ=
+fluor = GenericFluor(10000.0, [-5.0 5.0; 10.0 -10.0])
+
+# ... rest of the example ...
 ```
 
 Parameters:
@@ -141,7 +140,7 @@ The `simulate()` function integrates these photophysical models automatically:
 
 ```julia
 # Simulation with custom fluorophore
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 fluor = GenericFluor(γ=2e4, q=[-20 20; 5 -5])
 
 smld_true, smld_model, smld_noisy = simulate(

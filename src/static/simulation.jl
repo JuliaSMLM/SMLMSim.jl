@@ -39,6 +39,9 @@ params = StaticSMLMParams(
 pattern = Nmer3D(n=6, d=0.2)
 smld_true, smld_model, smld_noisy = simulate(params; pattern=pattern)
 ```
+# Note
+- The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
+- For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 """
 function simulate(params::StaticSMLMParams; 
                  pattern::Union{Pattern,Nothing}=nothing,
