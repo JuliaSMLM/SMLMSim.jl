@@ -81,7 +81,7 @@ systems = simulate(params)
 visualize_sequence(systems, filename="diffusion.mp4", framerate=round(Int64,1/params.dt))
 
 # Generate microscope images
-psf = Gaussian2D(0.15)  # 150nm PSF width
+psf = GaussianPSF(0.15)  # 150nm PSF width
 images = gen_image_sequence(
     psf, 
     systems,

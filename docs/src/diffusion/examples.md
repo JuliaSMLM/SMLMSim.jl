@@ -30,7 +30,7 @@ params = DiffusionSMLMParams(
 )
 
 # Run simulation
-smld = simulate(params)
+smld = simulate(params; photons=1000.0)
 
 # Extract coordinates from different frames
 function extract_frame(smld, frame_num)
@@ -84,6 +84,9 @@ fig[1:2, 4] = Legend(fig,
 )
 
 fig
+# output
+
+```
 ```
 
 ## Frame Integration for Time-Lapse Imaging
@@ -119,13 +122,12 @@ pixels = Int64(round(params.box_size/pixelsize))
 camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 
 # Create PSF model
-psf = MicroscopePSFs.Gaussian2D(0.15)  # 150nm PSF width
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate microscope images with frame integration
 # The frame_integration parameter determines how many simulation time
 # points are integrated into each output frame
 images = gen_images(smld, psf;
-    photons=2000.0,       # photons per emitter
     bg=5.0,               # background photons per pixel
     frame_integration=10,  # integrate 10 simulation steps per frame
     poisson_noise=true     # add photon counting noise
@@ -144,6 +146,8 @@ frame_to_show = 15
 heatmap!(ax, transpose(images[:, :, frame_to_show]), colormap=:inferno)
 
 fig
+# output
+
 ```
 
 The `frame_integration` parameter is crucial for realistic diffusion imaging:
@@ -206,6 +210,8 @@ lines!(ax, time_unstable, frac_unstable, linewidth=3, color=:red,
 axislegend(ax, position=:right)
 
 fig
+# output
+
 ```
 
 ## Generating Microscope Images
@@ -241,11 +247,10 @@ pixels = Int64(round(params.box_size/pixelsize))
 camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 
 # Set up PSF (Gaussian with 150nm width)
-psf = MicroscopePSFs.Gaussian2D(0.15)  # 150nm PSF width
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate images for all molecules
 images_all = gen_images(smld, psf;
-    photons=1000.0,
     bg=5.0,
     poisson_noise=true
 )
@@ -255,7 +260,6 @@ dimer_smld = get_dimers(smld)
 
 # Generate images showing only dimers
 images_dimers = gen_images(dimer_smld, psf;
-    photons=1000.0,
     bg=5.0,
     poisson_noise=true
 )
@@ -284,7 +288,7 @@ function display_frames(images_all, images_dimers, frame_indices)
         # Display images
         heatmap!(ax1, transpose(images_all[:, :, frame]), colormap=:inferno)
         heatmap!(ax2, transpose(images_dimers[:, :, frame]), colormap=:inferno)
-    }
+    end
     
     return fig
 end
@@ -292,6 +296,8 @@ end
 # Show frames 10, 20, 30
 frame_indices = [10, 20, 30]
 display_frames(images_all, images_dimers, frame_indices)
+# output
+
 ```
 
 ## Diffusion with Different Boundary Conditions
@@ -396,8 +402,9 @@ fig_periodic = plot_trajectories(traj_periodic, "Periodic Boundaries",
 fig_reflecting = plot_trajectories(traj_reflecting, "Reflecting Boundaries", 
                                   params_reflecting.box_size)
 
-# Display figures
-fig_periodic, fig_reflecting
+(fig_periodic, fig_reflecting)
+# output
+
 ```
 
 ## Long-term Evolution of Dimer Population
@@ -490,4 +497,6 @@ hlines!(ax, theoretical_dimer_fraction(Inf, k_on, k_off, c_total),
 axislegend(ax, position=:right)
 
 fig
+# output
+
 ```

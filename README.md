@@ -34,12 +34,12 @@ Simulate fixed patterns with blinking and localization noise.
 using SMLMSim
 
 # Define a camera and simulation parameters
-camera = IdealCamera(1:128, 1:128, 0.1)  # 128×128 pixels, 100nm pixels
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 params = StaticSMLMParams(density=1.0, σ_psf=0.13) # Density 1/μm², PSF 130nm
 
 # Run simulation for an 8-molecule ring pattern
 smld_true, smld_model, smld_noisy = simulate(
-    params,
+    params; # Use semicolon to separate positional and keyword arguments
     pattern=Nmer2D(n=8, d=0.1), # 100nm diameter ring
     camera=camera
 )
@@ -106,10 +106,13 @@ Create camera images from simulation results.
 using MicroscopePSFs # Needed for PSF types
 
 # Generate images from diffusion simulation output
-psf = Gaussian2D(0.15) # 150nm PSF width
-images = gen_images(psf, systems; frame_integration=10) # Integrate 10 sim steps per image frame
+psf = GaussianPSF(0.15) # 150nm PSF width
+images = gen_images(systems, psf; 
+    frame_integration=10, # 10 simulation time steps for each camera frame
+    support=1.0 # PSF support range
+    ) 
 
-println("Generated $(length(images)) camera images.")
+println("Generated $(size(images,3)) camera images.")
 ```
 
 ## Example Workflow: Static Simulation & Visualization
@@ -120,7 +123,7 @@ using CairoMakie # Requires installation: Pkg.add("CairoMakie")
 using MicroscopePSFs
 
 # --- Simulation Setup ---
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1) # Use n_pixels constructor
 params = StaticSMLMParams(density=1.0, σ_psf=0.13)
 smld_true, smld_model, smld_noisy = simulate(
     params,

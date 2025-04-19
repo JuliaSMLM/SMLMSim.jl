@@ -17,10 +17,15 @@ using CairoMakie
 # Create camera with physical pixel size
 camera = IdealCamera(128, 256, 0.1)  # 128×256 pixels, 100nm pixels
 
-# Simulation parameters in physical units
+# Create simulation parameters
+params = StaticSMLMParams(
+    density = 1.0,        # emitters per μm²
+    σ_psf = 0.13,         # PSF width in μm
+)
+
+# Run simulation with specified pattern and camera
 smld_true, smld_model, smld_noisy = simulate(
-    ρ=1.0,                # emitters per μm²
-    σ_psf=0.13,           # PSF width in μm
+    params;
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     camera=camera
 )
@@ -71,8 +76,9 @@ scatter!(ax2, x_noisy, y_noisy,
 
 Colorbar(fig[2, 2], colormap=:plasma, label="Frame Number")
 
-# Display figure
 fig
+# output
+
 ```
 
 ## 3D Simulation
@@ -86,14 +92,19 @@ using CairoMakie
 # Create camera with physical pixel size
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
-# 3D simulation parameters
+# Create 3D simulation parameters
+params = StaticSMLMParams(
+    density = 0.5,        # emitters per μm²
+    σ_psf = 0.13,         # PSF width in μm
+    ndims = 3,            # 3D simulation
+    zrange = [-1.0, 1.0]  # 2μm axial range
+)
+
+# Run 3D simulation
 smld_true, smld_model, smld_noisy = simulate(
-    ρ=0.5,                # emitters per μm²
-    σ_psf=0.13,           # PSF width in μm
+    params;
     pattern=Nmer3D(n=8, d=0.2),  # 3D pattern with 200nm diameter
-    camera=camera,
-    ndims=3,              # 3D simulation
-    zrange=[-1.0, 1.0]    # 2μm axial range
+    camera=camera
 )
 
 # Extract 3D coordinates
@@ -143,6 +154,8 @@ scatter!(ax_xy, x, y, color=z, colormap=:viridis, markersize=3, alpha=0.6)
 scatter!(ax_xz, x, z, color=z, colormap=:viridis, markersize=3, alpha=0.6)
 
 fig
+# output
+
 ```
 
 ## Generating Microscope Images
@@ -157,22 +170,26 @@ using CairoMakie
 # Create camera with physical pixel size
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
-# Run a simulation
+# Create simulation parameters
+params = StaticSMLMParams(
+    density = 0.5,        # patterns per μm²
+    σ_psf = 0.13,         # 130nm PSF width
+    nframes = 100,        # 100 frames
+    framerate = 20.0      # 20 fps
+)
+
+# Run simulation
 smld_true, smld_model, smld_noisy = simulate(
-    ρ=0.5,                    # patterns per μm²
-    σ_psf=0.13,               # 130nm PSF width
+    params;
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
-    nframes=100,              # 100 frames
-    framerate=20.0,           # 20 fps
     camera=camera
 )
 
 # Create a PSF model (Gaussian with 150nm width)
-psf = MicroscopePSFs.Gaussian2D(0.15)  # 150nm PSF width
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate image stack from emitter data with Poisson noise
 images = gen_images(smld_noisy, psf;
-    photons=1000.0,     # photons per emitter
     bg=10.0,            # background photons per pixel
     poisson_noise=true  # add realistic shot noise
 )
@@ -214,6 +231,8 @@ scatter!(ax2, x, y,
 limits!(ax2, 0, 12.8, 0, 12.8)  # 128 pixels * 0.1 μm = 12.8 μm
 
 fig
+# output
+
 ```
 
 The resulting `images` is a 3D array with dimensions `[height, width, frames]` that can be used for visualization, algorithm testing, or benchmarking localization software.
@@ -231,42 +250,41 @@ camera = IdealCamera(128, 128, 0.1)
 
 # Define different fluorophore models
 # 1. Slow blinking (long on/off times)
-fluor_slow = GenericFluor(
-    γ=10000.0,           # 10,000 photons/s
-    q=[-0.5 0.5; 0.05 -0.05]    # Slow rates (s⁻¹)
-)
+fluor_slow = GenericFluor(photons=10000.0, k_off=0.5, k_on=0.05)  # Slow rates
 
 # 2. Fast blinking (short on/off times)
-fluor_fast = GenericFluor(
-    γ=10000.0,           # 10,000 photons/s
-    q=[-50 50; 5 -5]        # Fast rates (s⁻¹)
-)
+fluor_fast = GenericFluor(photons=10000.0, k_off=50.0, k_on=5.0)  # Fast rates
 
-# 3. Three-state model with photobleaching
-fluor_bleach = GenericFluor(
-    γ=10000.0,
-    q=[-10.1 10 0.1; 1 -1 0; 0 0 0]  # Third state is absorbing (photobleaching)
+# 3. Three-state model (using direct constructor for advanced models)
+# This model has photobleaching as third state
+q_bleach = [-10.1 10.0 0.1; 1.0 -1.0 0.0; 0.0 0.0 0.0]  # Third state is absorbing
+fluor_bleach = GenericFluor(10000.0, q_bleach)
+
+# Create simulation parameters
+params = StaticSMLMParams(
+    density = 0.2,
+    nframes = 2000
 )
 
 # Run simulations with different fluorophore models
 _, _, smld_slow = simulate(
+    params;
     pattern=Nmer2D(n=3, d=0.2),
     molecule=fluor_slow,
-    nframes=2000,
     camera=camera
 )
 
 _, _, smld_fast = simulate(
+    params;
     pattern=Nmer2D(n=3, d=0.2),
     molecule=fluor_fast,
-    nframes=2000,
     camera=camera
 )
 
 _, _, smld_bleach = simulate(
+    params;
     pattern=Nmer2D(n=3, d=0.2),
     molecule=fluor_bleach,
-    nframes=2000,
     camera=camera
 )
 
@@ -282,10 +300,19 @@ function get_time_traces(smld)
     end
     
     # Get a representative trace (first track_id)
+    if isempty(emitters_by_track)
+        # Return an empty trace if no emitters are found
+        return Float64[]
+    end
+    
     first_track = minimum(keys(emitters_by_track))
     emitters = emitters_by_track[first_track]
     
     # Create frame-by-frame intensity trace
+    if isempty(emitters)
+        return Float64[]
+    end
+    
     max_frame = maximum([e.frame for e in emitters])
     trace = zeros(max_frame)
     for e in emitters
@@ -323,12 +350,19 @@ ax3 = Axis(fig[3, 1],
 )
 
 # Plot traces
-stem!(ax1, 1:length(trace_slow), trace_slow)
-stem!(ax2, 1:length(trace_fast), trace_fast)
-stem!(ax3, 1:length(trace_bleach), trace_bleach)
+if !isempty(trace_slow)
+    stem!(ax1, 1:length(trace_slow), trace_slow)
+end
+if !isempty(trace_fast)
+    stem!(ax2, 1:length(trace_fast), trace_fast)
+end
+if !isempty(trace_bleach)
+    stem!(ax3, 1:length(trace_bleach), trace_bleach)
+end
 
-# Display figure
 fig
+# output
+
 ```
 
 ## Advanced: Custom Pattern
@@ -338,9 +372,11 @@ This example demonstrates creating a custom pattern type for simulation.
 ```julia
 using SMLMSim
 using CairoMakie
+using Distributions
 
 # Define a custom pattern type: Grid with random jitter
 mutable struct JitteredGrid2D <: Pattern2D
+    n::Int       # Total number of molecules
     nx::Int      # Columns
     ny::Int      # Rows
     dx::Float64  # Column spacing
@@ -371,7 +407,7 @@ function JitteredGrid2D(; nx=5, ny=5, dx=0.05, dy=0.05, jitter=0.01)
         idx += 1
     end
     
-    return JitteredGrid2D(nx, ny, dx, dy, jitter, x, y)
+    return JitteredGrid2D(n, nx, ny, dx, dy, jitter, x, y)
 end
 
 # Create camera
@@ -380,10 +416,15 @@ camera = IdealCamera(128, 128, 0.1)
 # Create custom pattern
 grid = JitteredGrid2D(nx=8, ny=8, dx=0.05, dy=0.05, jitter=0.01)
 
-# Run simulation
+# Create simulation parameters
+params = StaticSMLMParams(
+    density = 0.2,        # Patterns per μm²
+    nframes = 1000        # Number of frames
+)
+
+# Run simulation with custom pattern
 smld_true, smld_model, smld_noisy = simulate(
-    ρ=0.2,        # Patterns per μm²
-    nframes=1000,
+    params;
     pattern=grid,
     camera=camera
 )
@@ -418,6 +459,7 @@ photons = [e.photons for e in smld_noisy.emitters]
 scatter!(ax1, x_true, y_true, color=:black, markersize=6)
 scatter!(ax2, x_noisy, y_noisy, color=photons, colormap=:viridis, markersize=3, alpha=0.5)
 
-# Display figure
 fig
+# output
+
 ```

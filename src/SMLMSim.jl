@@ -27,7 +27,7 @@ params_diff = DiffusionSMLMParams(density=0.5, diff_monomer=0.1)
 smld_diff = simulate(params_diff)
 
 # Example: Generate images
-psf = Gaussian2D(0.15)
+psf = GaussianPSF(0.15)
 images = gen_images(smld_noisy, psf)
 ```
 """

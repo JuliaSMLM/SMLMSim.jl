@@ -36,7 +36,7 @@ camera = IdealCamera(128, 128, 0.1)
 smld_true, smld_model, smld_noisy = simulate(pattern=Nmer2D(), camera=camera)
 
 # Create a PSF model (Gaussian with 150nm width)
-psf = MicroscopePSFs.Gaussian2D(0.15)  # 150nm PSF width
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate image stack from emitter data
 images = gen_images(smld_noisy, psf;

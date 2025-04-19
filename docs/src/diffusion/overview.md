@@ -107,7 +107,7 @@ camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 
 # Set up PSF (Gaussian with 150nm width)
 using MicroscopePSFs
-psf = MicroscopePSFs.Gaussian2D(0.15)  # 150nm PSF width
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate images
 image_stack = gen_images(smld, psf;

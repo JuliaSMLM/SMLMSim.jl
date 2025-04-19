@@ -23,7 +23,7 @@ view_stack(img_stack)
 
 # Example with SMLM image data
 using SMLMSim
-psf = MicroscopePSFs.Gaussian2D(0.15)  # 150nm PSF width
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 images = gen_image_sequence(psf, systems)
 view_stack(images)
 ```

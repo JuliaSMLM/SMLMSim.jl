@@ -362,7 +362,7 @@ params = DiffusionSMLMParams(
 smld = simulate(params)
 
 # Generate images
-psf = Gaussian2D(0.15)  # 150nm PSF width
+psf = GaussianPSF(0.15)  # 150nm PSF width
 images = gen_images(psf, smld)
 ```
 """
