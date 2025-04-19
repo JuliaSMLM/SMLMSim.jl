@@ -6,52 +6,126 @@ in SMLM, including detection uncertainty calculations based on photon statistics
 """
 
 """
-    apply_noise(smld::BasicSMLD, σ_psf::Union{AbstractFloat, Vector{<:AbstractFloat}})
+    add_coordinate_noise(emitter, σ)
 
-Add localization uncertainty to emitter positions based on photon counts.
+Helper function to add position noise to an emitter with appropriate uncertainty.
+Returns new coordinate values and uncertainty values.
+
+For 2D emitters, σ is a scalar.
+For 3D emitters, σ is a 3-element vector.
+"""
+function add_coordinate_noise(emitter::Emitter2DFit, σ::AbstractFloat)
+    # Calculate uncertainties based on photon count
+    σ_scaled = σ / sqrt(emitter.photons)
+    
+    # Add noise to coordinates
+    x_noisy = emitter.x + randn() * σ_scaled
+    y_noisy = emitter.y + randn() * σ_scaled
+    
+    return (x_noisy, y_noisy), (σ_scaled, σ_scaled)
+end
+
+function add_coordinate_noise(emitter::Emitter3DFit, σ::Vector{<:AbstractFloat})
+    # Calculate uncertainties based on photon count
+    σ_scaled = σ ./ sqrt(emitter.photons)
+    
+    # Add noise to coordinates
+    x_noisy = emitter.x + randn() * σ_scaled[1]
+    y_noisy = emitter.y + randn() * σ_scaled[2]
+    z_noisy = emitter.z + randn() * σ_scaled[3]
+    
+    return (x_noisy, y_noisy, z_noisy), (σ_scaled[1], σ_scaled[2], σ_scaled[3])
+end
+
+"""
+    apply_noise(smld::BasicSMLD, σ_psf::AbstractFloat)
+
+Add localization uncertainty to 2D emitter positions based on photon counts.
 
 # Arguments
-- `smld::BasicSMLD`: Input SMLD containing emitters
-- `σ_psf::Union{AbstractFloat, Vector{<:AbstractFloat}}`: PSF width(s) in microns
-    - For 2D: single σ value
-    - For 3D: vector [σx, σy, σz]
+- `smld::BasicSMLD`: Input SMLD containing 2D emitters
+- `σ_psf::AbstractFloat`: PSF width in microns
 
 # Returns
 - `BasicSMLD`: New SMLD with noisy positions and updated uncertainties
 
-# Details
-For each emitter:
-1. Calculates position uncertainty as σ_psf/√N where N is photon count
-2. Adds Gaussian noise to positions with appropriate σ
-3. Updates uncertainty fields in emitter
-4. Preserves all other emitter properties (frame, dataset, track_id)
-
 # Example
 ```julia
-# First create ground truth model with blinking
-camera = IdealCamera(1:128, 1:128, 0.1)
-pattern = Nmer2D()
-_, smld_model, _ = simulate(pattern=pattern, camera=camera)
-
 # Then add localization noise with specific PSF width
 smld_noisy = apply_noise(smld_model, 0.13)  # 130nm PSF width
 ```
-
-# Note
-Automatically handles both 2D and 3D cases based on emitter type in SMLD.
-Input σ_psf must match dimensionality (scalar for 2D, vector for 3D).
 """
-function apply_noise(smld::BasicSMLD, σ_psf::Union{AbstractFloat, Vector{<:AbstractFloat}})
-    etype = eltype(smld.emitters)
-    is_3d = etype <: Emitter3DFit
-    
-    if is_3d && !isa(σ_psf, Vector)
-        error("3D emitter type requires vector of σ_psf values")
-    elseif !is_3d && !isa(σ_psf, AbstractFloat)
-        error("2D emitter type requires scalar σ_psf value")
+function apply_noise(smld::BasicSMLD, σ_psf::AbstractFloat)
+    # Check if this is a 2D SMLD
+    emitter_type = eltype(smld.emitters)
+    if !(emitter_type <: Emitter2DFit)
+        error("Cannot apply scalar σ_psf to non-2D emitter type: $(emitter_type)")
     end
     
-    if is_3d && length(σ_psf) != 3
+    new_emitters = similar(smld.emitters)
+    
+    for (i, emitter) in enumerate(smld.emitters)
+        if emitter.photons <= 0
+            error("Emitter photon count must be positive")
+        end
+        
+        # Add noise to coordinates and get uncertainty values
+        coords, uncertainty = add_coordinate_noise(emitter, σ_psf)
+        
+        # Create new emitter with noisy positions
+        new_emitters[i] = typeof(emitter)(
+            coords...,                     # Noisy positions
+            emitter.photons,               # Photons
+            emitter.bg,                    # Background
+            uncertainty...,                # Uncertainty estimates
+            emitter.σ_photons, emitter.σ_bg;  # Original uncertainties
+            frame=emitter.frame,
+            dataset=emitter.dataset,
+            track_id=emitter.track_id,
+            id=emitter.id
+        )
+    end
+    
+    metadata = copy(smld.metadata)
+    metadata["simulation_type"] = "noisy_model"
+    metadata["psf_width"] = σ_psf
+    
+    return BasicSMLD(
+        new_emitters,
+        smld.camera,
+        smld.n_frames,
+        smld.n_datasets,
+        metadata
+    )
+end
+
+"""
+    apply_noise(smld::BasicSMLD, σ_psf::Vector{<:AbstractFloat})
+
+Add localization uncertainty to 3D emitter positions based on photon counts.
+
+# Arguments
+- `smld::BasicSMLD`: Input SMLD containing 3D emitters
+- `σ_psf::Vector{<:AbstractFloat}`: PSF widths [σx, σy, σz] in microns
+
+# Returns
+- `BasicSMLD`: New SMLD with noisy positions and updated uncertainties
+
+# Example
+```julia
+# Then add localization noise with specific PSF widths
+σ_psf = [0.13, 0.13, 0.39]  # 130nm lateral, 390nm axial
+smld_noisy = apply_noise(smld_model, σ_psf)
+```
+"""
+function apply_noise(smld::BasicSMLD, σ_psf::Vector{<:AbstractFloat})
+    # Check if this is a 3D SMLD
+    emitter_type = eltype(smld.emitters)
+    if !(emitter_type <: Emitter3DFit)
+        error("Cannot apply vector σ_psf to non-3D emitter type: $(emitter_type)")
+    end
+    
+    if length(σ_psf) != 3
         error("3D emitter type requires vector of 3 σ_psf values [σx, σy, σz]")
     end
     
@@ -62,47 +136,21 @@ function apply_noise(smld::BasicSMLD, σ_psf::Union{AbstractFloat, Vector{<:Abst
             error("Emitter photon count must be positive")
         end
         
-        σ = is_3d ? σ_psf ./ sqrt(emitter.photons) : σ_psf / sqrt(emitter.photons)
+        # Add noise to coordinates and get uncertainty values
+        coords, uncertainty = add_coordinate_noise(emitter, σ_psf)
         
-        coords = if is_3d
-            (
-                emitter.x + randn() * σ[1],
-                emitter.y + randn() * σ[2],
-                emitter.z + randn() * σ[3]
-            )
-        else
-            (
-                emitter.x + randn() * σ,
-                emitter.y + randn() * σ
-            )
-        end
-        
-        # Create new emitter with correct parameter order
-        if is_3d
-            new_emitters[i] = etype(
-                coords[1], coords[2], coords[3],  # x, y, z
-                emitter.photons,                  # photons
-                emitter.bg,                       # background
-                σ[1], σ[2], σ[3],                 # σ_x, σ_y, σ_z
-                emitter.σ_photons, emitter.σ_bg;  # σ_photons, σ_bg
-                frame=emitter.frame,
-                dataset=emitter.dataset,
-                track_id=emitter.track_id,
-                id=emitter.id
-            )
-        else
-            new_emitters[i] = etype(
-                coords[1], coords[2],             # x, y
-                emitter.photons,                  # photons
-                emitter.bg,                       # background
-                σ, σ,                             # σ_x, σ_y
-                emitter.σ_photons, emitter.σ_bg;  # σ_photons, σ_bg
-                frame=emitter.frame,
-                dataset=emitter.dataset,
-                track_id=emitter.track_id,
-                id=emitter.id
-            )
-        end
+        # Create new emitter with noisy positions
+        new_emitters[i] = typeof(emitter)(
+            coords...,                     # Noisy positions
+            emitter.photons,               # Photons
+            emitter.bg,                    # Background
+            uncertainty...,                # Uncertainty estimates
+            emitter.σ_photons, emitter.σ_bg;  # Original uncertainties
+            frame=emitter.frame,
+            dataset=emitter.dataset,
+            track_id=emitter.track_id,
+            id=emitter.id
+        )
     end
     
     metadata = copy(smld.metadata)

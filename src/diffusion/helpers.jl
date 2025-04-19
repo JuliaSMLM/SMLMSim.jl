@@ -7,71 +7,63 @@ including distance calculations and state management using dispatch-based operat
 
 # Helper functions for geometric calculations
 """
-    distance(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D)
+    distance(e1, e2)
 
-Calculate Euclidean distance between two 2D emitters.
+Calculate Euclidean distance between two emitters.
+Generic implementation with multiple dispatch.
 
 # Arguments
-- `e1::DiffusingEmitter2D`: First emitter
-- `e2::DiffusingEmitter2D`: Second emitter
+- `e1`: First emitter
+- `e2`: Second emitter
 
 # Returns
 - `Float64`: Distance between emitters in microns
-
-# Example
-```julia
-dist = distance(emitter1, emitter2)
-```
 """
-function distance(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D)
+# Generic fallback method
+function distance(e1, e2)
+    error("No distance method implemented for $(typeof(e1)) and $(typeof(e2))")
+end
+
+# Specialized for 2D emitters
+function distance(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}) where T <: AbstractFloat
     sqrt((e1.x - e2.x)^2 + (e1.y - e2.y)^2)
 end
 
-"""
-    distance(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D)
-
-Calculate Euclidean distance between two 3D emitters.
-
-# Arguments
-- `e1::DiffusingEmitter3D`: First emitter
-- `e2::DiffusingEmitter3D`: Second emitter
-
-# Returns
-- `Float64`: Distance between emitters in microns
-"""
-function distance(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D)
+# Specialized for 3D emitters
+function distance(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}) where T <: AbstractFloat
     sqrt((e1.x - e2.x)^2 + (e1.y - e2.y)^2 + (e1.z - e2.z)^2)
 end
 
-"""
-    angle(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D)
-
-Calculate azimuthal angle between emitters.
-
-# Arguments
-- `e1::DiffusingEmitter2D`: First emitter
-- `e2::DiffusingEmitter2D`: Second emitter
-
-# Returns
-- `Float64`: Azimuthal angle in radians
-"""
-function angle(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D)
-    atan(e2.y - e1.y, e2.x - e1.x)
+# Mixed dimensions (fallback)
+function distance(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter)
+    error("Cannot calculate distance between different emitter dimensions")
 end
 
 """
-    angle(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D)
+    angle(e1, e2)
 
-Calculate 3D orientation angles between emitters.
+Calculate angle between emitters.
+Generic implementation with multiple dispatch.
 
 # Arguments
-- `e1::DiffusingEmitter3D`: First emitter
-- `e2::DiffusingEmitter3D`: Second emitter
+- `e1`: First emitter
+- `e2`: Second emitter
 
 # Returns
-- `Tuple{Float64, Float64}`: (azimuthal angle, polar angle) in radians
+- Angle representation appropriate for the emitter dimensions
 """
-function angle(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D)
+# Generic fallback method
+function angle(e1, e2)
+    error("No angle method implemented for $(typeof(e1)) and $(typeof(e2))")
+end
+
+# Specialized for 2D emitters - returns azimuthal angle
+function angle(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}) where T <: AbstractFloat
+    atan(e2.y - e1.y, e2.x - e1.x)
+end
+
+# Specialized for 3D emitters - returns (azimuthal, polar) angles
+function angle(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}) where T <: AbstractFloat
     # Azimuthal angle (ϕ)
     ϕ = atan(e2.y - e1.y, e2.x - e1.x)
     
@@ -80,6 +72,20 @@ function angle(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D)
     θ = acos((e2.z - e1.z) / r)
     
     return (ϕ, θ)
+end
+
+# More generic approach with coordinate tuples
+function distance(p1::NTuple{N,T}, p2::NTuple{N,T}) where {N,T<:AbstractFloat}
+    sqrt(sum((p1[i] - p2[i])^2 for i in 1:N))
+end
+
+# Extract coordinates as tuples
+function coordinates(e::DiffusingEmitter2D{T}) where T <: AbstractFloat
+    (e.x, e.y)
+end
+
+function coordinates(e::DiffusingEmitter3D{T}) where T <: AbstractFloat
+    (e.x, e.y, e.z)
 end
 
 # State management functions
@@ -115,7 +121,7 @@ Create two new emitters in dimer state from two monomers.
 # Returns
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, d_dimer::Float64)
+function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
@@ -129,7 +135,7 @@ function dimerize(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, d_dimer::Float
     dy = r * sin(ϕ)
     
     # Create new dimer emitters
-    d1 = DiffusingEmitter2D{typeof(e1.x)}(
+    d1 = DiffusingEmitter2D{T}(
         com_x - dx, com_y - dy,  # Position
         e1.photons,              # Photons
         e1.timestamp,            # Timestamp
@@ -140,7 +146,7 @@ function dimerize(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, d_dimer::Float
         e2.id                    # Partner ID
     )
     
-    d2 = DiffusingEmitter2D{typeof(e2.x)}(
+    d2 = DiffusingEmitter2D{T}(
         com_x + dx, com_y + dy,  # Position
         e2.photons,              # Photons
         e2.timestamp,            # Timestamp
@@ -167,7 +173,7 @@ Create two new emitters in dimer state from two monomers in 3D.
 # Returns
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, d_dimer::Float64)
+function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
@@ -183,7 +189,7 @@ function dimerize(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, d_dimer::Float
     dz = r * cos(θ)
     
     # Create new dimer emitters
-    d1 = DiffusingEmitter3D{typeof(e1.x)}(
+    d1 = DiffusingEmitter3D{T}(
         com_x - dx, com_y - dy, com_z - dz,  # Position
         e1.photons,                          # Photons
         e1.timestamp,                        # Timestamp
@@ -194,7 +200,7 @@ function dimerize(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, d_dimer::Float
         e2.id                                # Partner ID
     )
     
-    d2 = DiffusingEmitter3D{typeof(e2.x)}(
+    d2 = DiffusingEmitter3D{T}(
         com_x + dx, com_y + dy, com_z + dz,  # Position
         e2.photons,                          # Photons
         e2.timestamp,                        # Timestamp
@@ -237,7 +243,7 @@ Create two new monomers from a dimer.
 # Returns
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters in monomer state
 """
-function dissociate(e::DiffusingEmitter2D, emitters::Vector{<:AbstractDiffusingEmitter})
+function dissociate(e::DiffusingEmitter2D{T}, emitters::Vector{<:AbstractDiffusingEmitter}) where T <: AbstractFloat
     # Find partner
     if isnothing(e.partner_id)
         error("Emitter is not part of a dimer")
@@ -251,7 +257,7 @@ function dissociate(e::DiffusingEmitter2D, emitters::Vector{<:AbstractDiffusingE
     partner = emitters[partner_idx]
     
     # Create new monomer emitters at same positions
-    m1 = DiffusingEmitter2D{typeof(e.x)}(
+    m1 = DiffusingEmitter2D{T}(
         e.x, e.y,           # Position
         e.photons,          # Photons
         e.timestamp,        # Timestamp
@@ -262,7 +268,7 @@ function dissociate(e::DiffusingEmitter2D, emitters::Vector{<:AbstractDiffusingE
         nothing             # Partner ID
     )
     
-    m2 = DiffusingEmitter2D{typeof(partner.x)}(
+    m2 = DiffusingEmitter2D{T}(
         partner.x, partner.y,  # Position
         partner.photons,       # Photons
         partner.timestamp,     # Timestamp
@@ -288,7 +294,7 @@ Create two new monomers from a 3D dimer.
 # Returns
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters in monomer state
 """
-function dissociate(e::DiffusingEmitter3D, emitters::Vector{<:AbstractDiffusingEmitter})
+function dissociate(e::DiffusingEmitter3D{T}, emitters::Vector{<:AbstractDiffusingEmitter}) where T <: AbstractFloat
     # Find partner
     if isnothing(e.partner_id)
         error("Emitter is not part of a dimer")
@@ -302,7 +308,7 @@ function dissociate(e::DiffusingEmitter3D, emitters::Vector{<:AbstractDiffusingE
     partner = emitters[partner_idx]
     
     # Create new monomer emitters at same positions
-    m1 = DiffusingEmitter3D{typeof(e.x)}(
+    m1 = DiffusingEmitter3D{T}(
         e.x, e.y, e.z,      # Position
         e.photons,          # Photons
         e.timestamp,        # Timestamp
@@ -313,7 +319,7 @@ function dissociate(e::DiffusingEmitter3D, emitters::Vector{<:AbstractDiffusingE
         nothing             # Partner ID
     )
     
-    m2 = DiffusingEmitter3D{typeof(partner.x)}(
+    m2 = DiffusingEmitter3D{T}(
         partner.x, partner.y, partner.z,  # Position
         partner.photons,                  # Photons
         partner.timestamp,                # Timestamp
@@ -341,7 +347,7 @@ Create a new emitter with updated position based on Brownian motion.
 # Returns
 - `DiffusingEmitter2D`: New emitter with updated position
 """
-function diffuse(e::DiffusingEmitter2D, diff_coef::Float64, dt::Float64)
+function diffuse(e::DiffusingEmitter2D{T}, diff_coef::Float64, dt::Float64) where T <: AbstractFloat
     σ = sqrt(2 * diff_coef * dt)
     
     # Apply Brownian motion
@@ -349,7 +355,7 @@ function diffuse(e::DiffusingEmitter2D, diff_coef::Float64, dt::Float64)
     new_y = e.y + rand(Normal(0, σ))
     
     # Create new emitter with updated position
-    DiffusingEmitter2D{typeof(e.x)}(
+    DiffusingEmitter2D{T}(
         new_x, new_y,       # Updated position
         e.photons,          # Photons
         e.timestamp + dt,   # Updated timestamp
@@ -374,7 +380,7 @@ Create a new 3D emitter with updated position based on Brownian motion.
 # Returns
 - `DiffusingEmitter3D`: New emitter with updated position
 """
-function diffuse(e::DiffusingEmitter3D, diff_coef::Float64, dt::Float64)
+function diffuse(e::DiffusingEmitter3D{T}, diff_coef::Float64, dt::Float64) where T <: AbstractFloat
     σ = sqrt(2 * diff_coef * dt)
     
     # Apply Brownian motion
@@ -383,7 +389,7 @@ function diffuse(e::DiffusingEmitter3D, diff_coef::Float64, dt::Float64)
     new_z = e.z + rand(Normal(0, σ))
     
     # Create new emitter with updated position
-    DiffusingEmitter3D{typeof(e.x)}(
+    DiffusingEmitter3D{T}(
         new_x, new_y, new_z,  # Updated position
         e.photons,            # Photons
         e.timestamp + dt,     # Updated timestamp
@@ -411,7 +417,7 @@ Diffuse a dimer with both translational and rotational components.
 # Returns
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters with updated positions
 """
-function diffuse_dimer(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, diff_trans::Float64, diff_rot::Float64, d_dimer::Float64, dt::Float64)
+function diffuse_dimer(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, diff_trans::Float64, diff_rot::Float64, d_dimer::Float64, dt::Float64) where T <: AbstractFloat
     # Translational diffusion
     σ_trans = sqrt(2 * diff_trans * dt)
     dx = rand(Normal(0, σ_trans))
@@ -436,7 +442,7 @@ function diffuse_dimer(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, diff_tran
     dy = r * sin(ϕ)
     
     # Create new emitters with updated positions
-    d1 = DiffusingEmitter2D{typeof(e1.x)}(
+    d1 = DiffusingEmitter2D{T}(
         com_x - dx, com_y - dy,  # Updated position
         e1.photons,              # Photons
         e1.timestamp + dt,       # Updated timestamp
@@ -447,7 +453,7 @@ function diffuse_dimer(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, diff_tran
         e1.partner_id            # Partner ID
     )
     
-    d2 = DiffusingEmitter2D{typeof(e2.x)}(
+    d2 = DiffusingEmitter2D{T}(
         com_x + dx, com_y + dy,  # Updated position
         e2.photons,              # Photons
         e2.timestamp + dt,       # Updated timestamp
@@ -477,7 +483,7 @@ Diffuse a 3D dimer with both translational and rotational components.
 # Returns
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters with updated positions
 """
-function diffuse_dimer(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, diff_trans::Float64, diff_rot::Float64, d_dimer::Float64, dt::Float64)
+function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, diff_trans::Float64, diff_rot::Float64, d_dimer::Float64, dt::Float64) where T <: AbstractFloat
     # Translational diffusion
     σ_trans = sqrt(2 * diff_trans * dt)
     dx = rand(Normal(0, σ_trans))
@@ -509,7 +515,7 @@ function diffuse_dimer(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, diff_tran
     dz = r * cos(θ)
     
     # Create new emitters with updated positions
-    d1 = DiffusingEmitter3D{typeof(e1.x)}(
+    d1 = DiffusingEmitter3D{T}(
         com_x - dx, com_y - dy, com_z - dz,  # Updated position
         e1.photons,                          # Photons
         e1.timestamp + dt,                   # Updated timestamp
@@ -520,7 +526,7 @@ function diffuse_dimer(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, diff_tran
         e1.partner_id                        # Partner ID
     )
     
-    d2 = DiffusingEmitter3D{typeof(e2.x)}(
+    d2 = DiffusingEmitter3D{T}(
         com_x + dx, com_y + dy, com_z + dz,  # Updated position
         e2.photons,                          # Photons
         e2.timestamp + dt,                   # Updated timestamp
@@ -535,9 +541,26 @@ function diffuse_dimer(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, diff_tran
 end
 
 """
+    apply_boundary(e::AbstractDiffusingEmitter, box_size::Float64, boundary::String)
+
+Apply boundary conditions to an emitter (generic fallback).
+
+# Arguments
+- `e::AbstractDiffusingEmitter`: Emitter to apply boundary to
+- `box_size::Float64`: Simulation box size in microns
+- `boundary::String`: Boundary condition type ("periodic" or "reflecting")
+
+# Returns
+- `AbstractDiffusingEmitter`: Emitter with boundary conditions applied
+"""
+function apply_boundary(e::AbstractDiffusingEmitter, box_size::Float64, boundary::String)
+    error("No boundary method implemented for $(typeof(e))")
+end
+
+"""
     apply_boundary(e::DiffusingEmitter2D, box_size::Float64, boundary::String)
 
-Apply boundary conditions to an emitter.
+Apply boundary conditions to a 2D emitter.
 
 # Arguments
 - `e::DiffusingEmitter2D`: Emitter to apply boundary to
@@ -547,7 +570,7 @@ Apply boundary conditions to an emitter.
 # Returns
 - `DiffusingEmitter2D`: New emitter with position constrained to the box
 """
-function apply_boundary(e::DiffusingEmitter2D, box_size::Float64, boundary::String)
+function apply_boundary(e::DiffusingEmitter2D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
     new_x = e.x
     new_y = e.y
     
@@ -570,7 +593,7 @@ function apply_boundary(e::DiffusingEmitter2D, box_size::Float64, boundary::Stri
     
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y
-        return DiffusingEmitter2D{typeof(e.x)}(
+        return DiffusingEmitter2D{T}(
             new_x, new_y,      # Updated position
             e.photons,         # Photons
             e.timestamp,       # Timestamp
@@ -598,7 +621,7 @@ Apply boundary conditions to a 3D emitter.
 # Returns
 - `DiffusingEmitter3D`: New emitter with position constrained to the box
 """
-function apply_boundary(e::DiffusingEmitter3D, box_size::Float64, boundary::String)
+function apply_boundary(e::DiffusingEmitter3D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
     new_x = e.x
     new_y = e.y
     new_z = e.z
@@ -629,7 +652,7 @@ function apply_boundary(e::DiffusingEmitter3D, box_size::Float64, boundary::Stri
     
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y || new_z != e.z
-        return DiffusingEmitter3D{typeof(e.x)}(
+        return DiffusingEmitter3D{T}(
             new_x, new_y, new_z,  # Updated position
             e.photons,            # Photons
             e.timestamp,          # Timestamp
@@ -653,7 +676,7 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 # Arguments
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Collection of emitters from simulation
 - `camera::AbstractCamera`: Camera model for imaging
-- `params::SmoluchowskiParams`: Simulation parameters
+- `params::DiffusionSMLMParams`: Simulation parameters
 
 # Returns
 - `BasicSMLD`: SMLD containing all emitters for further analysis or visualization
