@@ -2,6 +2,8 @@ using SMLMSim
 using Test
 using Distributions
 using LinearAlgebra
+using Statistics
+using MicroscopePSFs
 
 # Main test set
 @testset "SMLMSim.jl" begin

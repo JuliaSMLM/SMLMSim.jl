@@ -61,20 +61,10 @@ function Nmer2D(; n::Int=8, d::Float64=0.1)
     return nmer
 end
 
-"""
-    Base.show(io::IO, nmer::Nmer2D)
-
-Custom display method for Nmer2D pattern showing basic properties.
-"""
 function Base.show(io::IO, nmer::Nmer2D)
     print(io, "Nmer2D(n=$(nmer.n), d=$(nmer.d) μm)")
 end
 
-"""
-    Base.show(io::IO, ::MIME"text/plain", nmer::Nmer2D)
-
-Extended display method for Nmer2D in REPL and other text contexts.
-"""
 function Base.show(io::IO, ::MIME"text/plain", nmer::Nmer2D)
     println(io, "Nmer2D pattern:")
     println(io, "  Number of molecules (n) = $(nmer.n)")
@@ -132,20 +122,10 @@ function Nmer3D(; n::Int=8, d::Float64=0.1)
     return nmer
 end
 
-"""
-    Base.show(io::IO, nmer::Nmer3D)
-
-Custom display method for Nmer3D pattern showing basic properties.
-"""
 function Base.show(io::IO, nmer::Nmer3D)
     print(io, "Nmer3D(n=$(nmer.n), d=$(nmer.d) μm)")
 end
 
-"""
-    Base.show(io::IO, ::MIME"text/plain", nmer::Nmer3D)
-
-Extended display method for Nmer3D in REPL and other text contexts.
-"""
 function Base.show(io::IO, ::MIME"text/plain", nmer::Nmer3D)
     println(io, "Nmer3D pattern:")
     println(io, "  Number of molecules (n) = $(nmer.n)")
@@ -211,11 +191,6 @@ function Line2D(; λ::Float64=10.0, endpoints=[(-1.0, 0.0), (1.0, 0.0)])
     return line
 end
 
-"""
-    Base.show(io::IO, line::Line2D)
-
-Custom display method for Line2D pattern showing basic properties.
-"""
 function Base.show(io::IO, line::Line2D)
     p1 = line.endpoints[1]
     p2 = line.endpoints[2]
@@ -223,11 +198,6 @@ function Base.show(io::IO, line::Line2D)
     print(io, "Line2D(n=$(line.n), λ=$(line.λ)/μm, length=$(round(length, digits=2)) μm)")
 end
 
-"""
-    Base.show(io::IO, ::MIME"text/plain", line::Line2D)
-
-Extended display method for Line2D in REPL and other text contexts.
-"""
 function Base.show(io::IO, ::MIME"text/plain", line::Line2D)
     p1 = line.endpoints[1]
     p2 = line.endpoints[2]
@@ -303,11 +273,6 @@ function Line3D(; λ::Float64=10.0, endpoints=[(-1.0, 0.0, 0.0), (1.0, 0.0, 0.0)
     return line
 end
 
-"""
-    Base.show(io::IO, line::Line3D)
-
-Custom display method for Line3D pattern showing basic properties.
-"""
 function Base.show(io::IO, line::Line3D)
     p1 = line.endpoints[1]
     p2 = line.endpoints[2]
@@ -315,11 +280,6 @@ function Base.show(io::IO, line::Line3D)
     print(io, "Line3D(n=$(line.n), λ=$(line.λ)/μm, length=$(round(length, digits=2)) μm)")
 end
 
-"""
-    Base.show(io::IO, ::MIME"text/plain", line::Line3D)
-
-Extended display method for Line3D in REPL and other text contexts.
-"""
 function Base.show(io::IO, ::MIME"text/plain", line::Line3D)
     p1 = line.endpoints[1]
     p2 = line.endpoints[2]

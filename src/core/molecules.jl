@@ -63,21 +63,11 @@ function GenericFluor(;
     return GenericFluor(photons, q)
 end
 
-"""
-    Base.show(io::IO, fluor::GenericFluor)
-
-Custom display method for GenericFluor showing basic properties.
-"""
 function Base.show(io::IO, fluor::GenericFluor)
     n_states = size(fluor.q, 1)
     print(io, "GenericFluor($(n_states) states, γ=$(fluor.γ) Hz)")
 end
 
-"""
-    Base.show(io::IO, ::MIME"text/plain", fluor::GenericFluor)
-
-Extended display method for GenericFluor in REPL and other text contexts.
-"""
 function Base.show(io::IO, ::MIME"text/plain", fluor::GenericFluor)
     n_states = size(fluor.q, 1)
     println(io, "GenericFluor with $n_states states:")

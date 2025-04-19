@@ -1,10 +1,3 @@
-using SMLMSim
-using Test
-using Distributions
-using LinearAlgebra
-using SMLMData
-using Statistics
-
 @testset "Static SMLM" begin
     # Create a pattern for testing
     pattern = Nmer2D(n=3, d=0.2)

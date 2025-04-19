@@ -1,9 +1,3 @@
-using SMLMSim
-using Test
-using Distributions
-using LinearAlgebra
-using Statistics
-
 @testset "Core - CTMC" begin
     # Test CTMC state transitions
     # Rate matrix: state 1 -> state 2 at rate 2.0, state 2 -> state 1 at rate 1.0

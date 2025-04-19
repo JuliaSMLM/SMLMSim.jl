@@ -81,11 +81,6 @@ Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
     end
 end
 
-"""
-    Base.show(io::IO, params::StaticSMLMParams)
-
-Custom display method for StaticSMLMParams showing all simulation parameters.
-"""
 function Base.show(io::IO, params::StaticSMLMParams)
     println(io, "StaticSMLMParams:")
     println(io, "  density    = $(params.density) particles/μm²")
@@ -98,11 +93,6 @@ function Base.show(io::IO, params::StaticSMLMParams)
     print(io,   "  zrange    = [$(params.zrange[1]), $(params.zrange[2])] μm")
 end
 
-"""
-    Base.show(io::IO, ::MIME"text/plain", params::StaticSMLMParams)
-
-Extended display method for StaticSMLMParams in REPL and other text contexts.
-"""
 function Base.show(io::IO, ::MIME"text/plain", params::StaticSMLMParams)
     println(io, "StaticSMLMParams:")
     println(io, "  Density           = $(params.density) particles/μm²")

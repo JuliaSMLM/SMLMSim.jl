@@ -330,8 +330,3 @@ tracking_movie = gen_image_sequence(psf, systems;
 
 For a complete list of functions and types, please see the API Reference section.
 
-```@docs
-SmoluchowskiParams
-DiffusingMolecule
-DiffusingMoleculeSystem
-```

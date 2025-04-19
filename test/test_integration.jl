@@ -1,11 +1,3 @@
-using SMLMSim
-using Test
-using Distributions
-using LinearAlgebra
-using SMLMData
-using MicroscopePSFs
-using Statistics
-
 @testset "Integration Tests" begin
     @testset "Static SMLM Workflow" begin
         # Create StaticSMLMParams
