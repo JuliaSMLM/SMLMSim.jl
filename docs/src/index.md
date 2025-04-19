@@ -8,7 +8,7 @@ CurrentModule = SMLMSim
 
 ## Overview
 
-SMLMSim provides tools for generating super-resolution microscopy data with physically realistic properties, including:
+SMLMSim provides tools for generating single molecule localization microscopy data with physically realistic properties, including:
 
 - Customizable spatial patterns of fluorophores in 2D and 3D
 - Realistic fluorophore photophysics with stochastic kinetic models
@@ -17,6 +17,30 @@ SMLMSim provides tools for generating super-resolution microscopy data with phys
 - Microscope image generation with configurable PSFs
 
 All simulations use physical units, with coordinates in microns and time in seconds, allowing for direct comparison with experimental data.
+
+## Simulation Types
+
+SMLMSim currently supports two main types of simulations:
+
+### Static SMLM
+
+Static simulations generate fixed patterns of molecules (such as protein complexes or structures) with realistic blinking behavior and localization uncertainty. This approach is ideal for SMLM super-resolution applications including:
+
+- Simulating structured samples (oligomers, filaments, etc.)
+- Testing localization algorithms
+- Evaluating super-resolution reconstruction methods
+- Benchmarking SMLM analysis software
+
+### Diffusion-Interaction
+
+Diffusion simulations model the dynamic behavior of molecules undergoing Brownian motion, suitable for single particle tracking applications, including:
+
+- Free diffusion with configurable coefficients
+- Formation of molecular complexes (dimerization)
+- Dissociation of complexes
+- Combined translational and rotational diffusion
+
+This approach is ideal for studying dynamic biological processes and single-particle tracking applications.
 
 ## Installation
 
@@ -27,7 +51,7 @@ Pkg.add("SMLMSim")
 
 ## Quick Start
 
-The high-level interface for simulating SMLM coordinate data is the `simulate()` function:
+### Static SMLM Simulation
 
 ```julia
 using SMLMSim
@@ -35,7 +59,7 @@ using SMLMSim
 # Define a camera with 100nm pixel size
 camera = IdealCamera(1:128, 1:128, 0.1)
 
-# Run a basic simulation
+# Run a basic static simulation
 smld_true, smld_model, smld_noisy = simulate(
     ρ=1.0,                # 1 pattern per μm²
     σ_psf=0.13,           # 130nm PSF width
@@ -44,10 +68,23 @@ smld_true, smld_model, smld_noisy = simulate(
 )
 ```
 
-This generates:
-- `smld_true`: Ground truth emitter positions
-- `smld_model`: Positions with realistic blinking behavior
-- `smld_noisy`: Positions with both blinking and localization uncertainty
+### Diffusion-Interaction Simulation
+
+```julia
+# Set diffusion simulation parameters
+params = DiffusionSMLMParams(
+    density = 0.5,        # molecules per μm²
+    box_size = 10.0,      # μm
+    diff_monomer = 0.1,   # μm²/s
+    diff_dimer = 0.05,    # μm²/s
+    k_off = 0.2,          # s⁻¹
+    dt = 0.01,            # s
+    t_max = 10.0          # s
+)
+
+# Run diffusion simulation
+smld_diffusion = simulate(params)
+```
 
 ## Package Structure
 
@@ -58,23 +95,10 @@ The main components of the package are:
 - **Patterns**: Spatial arrangements of molecules (Nmer2D, Line2D, etc.)
 - **Molecules**: Photophysical models (e.g., GenericFluor)
 - **Simulation**: Kinetic models and noise generation
-- **Interaction-Diffusion**: Smoluchowski dynamics for molecular interactions
+- **Diffusion**: Smoluchowski dynamics for molecular interactions
 
-## Citation
 
-If you use this package in your research, please cite:
 
-## Citing SMLMSim.jl
+## License
 
-If you use SMLMSim.jl in your research, please cite this package as:
-
-> Lidke, K. et al. (2025). SMLMSim.jl [Computer software]. https://github.com/JuliaSMLM/SMLMSim.jl
-
-## Contributing
-
-Contributions are welcome! Please see our [contributing guidelines](https://github.com/JuliaSMLM/SMLMSim.jl/blob/main/CONTRIBUTING.md) for more information.
-
-```@contents
-Pages = ["core_concepts.md", "diffusion.md", "examples.md", "performance_tips.md", "api.md"]
-Depth = 2
-```
+This project is licensed under the MIT License - see the LICENSE file for details.

@@ -15,17 +15,21 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
-        "Core Concepts" => "core_concepts.md",
-        "User Guide" => [
-            "Basic Simulation" => "user_guide/basic_simulation.md",
-            "Patterns" => "user_guide/patterns.md",
-            "Photophysics" => "user_guide/photophysics.md",
-            "Localization Uncertainty" => "user_guide/uncertainty.md",
+        "Core Components" => [
+            "Patterns" => "core/patterns.md",
+            "Photophysics" => "core/photophysics.md",
+            "Localization Uncertainty" => "core/noise.md"
         ],
-        "Interaction-Diffusion" => "diffusion.md",
-        "Examples" => "examples.md"
-        # "Performance Tips" => "performance_tips.md",
-        # "API Reference" => "api.md",
+        "Static SMLM" => [
+            "Overview" => "static/overview.md",
+            "Examples" => "static/examples.md"
+        ],
+        "Diffusion-Interaction" => [
+            "Overview" => "diffusion/overview.md",
+            "Examples" => "diffusion/examples.md"
+        ],
+        "Microscope Images" => "images.md",
+        "API Reference" => "api.md",
     ],
     warnonly=true,
 )

@@ -10,7 +10,6 @@ This page provides a comprehensive reference for the types and functions in SMLM
 
 ```@docs
 simulate
-sim
 ```
 
 ## Pattern Types
@@ -60,14 +59,21 @@ GenericFluor
 CTMC
 get_state
 get_next
-intensitytrace
-kineticmodel
+intensity_trace
+kinetic_model
 ```
 
 ## Localization Uncertainty
 
 ```@docs
 noise
+apply_noise
+```
+
+## Static Simulation
+
+```@docs
+StaticSMLMParams
 ```
 
 ## Interaction-Diffusion
@@ -75,39 +81,25 @@ noise
 ### Types
 
 ```@docs
-DiffusingMolecule
-DiffusingMoleculeSystem
-SmoluchowskiParams
-```
-
-### Simulation Functions
-
-```@autodocs
-Modules = [InteractionDiffusion]
-Filter = f -> (f === simulate)
+DiffusionSMLMParams
+DiffusingEmitter2D
+DiffusingEmitter3D
 ```
 
 ### Analysis Functions
 
 ```@docs
 get_dimers
-gen_dimer_images
+get_monomers
 analyze_dimer_fraction
+analyze_dimer_lifetime
 ```
 
 ### Microscope Image Generation
 
 ```@docs
+gen_images
 gen_image
-gen_image_sequence
-```
-
-### Visualization
-
-```@docs
-show_frame
-visualize_sequence
-visualize_simulation
 ```
 
 ## SMLMData Integration
@@ -130,15 +122,4 @@ Emitter3D
 Emitter2DFit
 Emitter3DFit
 BasicSMLD
-```
-
-## Helper Functions
-
-```@docs
-kinetic_model
-```
-
-## Index
-
-```@index
 ```
