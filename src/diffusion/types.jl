@@ -1,90 +1,113 @@
-
-abstract type AbstractOligomer end
-
+# Define specialized emitter types for diffusion simulation that
+# directly inherit from SMLMData.AbstractEmitter
 
 """
-    struct Monomer <: AbstractOligomer
+    AbstractDiffusingEmitter <: AbstractEmitter
 
-A struct representing a single monomer in an oligomer.
+Abstract type for all diffusing emitters to enable dispatch-based operations.
+This provides a common parent for 2D and 3D diffusing emitters.
+"""
+abstract type AbstractDiffusingEmitter <: AbstractEmitter end
+
+"""
+    DiffusingEmitter2D{T<:AbstractFloat} <: AbstractDiffusingEmitter
+
+A 2D emitter type for diffusion simulations that contains both spatial
+and temporal information, plus molecular state information.
 
 # Fields
-- `x::Float64`: the x-coordinate of the monomer's position
-- `y::Float64`: the y-coordinate of the monomer's position
-- `z::Float64`: the z-coordinate of the monomer's position
-- `state::Int64`: the state of the monomer (1 for monomer, 2 for dimer)
-- `link::Union{Monomer,Nothing}`: the monomer that this monomer is linked to, if any
-- `updated::Bool`: a flag indicating whether this monomer has been updated in the current iteration
-- `id::Int64`: a unique identifier for the monomer
+- `x::T`: x-coordinate in microns
+- `y::T`: y-coordinate in microns
+- `photons::T`: number of photons emitted
+- `timestamp::T`: actual simulation time in seconds
+- `frame::Int`: camera frame number based on framerate and exposure
+- `dataset::Int`: dataset identifier
+- `id::Int`: unique molecule identifier 
+- `state::Symbol`: molecular state (:monomer or :dimer)
+- `partner_id::Union{Int,Nothing}`: ID of linked molecule (for dimers), or nothing for monomers
 """
-mutable struct Monomer <: AbstractOligomer
-    x::Float64
-    y::Float64
-    z::Float64
-    state::Int64
-    link::Union{Monomer,Nothing}
-    updated::Bool
-    id::Int64  # Added id field
+struct DiffusingEmitter2D{T<:AbstractFloat} <: AbstractDiffusingEmitter
+    # Core spatial and intensity properties required by integrate_pixels
+    x::T
+    y::T
+    photons::T
+    
+    # Temporal properties
+    timestamp::T  # Actual simulation time in seconds
+    frame::Int    # Frame number based on camera integration
+    
+    # Bookkeeping properties
+    dataset::Int
+    id::Int
+    
+    # Diffusion-specific properties
+    state::Symbol              # :monomer or :dimer
+    partner_id::Union{Int,Nothing}   # ID of linked molecule (for dimers)
 end
 
-
 """
-    MoleculeFrame(frame::Int64, molecules::Vector{<:AbstractOligomer})
+    DiffusingEmitter3D{T<:AbstractFloat} <: AbstractDiffusingEmitter
 
-A struct representing a time frame of a simulation of a system of molecules.
+A 3D emitter type for diffusion simulations that contains both spatial
+and temporal information, plus molecular state information.
 
 # Fields
-- `frame::Int64`: The frame number of the simulation.
-- 'molecules::Vector{<:AbstractOligomer}': A vector of `AbstractOligomer` objects representing the state of the system at the current time step.
+- `x::T`: x-coordinate in microns
+- `y::T`: y-coordinate in microns
+- `z::T`: z-coordinate in microns
+- `photons::T`: number of photons emitted
+- `timestamp::T`: actual simulation time in seconds
+- `frame::Int`: camera frame number based on framerate and exposure
+- `dataset::Int`: dataset identifier
+- `id::Int`: unique molecule identifier
+- `state::Symbol`: molecular state (:monomer or :dimer)
+- `partner_id::Union{Int,Nothing}`: ID of linked molecule (for dimers), or nothing for monomers
 """
-struct MoleculeFrame
-    framenum::Int64
-    molecules::Vector{<:AbstractOligomer}
+struct DiffusingEmitter3D{T<:AbstractFloat} <: AbstractDiffusingEmitter
+    # Core spatial and intensity properties
+    x::T
+    y::T
+    z::T
+    photons::T
+    
+    # Same temporal and diffusion properties
+    timestamp::T
+    frame::Int
+    dataset::Int
+    id::Int
+    state::Symbol
+    partner_id::Union{Int,Nothing}
 end
 
-"""
-    MoleculeFrame(framenum::Int64, nmolecules::Int64)
-
-Create a `MoleculeFrame` object with `nmolecules` molecules.
-
-"""
-function MoleculeFrame(framenum::Int64, nmolecules::Int64)
-    molecules = [Monomer(0.0, 0.0, 0.0, 1, nothing, false, i) for i in 1:nmolecules]
-    return MoleculeFrame(framenum, molecules)
+# Display methods
+function Base.show(io::IO, e::DiffusingEmitter2D{T}) where T
+    print(io, "DiffusingEmitter2D{$T}($(e.x), $(e.y) μm, t=$(e.timestamp)s, frame=$(e.frame), $(e.state))")
 end
 
-"""
-    MoleculeHistory(dt::Float64, frames::Vector{MoleculeFrame})
-
-A history of the state of a system of molecules over time.
-
-# Fields
-- `dt::Float64`: The time step used in the simulation.
-- `frames::Vector{MoleculeFrame}`: A vector of `MoleculeFrame` objects representing the state of the system at each time step.
-"""
-struct MoleculeHistory
-    dt::Float64
-    frames::Vector{MoleculeFrame}
+function Base.show(io::IO, ::MIME"text/plain", e::DiffusingEmitter2D{T}) where T
+    link_str = isnothing(e.partner_id) ? "unlinked" : "linked to $(e.partner_id)"
+    
+    println(io, "DiffusingEmitter2D{$T}:")
+    println(io, "  Position: ($(e.x), $(e.y)) μm")
+    println(io, "  Photons: $(e.photons)")
+    println(io, "  Time: $(e.timestamp) s, frame: $(e.frame)")
+    println(io, "  State: $(e.state)")
+    println(io, "  ID: $(e.id)")
+    print(io, "  Link: $link_str")
 end
 
-"""
-    MoleculeHistory(dt::Float64, nframes::Int64, nmolecules::Int64)
-
-Create a `MoleculeHistory` object with `nframes` frames, each containing `nmolecules` molecules.
-Each `Monomer` is assigned a unique `id`.
-"""
-function MoleculeHistory(dt::Float64, nframes::Int64, nmolecules::Int64)
-    id_counter = 1  # Initialize an ID counter
-    frames = Vector{MoleculeFrame}(undef, nframes)
-    for frame_num in 1:nframes
-        molecules = Vector{Monomer}(undef, nmolecules)
-        for j in 1:nmolecules
-            # Create a Monomer with a unique id
-            molecules[j] = Monomer(0.0, 0.0, 0.0, 1, nothing, false, id_counter)
-            id_counter += 1  # Increment the ID counter
-        end
-        frames[frame_num] = MoleculeFrame(frame_num, molecules)
-    end
-    return MoleculeHistory(dt, frames)
+function Base.show(io::IO, e::DiffusingEmitter3D{T}) where T
+    print(io, "DiffusingEmitter3D{$T}($(e.x), $(e.y), $(e.z) μm, t=$(e.timestamp)s, frame=$(e.frame), $(e.state))")
 end
 
-
+function Base.show(io::IO, ::MIME"text/plain", e::DiffusingEmitter3D{T}) where T
+    link_str = isnothing(e.partner_id) ? "unlinked" : "linked to $(e.partner_id)"
+    
+    println(io, "DiffusingEmitter3D{$T}:")
+    println(io, "  Position: ($(e.x), $(e.y), $(e.z)) μm")
+    println(io, "  Photons: $(e.photons)")
+    println(io, "  Time: $(e.timestamp) s, frame: $(e.frame)")
+    println(io, "  State: $(e.state)")
+    println(io, "  ID: $(e.id)")
+    print(io, "  Link: $link_str")
+end

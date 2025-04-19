@@ -1,5 +1,0 @@
-# Parse history for interactions
-
-
-
-

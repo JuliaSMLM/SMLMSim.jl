@@ -5,193 +5,330 @@ DocTestSetup = quote
 end
 ```
 
-# SMLMSim.InteractionDiffusion
+# Interaction-Diffusion
+
 ## Overview
 
-This module simulates interacting particles within a box. Monomers are consdiered point particles, and dimers and monomers kept at fixed separation. At each time step of the simulation, the following actions are taken:
-- If two free monomers are within the reaction radius, they are linked to form dimers.  
-- Pre-existing dimers are broken with a probabilty of $p = k_{\mathrm{off}}dt$
-- Monomer position and dimer center-of-mass positions are updated with diffusion simulated as isotropic Brownian motion using their respective diffusion constant.  
-- Dimers undergo rotational diffusion. 
-- Boundary conditions are applied to the monomer position and dimer center-of-mass
+The Interaction-Diffusion module simulates dynamic molecular processes including diffusion and interactions between particles in a controlled environment. This allows you to model realistic molecular behaviors such as:
 
-## Tutorial
+- Free diffusion of monomers
+- Formation of molecular complexes (dimers)
+- Dissociation of complexes
+- Combined translational and rotational diffusion
 
-### Running the Simulation
-The main interface to the interaction-diffusion simulator is `smoluchowski()`. All arguments are keyword args and can be changed from default.  
+The simulation operates within a defined box with customizable physical parameters, making it suitable for studying a wide range of biological phenomena at the single-molecule level.
 
-Simply run:
+## Core Concepts
+
+### Simulation Model
+
+The diffusion simulation is based on the Smoluchowski dynamics model with the following components:
+
+1. **Particles**: Represented as point particles (monomers) or rigid structures (dimers)
+2. **Diffusion**: Isotropic Brownian motion with specified diffusion coefficients
+3. **Reactions**: 
+   - Association: Two monomers within reaction radius form a dimer
+   - Dissociation: Dimers break with rate k_off
+4. **Boundaries**: Periodic or reflecting boundary conditions
+
+At each time step, the simulation:
+- Updates the molecular states (dimerization/dissociation)
+- Updates positions with appropriate diffusion models
+- Handles boundary conditions
+
+### Physical Units
+
+All simulation parameters use consistent physical units:
+- Spatial dimensions: microns (μm)
+- Time: seconds (s)
+- Diffusion coefficients: μm²/s
+- Rate constants: s⁻¹
+
+## Getting Started
+
+### Running a Basic Simulation
+
+The main interface for running diffusion simulations is the `simulate` function with `SmoluchowskiParams`:
 
 ```julia
-state_history, args = SMLMSim.smoluchowski()
-```
-
-The output is a `MoleculeHistory` structure and `args`, which is a structure that contains all the keyword input arguments that are used in the simulation.  
-
-The `MoleculeHistory` contains the position and monomer/dimer state 
-of each particle at each time frame.
-
-The full list of options are in the docstring. 
-
-```@docs
-SMLMSim.smoluchowski()
-```
-
-
-### Visualizing the Simulation
-
-To see positions of the particles in a single frame:
-
-```@example 
 using SMLMSim
-state_history, args = SMLMSim.smoluchowski()
-framenum = 100
-SMLMSim.show_frame(state_history,framenum,args)
-SMLMSim.show_frame(state_history,framenum,args,"diffusion/IDFrame.png") # hide
+
+# Set simulation parameters
+params = SmoluchowskiParams(
+    density = 0.5,        # molecules per μm²
+    box_size = 10.0,      # μm
+    diff_monomer = 0.1,   # μm²/s
+    diff_dimer = 0.05,    # μm²/s
+    k_off = 0.2,          # s⁻¹
+    r_react = 0.01,       # μm
+    d_dimer = 0.05,       # μm
+    dt = 0.01,            # s
+    t_max = 10.0          # s
+)
+
+# Run the simulation
+systems = simulate(params)
 ```
 
-```@raw html
-<img src="IDFrame.png" alt="Simulation Frame" width="400"/>
+The `systems` output is a vector of `DiffusingMoleculeSystem` objects, each representing the state of the system at a specific time point. The time between frames is determined by the `dt` parameter.
+
+### Customizing Simulation Parameters
+
+The `SmoluchowskiParams` structure allows you to customize various aspects of the simulation:
+
+```julia
+# More complex simulation
+params = SmoluchowskiParams(
+    density = 2.0,           # Higher density
+    box_size = 20.0,         # Larger area
+    diff_monomer = 0.2,      # Faster monomer diffusion
+    diff_dimer = 0.08,       # Faster dimer diffusion
+    diff_dimer_rot = 1.0,    # Faster rotational diffusion
+    k_off = 0.05,            # Slower dissociation (more stable dimers)
+    r_react = 0.015,         # Larger reaction radius
+    d_dimer = 0.08,          # Larger dimer separation
+    dt = 0.005,              # Smaller time step (higher precision)
+    t_max = 30.0,            # Longer simulation
+    ndims = 2,               # 2D simulation (default)
+    boundary = "periodic"    # Periodic boundaries (default)
+)
 ```
 
-Monomers appear as blue dots. Dimers appear as red dots. 
+### Parameter Guidelines
 
+For realistic simulations, consider these guidelines:
 
-To generate an mp4 movie of all frames:
+| Parameter | Typical Range | Notes |
+|-----------|---------------|-------|
+| `density` | 0.1-10 μm⁻² | Depends on biological system |
+| `diff_monomer` | 0.01-10 μm²/s | 0.1 μm²/s ≈ small protein in cytoplasm |
+| `diff_dimer` | 0.5-0.8× monomer | Scales roughly with size |
+| `k_off` | 0.001-10 s⁻¹ | Impacts complex stability |
+| `r_react` | 0.001-0.02 μm | Reaction distance |
+| `d_dimer` | 0.01-0.1 μm | Physical size of complex |
 
-```@example 
-using SMLMSim
-state_history, args = SMLMSim.smoluchowski()
-SMLMSim.gen_movie(state_history,args; filename="defaultsim.mp4")
+## Visualization
+
+### Displaying a Single Frame
+
+To visualize the state of the system at a specific time point:
+
+```julia
+# Show a specific frame
+framenum = 50  # Time point index
+show_frame(systems[framenum])
 ```
 
-```@raw html
-<video width="320" height="240" controls>
-  <source src="defaultsim.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+This produces a scatter plot with:
+- Blue dots: Monomers
+- Red dots: Dimers
+- Position: Current location in the simulation box
+
+For saving the visualization to a file:
+
+```julia
+# Save frame to file
+show_frame(systems[framenum], "diffusion_frame50.png")
 ```
 
+### Creating Animations
 
-### Simulating Microscope Data 
+To create a movie showing the entire simulation:
 
-The `MoleculeHistory` structure returned by `smoluchowski()` can 
-be use to simulate data as if it was collected in microscope.  This is implemented by the function `gen_image_stack` and requires a `MicroscopePSFs.PSF` and a `SMLMSim.Camera`.  
+```julia
+# Generate an MP4 animation
+visualize_sequence(systems, filename="diffusion_simulation.mp4")
+```
 
-A camera has a finite integration time that may be long compared to the dynamics of the diffusion simulation.  The 
-The example below shows the simulation of a system and the generation of data stack where each camera image is an integration over `sub_sampling` simulation frames. 
+This function renders each time point and compiles them into a movie, with optional parameters:
+- `framerate`: Controls playback speed
+- `show_dimers`: Whether to color-code dimers differently
 
+## Microscope Image Generation
 
-```@example 
-using SMLMSim
+The diffusion simulation can be converted into realistic microscope images using point spread function models.
+
+### Creating Images from a Single Frame
+
+```julia
+# Set up camera and PSF
+pixelsize = 0.1  # 100nm pixels
+pixels = Int64(round(params.box_size/pixelsize))
+camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
+
+# Set up PSF (Gaussian with 150nm width)
 using MicroscopePSFs
-using Images
+psf = MicroscopePSFs.Gaussian2D(0.15)  # 150nm PSF width
 
-camera_exposure_time = 0.05 # s
-box_size = 10 # microns
-sub_sampling = 10
-dt = camera_exposure_time/sub_sampling # s
-
-state_history, args = SMLMSim.InteractionDiffusion.smoluchowski(; 
-    dt=dt, box_size=box_size);
-
-# Setup a Camera
-pixelsize = 0.1
-pixels = Int64(round(box_size/pixelsize))
-camera = SMLMSim.IdealCamera(; xpixels=pixels, ypixels=pixels, pixelsize=pixelsize)
-
-# Setup a PSF
-na = 1.3
-wavelength = 0.6 # micron
-psf = MicroscopePSFs.Airy2D(na,wavelength,pixelsize)
-
-image_stack = SMLMSim.gen_image_stack(psf, state_history, camera; 
-    photons=1000.0, 
-    bg=5.0, 
-    poissonnoise=true, 
-    frame_integration=sub_sampling);
-
-# Look at one frame
-im = Gray.(image_stack[:,:,1]./maximum(image_stack[:,:,1]))
-
-save("simimageframe.png",im) # hide
+# Generate image for a specific frame
+frame_image = gen_image(psf, systems[50], 1;
+    photons=1000.0,  # photons per molecule
+    bg=5.0,          # background photons per pixel
+    poisson_noise=true
+)
 ```
 
-```@raw html
-<img src="simimageframe.png" alt="Image Frame" width="400"/>
+### Generating Image Sequences
+
+For a complete movie with frame integration:
+
+```julia
+# Generate full image sequence
+image_stack = gen_image_sequence(psf, systems;
+    photons=1000.0,
+    bg=5.0,
+    frame_integration=10,  # integrate 10 simulation frames per output frame
+    poisson_noise=true
+)
 ```
+
+The `frame_integration` parameter allows longer camera exposure times relative to the simulation time step, which is often realistic for experimental scenarios.
+
+### One-Step Simulation and Imaging
+
+For convenience, you can simulate and generate images in one step:
+
+```julia
+# Simulation and imaging in one step
+images, systems = simulate_and_image(params, psf;
+    photons=2000.0,
+    bg=10.0,
+    frame_integration=5
+)
+```
+
+## Analyzing Dimers
 
 ### Extracting Dimers
 
-We can extract the dimers into a `MoleculeHistory` structure, which can then be used with the above visualization and image generation tools. 
+To focus on the behavior of dimers, you can extract only the molecules in dimer state:
 
-```@setup dimer
-using SMLMSim
-using MicroscopePSFs
-using Images
+```julia
+# Extract dimers from the full simulation
+dimer_systems = get_dimers(systems)
 
-camera_exposure_time = 0.05 # s
-box_size = 10 # microns
-sub_sampling = 10
-dt = camera_exposure_time/sub_sampling # s
-
-state_history, args = SMLMSim.InteractionDiffusion.smoluchowski(; 
-    dt=dt, box_size=box_size);
-
-# Setup a Camera
-pixelsize = 0.1
-pixels = Int64(round(box_size/pixelsize))
-camera = SMLMSim.IdealCamera(; xpixels=pixels, ypixels=pixels, pixelsize=pixelsize)
-
-# Setup a PSF
-na = 1.3
-wavelength = 0.6 # micron
-psf = MicroscopePSFs.Airy2D(na,wavelength,pixelsize)
-
-image_stack = SMLMSim.gen_image_stack(psf, state_history, camera; 
-    photons=1000.0, 
-    bg=5.0, 
-    poissonnoise=true, 
-    frame_integration=sub_sampling);
+# Generate images showing only dimers
+dimer_images = gen_dimer_images(systems, psf;
+    photons=1500.0,
+    frame_integration=5
+)
 ```
 
-```@example dimer
-dimer_history = SMLMSim.get_dimers(state_history)
+### Analyzing Dimer Formation
 
-dimer_stack = SMLMSim.gen_image_stack(psf, dimer_history, camera; 
-    photons=1000.0, bg=5.0, poissonnoise=true, frame_integration=10);
+To quantify the formation of dimers over time:
 
-framenum = length(state_history.frames)
-SMLMSim.show_frame(state_history,framenum,args)
-SMLMSim.show_frame(state_history,framenum,args,"DimerFrame.png") # hide
+```julia
+# Calculate fraction of molecules in dimer state
+dimer_fractions = analyze_dimer_fraction(systems)
 
-all_image = Gray.(image_stack[:,:,end]./maximum(image_stack[:,:,end]))
+# Plot dimer formation over time
+using CairoMakie
+times = range(0, params.t_max, length=length(systems))
 
-dimer_image = Gray.(dimer_stack[:,:,end]./maximum(dimer_stack[:,:,end]))
-
-save("all_image.png",all_image) # hide
-save("dimer_image.png",dimer_image) # hide
+fig = Figure()
+ax = Axis(fig[1, 1],
+    xlabel="Time (s)",
+    ylabel="Fraction of molecules in dimers",
+    title="Dimer formation dynamics"
+)
+lines!(ax, times, dimer_fractions)
+fig
 ```
 
-```@raw html
-<div style="display: flex; flex-direction: row;">
-    <img src="DimerFrame.png" alt="DimerFrame" width="300" style="margin-right: 10px;"/>
-    <img src="all_image.png" alt="all_image" width="300" style="margin-right: 10px;"/>
-    <img src="dimer_image.png" alt="dimer_image" width="300"/>
-</div>
+## Advanced Usage
+
+### Extending the Model
+
+The interaction-diffusion framework can be extended for more complex simulations:
+
+1. **Multi-state systems**:
+   - Modify the state system to include more than just monomers and dimers
+   - Add additional reaction types
+
+2. **Spatial heterogeneity**:
+   - Introduce position-dependent reaction rates
+   - Add fixed obstacles or binding sites
+
+3. **Custom dynamics**:
+   - Implement directed motion (e.g., active transport)
+   - Add external forces
+
+### Integration with Other Modules
+
+The diffusion simulation integrates well with other SMLMSim components:
+
+```julia
+# Generate super-resolution data from diffusion simulation
+camera = IdealCamera(1:128, 1:128, 0.1)
+
+# Extract emitters from a simulation time point
+emitters = [mol.emitter for mol in systems[50].molecules]
+
+# Create SMLD structure
+smld = BasicSMLD(emitters, camera, 1, 1, Dict("source" => "diffusion"))
+
+# Apply photophysics and localization uncertainty
+fluor = GenericFluor(γ=1e4, q=[0 10; 1 0])
+smld_model = kinetic_model(smld, fluor, 100, 50.0)
+smld_noisy = noise(smld_model, 0.13)
 ```
 
+## Examples
 
-## API
+### Protein Association Kinetics
+
+This example simulates protein association in a membrane:
+
+```julia
+# Membrane protein association simulation
+params = SmoluchowskiParams(
+    density = 0.3,        # sparse proteins
+    diff_monomer = 0.05,  # slow membrane diffusion
+    k_off = 0.01,         # stable complexes
+    t_max = 60.0          # observe over 1 minute
+)
+
+systems = simulate(params)
+dimer_fractions = analyze_dimer_fraction(systems)
+
+# Calculate time to 50% dimerization
+times = range(0, params.t_max, length=length(systems))
+t_half = times[findfirst(df -> df >= 0.5, dimer_fractions)]
+```
+
+### Single Particle Tracking
+
+This example generates data for single particle tracking analysis:
+
+```julia
+# Fast acquisition for tracking
+params = SmoluchowskiParams(
+    density = 0.05,       # very sparse for tracking
+    diff_monomer = 0.2,   # moderate diffusion
+    dt = 0.001,           # high temporal resolution
+    t_max = 5.0           # 5 second acquisition
+)
+
+systems = simulate(params)
+
+# Generate tracking movie with high framerate
+psf = MicroscopePSFs.Gaussian2D(0.15)
+camera = IdealCamera(1:200, 1:200, 0.1)
+
+tracking_movie = gen_image_sequence(psf, systems;
+    photons=2000.0,
+    frame_integration=10,
+    poisson_noise=true
+)
+```
+
+## API Reference
+
+For a complete list of functions and types, please see the API Reference section.
 
 ```@docs
-SMLMSim.InteractionDiffusion
-```
-
-```@index
-Modules = [InteractionDiffusion]
-```
-
-```@autodocs
-Modules = [InteractionDiffusion]
+SmoluchowskiParams
+DiffusingMolecule
+DiffusingMoleculeSystem
 ```
