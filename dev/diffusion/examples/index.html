@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Examples · SMLMSim.jl</title><meta name="title" content="Examples · SMLMSim.jl"/><meta property="og:title" content="Examples · SMLMSim.jl"/><meta property="twitter:title" content="Examples · SMLMSim.jl"/><meta name="description" content="Documentation for SMLMSim.jl."/><meta property="og:description" content="Documentation for SMLMSim.jl."/><meta property="twitter:description" content="Documentation for SMLMSim.jl."/><meta property="og:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/diffusion/examples/"/><meta property="twitter:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/diffusion/examples/"/><link rel="canonical" href="https://JuliaSMLM.github.io/SMLMSim.jl/diffusion/examples/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">SMLMSim.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Core Components</span><ul><li><a class="tocitem" href="../../core/patterns/">Patterns</a></li><li><a class="tocitem" href="../../core/photophysics/">Photophysics</a></li><li><a class="tocitem" href="../../core/noise/">Localization Uncertainty</a></li></ul></li><li><span class="tocitem">Static SMLM</span><ul><li><a class="tocitem" href="../../static/overview/">Overview</a></li><li><a class="tocitem" href="../../static/examples/">Examples</a></li></ul></li><li><span class="tocitem">Diffusion-Interaction</span><ul><li><a class="tocitem" href="../overview/">Overview</a></li><li class="is-active"><a class="tocitem" href>Examples</a><ul class="internal"><li><a class="tocitem" href="#Working-with-Trajectories"><span>Working with Trajectories</span></a></li><li><a class="tocitem" href="#Basic-Diffusion-Simulation"><span>Basic Diffusion Simulation</span></a></li><li><a class="tocitem" href="#Frame-Integration-for-Time-Lapse-Imaging"><span>Frame Integration for Time-Lapse Imaging</span></a></li><li><a class="tocitem" href="#Analyzing-Dimer-Formation"><span>Analyzing Dimer Formation</span></a></li><li><a class="tocitem" href="#Generating-Microscope-Images"><span>Generating Microscope Images</span></a></li><li><a class="tocitem" href="#Two-Interacting-Particles"><span>Two Interacting Particles</span></a></li></ul></li></ul></li><li><a class="tocitem" href="../../images/">Microscope Images</a></li><li><a class="tocitem" href="../../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Diffusion-Interaction</a></li><li class="is-active"><a href>Examples</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Examples</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl/blob/main/docs/src/diffusion/examples.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Diffusion-Interaction-Examples"><a class="docs-heading-anchor" href="#Diffusion-Interaction-Examples">Diffusion-Interaction Examples</a><a id="Diffusion-Interaction-Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Diffusion-Interaction-Examples" title="Permalink"></a></h1><p>This page provides complete examples for using the diffusion-interaction simulation capabilities of SMLMSim.</p><h2 id="Working-with-Trajectories"><a class="docs-heading-anchor" href="#Working-with-Trajectories">Working with Trajectories</a><a id="Working-with-Trajectories-1"></a><a class="docs-heading-anchor-permalink" href="#Working-with-Trajectories" title="Permalink"></a></h2><p>SMLMSim provides several utility functions for working with trajectories:</p><ul><li><code>get_track(smld, id)</code>: Returns a new SMLD containing only emitters with the specified track_id</li><li><code>get_num_tracks(smld)</code>: Returns the number of unique tracks in an SMLD</li><li><code>get_tracks(smld)</code>: Returns a vector of SMDLs, one for each unique track</li></ul><p>These functions are useful for analyzing and visualizing trajectory data, as demonstrated in the examples below.</p><h2 id="Basic-Diffusion-Simulation"><a class="docs-heading-anchor" href="#Basic-Diffusion-Simulation">Basic Diffusion Simulation</a><a id="Basic-Diffusion-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Basic-Diffusion-Simulation" title="Permalink"></a></h2><p>This example demonstrates how to run a basic diffusion simulation and visualize the results:</p><pre><code class="language-julia hljs">using SMLMSim
+using CairoMakie
+using MicroscopePSFs
+
+# Set up simulation parameters
+params = DiffusionSMLMParams(
+    density = 0.5,        # molecules per μm²
+    box_size = 10.0,      # μm
+    diff_monomer = 0.1,   # μm²/s
+    diff_dimer = 0.05,    # μm²/s
+    k_off = 0.2,          # s⁻¹
+    r_react = 0.01,       # μm
+    d_dimer = 0.05,       # μm
+    dt = 0.01,            # s
+    t_max = 10.0,         # s
+    camera_framerate = 10.0  # fps
+)
+
+# Run simulation
+smld = simulate(params; photons=1000.0)
+
+# Extract coordinates based on monomer/dimer state for a specific frame
+function extract_frame_by_state(smld, frame_num)
+    # This approach doesn&#39;t use our new utility functions directly yet,
+    # but demonstrates what would be useful additions in the future
+    # (e.g., get_frame and filter_by_state functions)
+
+    # Filter emitters for this frame the traditional way
+    frame_emitters = filter(e -&gt; e.frame == frame_num, smld.emitters)
+
+    # Extract coordinates and states
+    x = [e.x for e in frame_emitters]
+    y = [e.y for e in frame_emitters]
+    states = [e.state for e in frame_emitters]
+
+    # Create state-based colors
+    colors = map(states) do state
+        state == :monomer ? :blue : :red
+    end
+
+    return x, y, colors
+end
+
+# Create visualization for multiple frames
+frames_to_show = [1, 20, 40, 60, 80, 100]
+fig = Figure(size=(1000, 600))
+
+for (i, frame) in enumerate(frames_to_show)
+    # Calculate subplot position (2x3 grid)
+    row = div(i-1, 3) + 1
+    col = rem(i-1, 3) + 1
+
+    # Create axis
+    ax = Axis(fig[row, col],
+        title=&quot;Frame $frame&quot;,
+        xlabel=&quot;x (μm)&quot;,
+        ylabel=&quot;y (μm)&quot;,
+        aspect=DataAspect()
+    )
+
+    # Extract and plot data
+    x, y, colors = extract_frame_by_state(smld, frame)
+    scatter!(ax, x, y, color=colors, markersize=6)
+
+    # Set consistent axis limits
+    limits!(ax, 0, params.box_size, 0, params.box_size)
+end
+
+# Add legend
+fig[1:2, 4] = Legend(fig,
+    [MarkerElement(color=:blue, marker=:circle),
+     MarkerElement(color=:red, marker=:circle)],
+    [&quot;Monomer&quot;, &quot;Dimer&quot;],
+    &quot;Molecular States&quot;
+)
+
+save(&quot;diffusion_basic_simulation.png&quot;, fig)
+fig
+# output</code></pre><img src="f329d476.png" alt="Example block output"/><p><img src="../diffusion_basic_simulation.png" alt="Basic Diffusion Simulation"/></p><h2 id="Frame-Integration-for-Time-Lapse-Imaging"><a class="docs-heading-anchor" href="#Frame-Integration-for-Time-Lapse-Imaging">Frame Integration for Time-Lapse Imaging</a><a id="Frame-Integration-for-Time-Lapse-Imaging-1"></a><a class="docs-heading-anchor-permalink" href="#Frame-Integration-for-Time-Lapse-Imaging" title="Permalink"></a></h2><p>This example demonstrates how to use frame integration to create realistic time-lapse microscopy data from diffusion simulations:</p><pre><code class="language-julia hljs">using SMLMSim
+using MicroscopePSFs
+using CairoMakie
+
+# Set up diffusion parameters with high temporal resolution
+params = DiffusionSMLMParams(
+    density = 1.0,          # molecules per μm²
+    box_size = 10.0,        # μm
+    diff_monomer = 0.2,     # μm²/s (moderate diffusion)
+    diff_dimer = 0.1,       # μm²/s
+    k_off = 0.1,            # s⁻¹
+    r_react = 0.01,         # μm
+    d_dimer = 0.05,         # μm
+    dt = 0.001,             # s (1ms time steps for accurate diffusion)
+    t_max = 5.0,            # s (5 seconds total)
+    camera_framerate = 10.0, # fps (10 frames per second)
+    camera_exposure = 0.1    # s (100ms exposure time)
+)
+
+# Run simulation
+smld = simulate(params)
+
+# Setup camera and PSF
+pixelsize = 0.1  # 100nm pixels
+pixels = Int64(round(params.box_size/pixelsize))
+camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
+
+# Create PSF model
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
+
+# Generate microscope images with frame integration
+# The frame_integration parameter determines how many simulation time
+# points are integrated into each output frame
+# Note: For diffusion simulations, the smld already contains correct positions without
+# localization uncertainty, so we can use it directly for generating camera images
+images = gen_images(smld, psf;
+    bg=5.0,               # background photons per pixel
+    frame_integration=10,  # integrate 10 simulation steps per frame
+    poisson_noise=true     # add photon counting noise
+)
+
+# Display a single frame
+fig = Figure(size=(600, 600))
+ax = Axis(fig[1, 1],
+    title=&quot;Diffusion with Frame Integration&quot;,
+    aspect=DataAspect(),
+    yreversed=true
+)
+
+# Select a frame to display
+frame_to_show = 3  # Changed from 15 to a valid frame index (between 1 and 6)
+heatmap!(ax, transpose(images[:, :, frame_to_show]), colormap=:inferno)
+
+save(&quot;diffusion_frame_integration.png&quot;, fig)
+fig
+# output</code></pre><img src="cf14a9fd.png" alt="Example block output"/><p><img src="../diffusion_frame_integration.png" alt="Frame Integration for Time-Lapse Imaging"/></p><p>The <code>frame_integration</code> parameter is crucial for realistic diffusion imaging:</p><ul><li>With high values, each camera frame integrates multiple diffusion steps, creating motion blur effects typical in real microscopy</li><li>The integrated frames combine positions from multiple simulation time points, accurately modeling camera exposure</li><li>Fast-moving particles appear more blurred while slow or stationary ones remain sharp</li></ul><h2 id="Analyzing-Dimer-Formation"><a class="docs-heading-anchor" href="#Analyzing-Dimer-Formation">Analyzing Dimer Formation</a><a id="Analyzing-Dimer-Formation-1"></a><a class="docs-heading-anchor-permalink" href="#Analyzing-Dimer-Formation" title="Permalink"></a></h2><p>This example demonstrates how to analyze dimer formation dynamics:</p><pre><code class="language-julia hljs">using SMLMSim
+using CairoMakie
+
+# Set up simulations with different dissociation rates
+params_stable = DiffusionSMLMParams(
+    density = 1.0,        # molecules per μm²
+    diff_monomer = 0.1,   # μm²/s
+    diff_dimer = 0.05,    # μm²/s
+    k_off = 0.05,         # s⁻¹ (stable dimers)
+    t_max = 20.0          # s
+)
+
+params_unstable = DiffusionSMLMParams(
+    density = 1.0,        # molecules per μm²
+    diff_monomer = 0.1,   # μm²/s
+    diff_dimer = 0.05,    # μm²/s
+    k_off = 0.5,          # s⁻¹ (unstable dimers)
+    t_max = 20.0          # s
+)
+
+# Run simulations
+smld_stable = simulate(params_stable)
+smld_unstable = simulate(params_unstable)
+
+# Analyze dimer formation
+frames_stable, frac_stable = analyze_dimer_fraction(smld_stable)
+frames_unstable, frac_unstable = analyze_dimer_fraction(smld_unstable)
+
+# Calculate time in seconds
+time_stable = (frames_stable .- 1) ./ params_stable.camera_framerate
+time_unstable = (frames_unstable .- 1) ./ params_unstable.camera_framerate
+
+# Visualize dimer formation dynamics
+fig = Figure(size=(800, 500))
+
+ax = Axis(fig[1, 1],
+    title=&quot;Dimer Formation Dynamics&quot;,
+    xlabel=&quot;Time (s)&quot;,
+    ylabel=&quot;Fraction of molecules in dimers&quot;
+)
+
+lines!(ax, time_stable, frac_stable, linewidth=3, color=:blue,
+       label=&quot;Stable (k_off=0.05 s⁻¹)&quot;)
+lines!(ax, time_unstable, frac_unstable, linewidth=3, color=:red,
+       label=&quot;Unstable (k_off=0.5 s⁻¹)&quot;)
+
+axislegend(ax)
+
+save(&quot;diffusion_dimer_formation.png&quot;, fig)
+fig
+# output</code></pre><img src="771d24b1.png" alt="Example block output"/><p><img src="../diffusion_dimer_formation.png" alt="Analyzing Dimer Formation"/></p><h2 id="Generating-Microscope-Images"><a class="docs-heading-anchor" href="#Generating-Microscope-Images">Generating Microscope Images</a><a id="Generating-Microscope-Images-1"></a><a class="docs-heading-anchor-permalink" href="#Generating-Microscope-Images" title="Permalink"></a></h2><p>This example shows how to generate microscope images from diffusion simulations:</p><pre><code class="language-julia hljs">using SMLMSim
+using CairoMakie
+using MicroscopePSFs
+
+# Set simulation parameters
+params = DiffusionSMLMParams(
+    density = 0.3,        # molecules per μm²
+    box_size = 10.0,      # μm
+    diff_monomer = 0.1,   # μm²/s
+    diff_dimer = 0.05,    # μm²/s
+    k_off = 0.2,          # s⁻¹
+    r_react = 0.01,       # μm
+    d_dimer = 0.05,       # μm
+    dt = 0.01,            # s
+    t_max = 5.0,          # s
+    camera_framerate = 10.0,  # fps
+    camera_exposure = 0.1     # s
+)
+
+# Run simulation
+smld = simulate(params)
+
+# Set up camera and PSF
+pixelsize = 0.1  # 100nm pixels
+pixels = Int64(round(params.box_size/pixelsize))
+camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
+
+# Set up PSF (Gaussian with 150nm width)
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
+
+# Generate images for all molecules
+images_all = gen_images(smld, psf;
+    bg=5.0,
+    poisson_noise=true
+)
+
+# Extract only dimers
+dimer_smld = get_dimers(smld)
+
+# Generate images showing only dimers
+images_dimers = gen_images(dimer_smld, psf;
+    bg=5.0,
+    poisson_noise=true
+)
+
+# Visualize images
+function display_frames(images_all, images_dimers, frame_indices)
+    fig = Figure(size=(1200, 800))
+
+    for (i, frame) in enumerate(frame_indices)
+        # Row 1: All molecules
+        ax1 = Axis(fig[1, i],
+            title=&quot;All Molecules - Frame $frame&quot;,
+            aspect=DataAspect(),
+            yreversed=true
+        )
+        hidedecorations!(ax1)
+
+        # Row 2: Dimers only
+        ax2 = Axis(fig[2, i],
+            title=&quot;Dimers Only - Frame $frame&quot;,
+            aspect=DataAspect(),
+            yreversed=true
+        )
+        hidedecorations!(ax2)
+
+        # Display images
+        heatmap!(ax1, transpose(images_all[:, :, frame]), colormap=:inferno)
+        heatmap!(ax2, transpose(images_dimers[:, :, frame]), colormap=:inferno)
+    end
+
+    return fig
+end
+
+# Show frames 10, 20, 30
+frame_indices = [10, 20, 30]
+fig = display_frames(images_all, images_dimers, frame_indices)
+save(&quot;diffusion_microscope_images.png&quot;, fig)
+fig
+# output</code></pre><img src="1c9f4c61.png" alt="Example block output"/><p><img src="../diffusion_microscope_images.png" alt="Generating Microscope Images"/></p><h2 id="Two-Interacting-Particles"><a class="docs-heading-anchor" href="#Two-Interacting-Particles">Two Interacting Particles</a><a id="Two-Interacting-Particles-1"></a><a class="docs-heading-anchor-permalink" href="#Two-Interacting-Particles" title="Permalink"></a></h2><p>This example shows two particles interacting in a small box with reflecting boundary conditions:</p><pre><code class="language- hljs">using SMLMSim
+using CairoMakie
+
+# Set up a minimal simulation with just two particles
+params = DiffusionSMLMParams(
+    density = 2.0,        # 2 particles in a 1×1 μm box
+    box_size = 1.0,       # 1 μm box for close interactions
+    diff_monomer = 0.1,   # μm²/s
+    diff_dimer = 0.05,    # μm²/s
+    k_off = 0.5,          # s⁻¹ (moderate dimer stability)
+    r_react = 0.05,       # μm (large reaction radius for demonstration)
+    d_dimer = 0.07,       # μm (dimer separation)
+    dt = 0.01,            # s
+    t_max = 5.0,          # s
+    boundary = &quot;reflecting&quot;,  # Reflecting boundaries
+    camera_framerate = 10.0  # fps
+)
+
+# Run simulation - override density to get exactly 2 particles
+smld = simulate(params; override_count=2, photons=1000.0)
+
+# Get trajectories using the built-in function
+track_smlds = get_tracks(smld)
+
+# Convert to the format needed for plotting
+trajectories = []
+for track_smld in track_smlds
+    # Get ID from first emitter
+    id = track_smld.emitters[1].id
+    
+    # Sort by timestamp
+    sort!(track_smld.emitters, by = e -&gt; e.timestamp)
+    
+    # Extract coordinates and state
+    times = [e.timestamp for e in track_smld.emitters]
+    x = [e.x for e in track_smld.emitters]
+    y = [e.y for e in track_smld.emitters]
+    states = [e.state for e in track_smld.emitters]
+    
+    push!(trajectories, (id=id, times=times, x=x, y=y, states=states))
+end
+
+# Visualize interaction dynamics
+fig = Figure(size=(700, 600))
+
+ax = Axis(fig[1, 1], 
+    title=&quot;Two Particles in 1μm Box (Reflecting Boundaries)&quot;,
+    xlabel=&quot;x (μm)&quot;,
+    ylabel=&quot;y (μm)&quot;,
+    aspect=DataAspect()
+)
+
+# Plot trajectories with state-dependent coloring
+for (i, traj) in enumerate(trajectories)
+    # Create segments with colors based on state
+    segments_x = []
+    segments_y = []
+    colors = []
+    
+    for j in 1:(length(traj.times)-1)
+        push!(segments_x, [traj.x[j], traj.x[j+1]])
+        push!(segments_y, [traj.y[j], traj.y[j+1]])
+        push!(colors, traj.states[j] == :monomer ? :blue : :red)
+    end
+    
+    # Plot each segment with appropriate color
+    for j in 1:length(segments_x)
+        lines!(ax, segments_x[j], segments_y[j], 
+               color=colors[j], linewidth=2, 
+               label=j==1 ? &quot;Particle $(traj.id)&quot; : nothing)
+    end
+    
+    # Mark starting position
+    scatter!(ax, [traj.x[1]], [traj.y[1]], 
+            color=:black, marker=:circle, markersize=10)
+    
+    # Mark ending position
+    scatter!(ax, [traj.x[end]], [traj.y[end]], 
+            color=:black, marker=:star, markersize=12)
+end
+
+# Show box boundaries
+box = [0 0; 1 0; 1 1; 0 1; 0 0]
+lines!(ax, box[:, 1], box[:, 2], color=:black, linewidth=2)
+
+# Add legend for state colors
+legend_elements = [
+    LineElement(color=:blue, linewidth=3),
+    LineElement(color=:red, linewidth=3),
+    MarkerElement(color=:black, marker=:circle, markersize=8),
+    MarkerElement(color=:black, marker=:star, markersize=10)
+]
+legend_labels = [&quot;Monomer&quot;, &quot;Dimer&quot;, &quot;Start&quot;, &quot;End&quot;]
+
+Legend(fig[1, 2], legend_elements, legend_labels, &quot;States&quot;)
+
+# Set axis limits with some padding
+limits!(ax, -0.05, 1.05, -0.05, 1.05)
+
+save(&quot;diffusion_two_particles.png&quot;, fig)
+fig
+# output
+</code></pre><p><img src="diffusion_two_particles.png" alt="Two Interacting Particles"/></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../overview/">« Overview</a><a class="docs-footer-nextpage" href="../../images/">Microscope Images »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.10.1 on <span class="colophon-date" title="Sunday 20 April 2025 23:41">Sunday 20 April 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
