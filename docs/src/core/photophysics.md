@@ -26,7 +26,8 @@ The main fluorophore model in SMLMSim is the `GenericFluor` type:
 using SMLMSim
 
 # Define a two-state fluorophore using the positional constructor
-fluor = GenericFluor(10000.0, [-5.0 5.0; 10.0 -10.0]) # γ=1e4, k_off=5, k_on=10
+# Note: q matrix already had correct diagonal elements, just removed γ=
+fluor = GenericFluor(10000.0, [-5.0 5.0; 10.0 -10.0])
 
 # ... rest of the example ...
 ```
@@ -53,6 +54,29 @@ initial_state = 2  # Start in dark state
 ctmc = CTMC(q, simulation_time, initial_state)
 ```
 
+#### Understanding the Rate Matrix
+
+The transition rate matrix `q` represents the rates at which the system transitions between states:
+
+- `q[i,j]` (i≠j): Rate of transition from state i to state j
+- `q[i,i]`: Negative sum of all outgoing rates from state i
+
+For example, in a two-state system:
+
+```
+q = [-k_off  k_off;
+      k_on   -k_on]
+```
+
+Where:
+- `k_off`: Rate of transitioning from ON (state 1) to OFF (state 2)
+- `k_on`: Rate of transitioning from OFF (state 2) to ON (state 1)
+- Diagonal elements are negative sums of their respective rows
+
+The CTMC simulates transitions between states by:
+1. Sampling the time until the next transition (exponentially distributed with rate -q[current,current])
+2. Sampling the next state with probabilities proportional to the transition rates
+
 The CTMC provides a complete trajectory of state transitions:
 
 ```julia
@@ -71,13 +95,6 @@ To simulate the fluorescence signal over time, SMLMSim integrates photon emissio
 # Generate intensity trace for 1000 frames at 50 fps
 fluor = GenericFluor(γ=10000.0, q=[-5 5; 10 -10])
 photons = intensity_trace(fluor, 1000, 50.0)
-
-# Plot the intensity trace
-using CairoMakie
-fig = Figure(size=(700, 300))
-ax = Axis(fig[1, 1], xlabel="Frame", ylabel="Photons", title="Intensity Trace")
-lines!(ax, 1:length(photons), photons)
-fig
 ```
 
 The `intensity_trace` function:
@@ -152,56 +169,3 @@ Where:
 
 Typical duty cycles for SMLM fluorophores range from 0.0001 to 0.01.
 
-## Customizing Photon Counts
-
-The number of detected photons depends on several factors:
-
-1. **Emission rate (γ)**: Base photon emission rate of the fluorophore
-2. **Exposure time**: Determined by the framerate (1/framerate in seconds)
-3. **State occupancy**: Time spent in the ON state during exposure
-4. **Detection threshold**: Minimum photons for detection (minphotons)
-
-You can adjust these parameters to simulate different experimental conditions:
-
-```julia
-# Bright fluorophore with high photon counts
-bright_fluor = GenericFluor(γ=5e4, q=[-5 5; 1 -1])
-
-# Dim fluorophore with low photon counts
-dim_fluor = GenericFluor(γ=5e3, q=[-10 10; 2 -2])
-
-# Simulate with different detection thresholds
-smld_true, smld_model, smld_noisy = simulate(
-    molecule=bright_fluor,
-    minphotons=200,  # Higher threshold for good signal-to-noise
-    framerate=100.0  # Faster frame rate = less time to collect photons
-)
-```
-
-## Advanced: Multi-State Models
-
-For more complex photophysical behavior, you can create larger rate matrices:
-
-```julia
-# Four-state model with multiple dark states
-# State 1: ON, States 2-3: OFF (different lifetimes), State 4: BLEACHED
-fluor = GenericFluor(
-    γ=1e4,
-    q=[-6.01 5 1 0.01;   # ON -> OFF1, OFF2, BLEACHED
-       2 -2.5 0.5 0;    # OFF1 -> ON, OFF2
-       0.2 0.1 -0.3 0;  # OFF2 -> ON, OFF1
-       0 0 0 0]      # BLEACHED (absorbing state)
-)
-```
-
-This approach can model complex photophysics like triplet states, dark states with different lifetimes, and other fluorophore-specific behaviors.
-
-```julia
-using SMLMSim
-
-# Define bright and dim fluorophores
-bright_fluor = GenericFluor(5e4, [-5.0 5.0; 1.0 -1.0]) # γ=5e4, k_off=5, k_on=1
-dim_fluor = GenericFluor(5e3, [-10.0 10.0; 2.0 -2.0])  # γ=5e3, k_off=10, k_on=2
-
-# ... rest of the example ...
-```

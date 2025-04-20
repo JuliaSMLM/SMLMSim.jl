@@ -33,21 +33,11 @@ mutable struct CTMC{T<:AbstractFloat,U<:Int}
     states::Vector{U}
 end
 
-"""
-    Base.show(io::IO, ctmc::CTMC)
-
-Custom display method for CTMC showing basic properties.
-"""
 function Base.show(io::IO, ctmc::CTMC)
     num_transitions = length(ctmc.states) - 1
     print(io, "CTMC(time=$(round(ctmc.simulation_time, digits=2)), $(num_transitions) transitions)")
 end
 
-"""
-    Base.show(io::IO, ::MIME"text/plain", ctmc::CTMC)
-
-Extended display method for CTMC in REPL and other text contexts.
-"""
 function Base.show(io::IO, ::MIME"text/plain", ctmc::CTMC)
     num_transitions = length(ctmc.states) - 1
     unique_states = length(Set(ctmc.states))

@@ -5,7 +5,7 @@
 """
     simulate(params::StaticSMLMParams; 
              pattern::Pattern=nothing,
-             molecule::Molecule=GenericFluor(; q=[-50.0 50.0; 1e-2 -1e-2]),
+             molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2), # Corrected default molecule constructor
              camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
 
 Generate simulated static SMLM data with realistic blinking kinetics
@@ -39,10 +39,13 @@ params = StaticSMLMParams(
 pattern = Nmer3D(n=6, d=0.2)
 smld_true, smld_model, smld_noisy = simulate(params; pattern=pattern)
 ```
+# Note
+- The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
+- For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 """
 function simulate(params::StaticSMLMParams; 
                  pattern::Union{Pattern,Nothing}=nothing,
-                 molecule::Molecule=GenericFluor(; q=[-50.0 50.0; 1e-2 -1e-2]),
+                 molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2), # Corrected default molecule constructor
                  camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
     
     # Use appropriate default pattern if none provided

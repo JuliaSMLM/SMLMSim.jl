@@ -1,10 +1,7 @@
 using SMLMSim
 using Documenter
-using CairoMakie
-using MicroscopePSFs
-using Distributions
 
-DocMeta.setdocmeta!(SMLMSim, :DocTestSetup, :(using SMLMSim, CairoMakie, MicroscopePSFs, Distributions); recursive=true)
+DocMeta.setdocmeta!(SMLMSim, :DocTestSetup, :(using SMLMSim); recursive=true)
 
 makedocs(;
     modules=[SMLMSim],
@@ -15,7 +12,6 @@ makedocs(;
         canonical="https://JuliaSMLM.github.io/SMLMSim.jl",
         assets=String[],
     ),
-    doctest = true,
     pages=[
         "Home" => "index.md",
         "Core Components" => [

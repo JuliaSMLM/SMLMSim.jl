@@ -1,3 +1,36 @@
+"""
+    SMLMSim
+
+Main module for the SMLMSim.jl package.
+
+This package provides tools for simulating Single Molecule Localization Microscopy (SMLM) data.
+It includes modules for:
+
+- **Core:** Fundamental types (molecules, patterns) and photophysics simulation (CTMC, blinking).
+- **StaticSMLM:** Simulating static emitters with blinking and localization noise.
+- **InteractionDiffusion:** Simulating diffusing and interacting emitters (e.g., dimerization) using Smoluchowski dynamics.
+- **CameraImages:** Generating simulated camera images from emitter data, including noise models.
+
+The main `SMLMSim` module re-exports key types and functions from these submodules
+to provide a unified user interface.
+
+# Usage
+```julia
+using SMLMSim
+
+# Example: Static simulation
+params_static = StaticSMLMParams(density=1.0, σ_psf=0.13)
+_, _, smld_noisy = simulate(params_static)
+
+# Example: Diffusion simulation
+params_diff = DiffusionSMLMParams(density=0.5, diff_monomer=0.1)
+smld_diff = simulate(params_diff)
+
+# Example: Generate images
+psf = GaussianPSF(0.15)
+images = gen_images(smld_noisy, psf)
+```
+"""
 module SMLMSim
 
 using SMLMData
@@ -17,6 +50,7 @@ using .Core: CTMC, get_state, get_next, intensity_trace, kinetic_model
 using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
 using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
 using .Core: AbstractSim, SMLMSimParams # Add abstract types import
+using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
 
 # Include submodules after the Core imports are available
 include("static/StaticSMLM.jl")
@@ -103,6 +137,12 @@ export
     # Static SMLM types
     StaticSMLMParams,
     apply_noise
+
+# Track utility functions
+export
+    get_track,
+    get_num_tracks,
+    get_tracks
 
 # Visualization and imaging
 export

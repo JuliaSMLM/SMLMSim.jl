@@ -43,7 +43,7 @@ To reduce memory usage:
 
 1. **Decrease field of view** when possible
    ```julia
-   camera = IdealCamera(1:128, 1:128, 0.1)  # Smaller field = fewer emitters
+   camera = IdealCamera(128, 128, 0.1)  # Smaller field = fewer emitters
    ```
 
 2. **Process data incrementally** by simulating one dataset at a time
@@ -61,8 +61,15 @@ To reduce memory usage:
 
 3. **Optimize photophysics parameters** to reduce the number of active emitters per frame
    ```julia
-   # Lower duty cycle = fewer active emitters per frame
-   molecule = GenericFluor(γ=1e4, q=[0 50; 0.5 0])  # 1% duty cycle
+   function run_sim(; use_generic_fluor=true)
+       if use_generic_fluor
+           # Use positional constructor
+           molecule = GenericFluor(1e4, [-50.0 50.0; 0.5 -0.5]) # γ=1e4, k_off=50, k_on=0.5
+       else
+           # Use 2-state keyword constructor
+           molecule = GenericFluor(; photons=1e4, k_off=50.0, k_on=0.5)
+       end
+   end
    ```
 
 4. **Avoid storing intermediate results** when possible

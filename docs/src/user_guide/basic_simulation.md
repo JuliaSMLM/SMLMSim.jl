@@ -14,7 +14,7 @@ The simplest way to generate SMLM data is:
 using SMLMSim
 
 # Create a camera with 100nm pixels
-camera = IdealCamera(1:128, 1:128, 0.1)
+camera = IdealCamera(128, 128, 0.1)
 
 # Run simulation with default parameters
 smld_true, smld_model, smld_noisy = simulate(camera=camera)

@@ -7,17 +7,15 @@
 
 ## Overview
 
-SMLMSim is a Julia package for simulating Single Molecule Localization Microscopy (SMLM) data with realistic physical properties. The package builds upon SMLMData, reexporting essential types and functions so you typically don't need to import SMLMData directly.
+SMLMSim is a Julia package for simulating Single Molecule Localization Microscopy (SMLM) data with realistic physical properties. It builds upon [SMLMData.jl](https://github.com/JuliaSMLM/SMLMData.jl), reexporting essential types and functions, and utilizes [MicroscopePSFs.jl](https://github.com/JuliaSMLM/MicroscopePSFs.jl) for realistic image generation.
 
 The package provides tools for:
 
-- Generating spatial patterns of fluorophores in 2D and 3D
-- Simulating fluorophore photophysics with stochastic kinetic models
-- Adding realistic localization uncertainty based on photon counts
-- Simulating diffusion and interactions between molecules
-- Generating microscope images with configurable PSFs
+-   **Static SMLM Simulation:** Generating fixed spatial patterns (2D/3D) with realistic fluorophore photophysics (blinking) and localization uncertainty. Ideal for super-resolution studies.
+-   **Diffusion & Interaction Simulation:** Modeling dynamic molecule behavior, including Brownian motion, dimerization, and dissociation using Smoluchowski dynamics. Suitable for single-particle tracking (SPT) studies.
+-   **Microscope Image Generation:** Creating simulated camera images from emitter data using configurable Point Spread Functions (PSFs).
 
-All simulations use physical units, with coordinates in microns and time in seconds. The resulting data is organized into `SMLMData.SMLD` structures compatible with the broader JuliaSMLM ecosystem.
+All simulations use physical units (microns, seconds) and produce data compatible with the broader [JuliaSMLM](https://github.com/JuliaSMLM) ecosystem.
 
 ## Installation
 
@@ -26,222 +24,140 @@ using Pkg
 Pkg.add("SMLMSim")
 ```
 
-## Basic Usage
+## Quick Start
 
-The high-level interface for simulating SMLM super-resolution coordinate data is the `simulate()` function with a `StaticSMLMParams` object.
+### Static SMLM Simulation
+
+Simulate fixed patterns with blinking and localization noise.
 
 ```julia
 using SMLMSim
 
-# Basic simulation with default parameters
-camera = IdealCamera(1:128, 1:128, 0.1)  # 128×128 pixels, 100nm pixels
-params = StaticSMLMParams()  # Default parameters
+# Define a camera and simulation parameters
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
+params = StaticSMLMParams(density=1.0, σ_psf=0.13) # Density 1/μm², PSF 130nm
+
+# Run simulation for an 8-molecule ring pattern
 smld_true, smld_model, smld_noisy = simulate(
-    params,
+    params; # Use semicolon to separate positional and keyword arguments
+    pattern=Nmer2D(n=8, d=0.1), # 100nm diameter ring
     camera=camera
 )
+
+# smld_noisy contains realistic SMLM coordinates
+println("Generated $(length(smld_noisy.emitters)) localizations.")
 ```
+*Output:* `smld_true` (ground truth), `smld_model` (kinetics), `smld_noisy` (kinetics + noise).
 
-This basic example creates a 2D simulation using default parameters:
-- 8-molecule circular patterns (Nmer2D with n=8, d=0.1μm)
-- 1 pattern per square micron (ρ=1.0)
-- PSF width of 130nm (σ_psf=0.13μm)
-- Two-state fluorophore kinetics with realistic blinking behavior
-- 1000 frames at 50 frames per second
-- Minimum photon threshold of 50 for detection
+### Diffusion & Interaction Simulation
 
-The function returns three SMLD objects with SMLM coordinates:
-- `smld_true`: Ground truth emitter positions (spatial coordinates only)
-- `smld_model`: Positions with simulated blinking kinetics (subset of true positions appearing in different frames)
-- `smld_noisy`: Positions with both blinking and localization uncertainty (realistic SMLM data with position errors)
-
-For more control, you can customize the parameters:
+Simulate molecules diffusing and interacting (e.g., dimerization).
 
 ```julia
-# More customized simulation
-params = StaticSMLMParams(
-    ρ=1.0,                # emitters per μm²
-    σ_psf=0.13,           # PSF width in μm (130nm)
-    minphotons=50,        # minimum photons for detection
-    ndatasets=10,         # number of independent datasets
-    nframes=1000,         # frames per dataset
-    framerate=50.0        # frames per second
-)
+using SMLMSim
 
-smld_true, smld_model, smld_noisy = simulate(
-    params,
-    pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
-    molecule=GenericFluor(; q=[0 50; 1e-2 0]),  # rates in 1/s
-    camera=IdealCamera(1:256, 1:128, 0.1)  # 128×256 pixels, 100nm pixels
-)
-```
-
-This customized example:
-- Creates hexagonal patterns (6 molecules in a 200nm circle)
-- Uses 10 independent datasets of 1000 frames each
-- Simulates fluorophores with specific on/off transition rates
-- Uses a rectangular camera field of view (128×256 pixels)
-
-In both cases, the output SMLD objects contain emitter information (x, y coordinates, photon counts, frame numbers, etc.) that can be used for further analysis or visualization.
-
-## Pattern Types
-
-SMLMSim includes several built-in pattern types for positioning fluorophores:
-
-### 2D Patterns
-
-```julia
-# N molecules arranged in a circle
-nmer = Nmer2D(n=8, d=0.1)  # 8 molecules in a 100nm diameter circle
-
-# Linear pattern with random positions
-line = Line2D(λ=5.0, endpoints=[(-2.0, 0.0), (2.0, 0.0)])  # 5 molecules per μm along line
-```
-
-### 3D Patterns
-
-```julia
-# N molecules arranged in a circle at z=0
-nmer3d = Nmer3D(n=8, d=0.1)  # 8 molecules in a 100nm diameter circle
-
-# 3D line with random positions
-line3d = Line3D(λ=5.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)])
-```
-
-## Molecule Models
-
-SMLMSim supports different fluorophore photophysical models:
-
-```julia
-# Generic fluorophore with two-state kinetics
-fluor = GenericFluor(
-    γ=10000.0,           # photon emission rate in Hz
-    q=[0 10; 1e-2 0]     # transition rate matrix: state 1 ↔ state 2
-)
-```
-
-## Diffusion and Interaction Simulation
-
-The package includes tools for simulating diffusion and interactions between molecules:
-
-```julia
-# Set up parameters for Smoluchowski diffusion simulation
-params = SmoluchowskiParams(
+# Set diffusion simulation parameters
+params = DiffusionSMLMParams(
     density = 0.5,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
-    diff_dimer = 0.05,    # μm²/s
-    k_off = 0.2,          # s⁻¹
-    r_react = 0.01,       # μm
-    d_dimer = 0.05,       # μm
-    dt = 0.01,            # s
-    t_max = 10.0          # s
+    k_off = 0.2,          # s⁻¹ dimer dissociation rate
+    dt = 0.01,            # s simulation timestep
+    t_max = 10.0          # s total simulation time
 )
 
-# Run simulation
-systems = simulate(params)
+# Run diffusion simulation
+smld = simulate(params) # Returns a BasicSMLD object with all emitters
 
-# Visualize the simulation
-visualize_sequence(systems, filename="diffusion.mp4", framerate=round(Int64,1/params.dt))
-
-# Generate microscope images
-psf = Gaussian2D(0.15)  # 150nm PSF width
-images = gen_image_sequence(
-    psf, 
-    systems,
-    frame_integration=10
-)
-
-# Extract only dimers
-dimer_systems = get_dimers(systems)
-dimer_images = gen_image_sequence(
-    psf, 
-    dimer_systems, 
-    frame_integration=10
-)
+println("Simulated diffusion for $(params.t_max) seconds.")
+# 'smld' can be used for analysis or image generation
 ```
 
-## Example Workflows
+## Core Concepts
 
-### 2D Simulation with Visualization
+### Patterns
+
+Define spatial arrangements (see `Pattern` types like `Nmer2D`, `Line3D`, `uniform2D`).
+
+```julia
+# Examples:
+nmer = Nmer2D(n=8, d=0.1)  # 8 molecules in a 100nm diameter circle
+line = Line3D(λ=5.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)]) # 5 mols/μm
+```
+
+### Molecules & Photophysics
+
+Model fluorophore behavior (e.g., `GenericFluor` with state transitions).
+
+```julia
+# Example: Two-state blinking model using positional constructor
+fluor = GenericFluor(10000.0, [-10.0 10.0; 1e-2 -1e-2]) # γ=1e4, k_off=10, k_on=1e-2
+```
+
+### Localization Uncertainty
+
+Realistic noise based on PSF width (`σ_psf`) and photon counts is added in static simulations.
+
+### Image Generation
+
+Create camera images from simulation results.
+
+```julia
+using MicroscopePSFs # Needed for PSF types
+
+# Generate images from diffusion simulation output
+psf = GaussianPSF(0.15) # 150nm PSF width
+# Use smld_model to avoid double-counting localization errors
+images = gen_images(smld, psf; 
+    frame_integration=10, # 10 simulation time steps for each camera frame
+    support=1.0 # PSF support range
+    ) 
+
+println("Generated $(size(images,3)) camera images.")
+```
+
+## Example Workflow: Static Simulation & Visualization
 
 ```julia
 using SMLMSim
-using CairoMakie
+using CairoMakie # Requires installation: Pkg.add("CairoMakie")
+using MicroscopePSFs
 
-# Create camera with physical pixel size
-camera = IdealCamera(1:128, 1:256, 0.1)  # 128×256 pixels, 100nm pixels
-
-# Create simulation parameters
-params = StaticSMLMParams(
-    ρ=1.0,                # emitters per μm²
-    σ_psf=0.13            # PSF width in μm
-)
-
-# Run simulation
+# --- Simulation Setup ---
+camera = IdealCamera(128, 128, 0.1) # 128×128 pixels, 100nm pixels
+params = StaticSMLMParams(density=1.0, σ_psf=0.13)
 smld_true, smld_model, smld_noisy = simulate(
     params,
-    pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
+    pattern=Nmer2D(n=6, d=0.2), # Hexamer
     camera=camera
 )
 
-# Extract coordinates from emitters
-x_noisy = [e.x for e in smld_noisy.emitters]
-y_noisy = [e.y for e in smld_noisy.emitters]
-photons = [e.photons for e in smld_noisy.emitters]
+# --- Visualization ---
+emitters = smld_noisy.emitters
+x_coords = [e.x for e in emitters]
+y_coords = [e.y for e in emitters]
+photons = [e.photons for e in emitters]
 
-# Create figure and plot results
-fig = Figure(size=(800, 600))
-ax = Axis(fig[1, 1], 
-    title="Simulated SMLM Localizations",
-    xlabel="x (μm)",
-    ylabel="y (μm)",
-    aspect=DataAspect(),
-    yreversed=true  # This makes (0,0) at top-left
+fig = Figure(size=(600, 500))
+ax = Axis(fig[1, 1],
+    title="Simulated SMLM Localizations (Hexamer)",
+    xlabel="x (μm)", ylabel="y (μm)",
+    aspect=DataAspect(), yreversed=true
 )
-
-# Scatter plot with photon counts as color
-scatter!(ax, x_noisy, y_noisy, 
-    color=photons,
-    colormap=:viridis,
-    markersize=4,
-    alpha=0.6
-)
-
+scatter!(ax, x_coords, y_coords, color=photons, colormap=:viridis, markersize=4, alpha=0.7)
 Colorbar(fig[1, 2], colormap=:viridis, label="Photons")
-
-# Show or save the figure
 display(fig)
-# save("smlm_simulation.png", fig)
+# save("smlm_hexamer.png", fig)
 ```
 
-### 3D Simulation
+## Further Information
 
-```julia
-using SMLMSim
-
-# Create camera with physical pixel size
-camera = IdealCamera(1:128, 1:256, 0.1)  # 128×256 pixels, 100nm pixels
-
-# Create 3D simulation parameters
-params = StaticSMLMParams(
-    ρ=0.5,                # emitters per μm²
-    ndims=3,              # 3D simulation
-    zrange=[-2.0, 2.0]    # 4μm axial range
-)
-
-# Run simulation
-smld_true, smld_model, smld_noisy = simulate(
-    params,
-    pattern=Nmer3D(n=8, d=0.3),  # 3D pattern
-    camera=camera
-)
-```
+For more detailed examples, API documentation, and explanations of the underlying models, please see the [Full Documentation](https://JuliaSMLM.github.io/SMLMSim.jl/dev).
 
 ## Contributors
 
-- [JuliaSMLM Team](https://github.com/JuliaSMLM)
+-   [JuliaSMLM Team](https://github.com/JuliaSMLM)
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. The MIT License is a permissive license that allows for reuse with few restrictions. It permits use, modification, distribution, and private use while preserving copyright and license notices.
+This project is licensed under the MIT License - see the LICENSE file for details.

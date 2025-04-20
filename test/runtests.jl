@@ -1,35 +1,34 @@
 using SMLMSim
 using Test
-using SMLMData
 using Distributions
 using LinearAlgebra
+using Statistics
 using MicroscopePSFs
 
-# Include test files
-include("test_patterns.jl")
-include("test_molecules.jl")
-include("test_kinetics.jl")
-include("test_diffusion.jl")
-include("test_imaging_and_analysis.jl")
-
+# Main test set
 @testset "SMLMSim.jl" begin
-    @testset "Patterns" begin
-        test_patterns()
+    # Include individual test files
+    @testset "Core Module" begin
+        include("test_core.jl")
     end
-
-    @testset "Molecules" begin
-        test_molecules()
+    
+    @testset "Static SMLM" begin
+        include("test_static.jl")
     end
-
-    @testset "Kinetic Modeling" begin
-        test_kinetics()
+    
+    @testset "Diffusion SMLM" begin
+        include("test_diffusion.jl")
     end
-
-    @testset "Diffusion" begin
-        test_diffusion()
+    
+    @testset "Camera Images" begin
+        include("test_camera_images.jl")
     end
-
-    @testset "Imaging & Analysis" begin
-        test_imaging_and_analysis()
+    
+    @testset "Track Utilities" begin
+        include("test_track_utils.jl")
+    end
+    
+    @testset "Integration Tests" begin
+        include("test_integration.jl")
     end
 end

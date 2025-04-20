@@ -30,6 +30,7 @@ include("molecules.jl")
 include("patterns.jl")
 include("ctmc.jl")
 include("photophysics.jl")
+include("track_utils.jl")
 
 # Export abstract types
 export
@@ -74,5 +75,11 @@ export
     kinetic_model,
     compute_equilibrium_distribution,
     sample_discrete
+
+# Export track utility functions
+export
+    get_track,
+    get_num_tracks,
+    get_tracks
 
 end # module

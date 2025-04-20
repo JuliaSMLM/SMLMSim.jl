@@ -1,3 +1,17 @@
+"""
+    CameraImages
+
+Module for generating simulated camera images from SMLM data.
+
+This module provides functions to:
+1. Generate ideal camera images by integrating emitter photons over a PSF.
+2. Add realistic camera noise (e.g., Poisson noise).
+
+# Usage
+```julia
+using SMLMSim.CameraImages
+```
+"""
 module CameraImages
 
 # All module imports should be at the top

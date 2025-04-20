@@ -21,24 +21,24 @@ Defines a fluorophore with photophysical properties.
 
 # Examples
 ```julia
-# Create a fluorophore with default parameters
+# Create a fluorophore with default parameters (using the 2-state keyword constructor)
 fluor = GenericFluor()
 
-# Create a fluorophore with custom parameters
+# Create a fluorophore with custom parameters using the positional constructor
 fluor = GenericFluor(1e5, [-50.0 50.0; 1e-2 -1e-2])
 
-# Create a fluorophore using keyword arguments
-fluor = GenericFluor(; γ=1e5, q=[-10.0 10.0; 1e-1 -1e-1])
+# Create a fluorophore using the 2-state keyword constructor
+fluor = GenericFluor(; photons=1e5, k_off=10.0, k_on=1e-1)
 ```
 """
-mutable struct GenericFluor <: Molecule
+struct GenericFluor <: Molecule
     γ::AbstractFloat
     q::Array{<:AbstractFloat}
 end
 
 
 """
-    GenericFluor(; photons::AbstractFloat=1000, k_off::AbstractFloat=50.0, k_on::AbstractFloat=1e-2)
+    GenericFluor(; photons::AbstractFloat=1e5, k_off::AbstractFloat=50.0, k_on::AbstractFloat=1e-2)
 
 Create a simple two-state (on/off) fluorophore with specified parameters.
 
@@ -53,7 +53,7 @@ State 1 is the on (bright) state, and state 2 is the off (dark) state.
 The rate matrix is constructed as: q = [-k_off k_off; k_on -k_on]
 """
 function GenericFluor(; 
-    photons::AbstractFloat=1000.0, 
+    photons::AbstractFloat=1e5, 
     k_off::AbstractFloat=50.0, 
     k_on::AbstractFloat=1e-2
 )
@@ -63,21 +63,11 @@ function GenericFluor(;
     return GenericFluor(photons, q)
 end
 
-"""
-    Base.show(io::IO, fluor::GenericFluor)
-
-Custom display method for GenericFluor showing basic properties.
-"""
 function Base.show(io::IO, fluor::GenericFluor)
     n_states = size(fluor.q, 1)
     print(io, "GenericFluor($(n_states) states, γ=$(fluor.γ) Hz)")
 end
 
-"""
-    Base.show(io::IO, ::MIME"text/plain", fluor::GenericFluor)
-
-Extended display method for GenericFluor in REPL and other text contexts.
-"""
 function Base.show(io::IO, ::MIME"text/plain", fluor::GenericFluor)
     n_states = size(fluor.q, 1)
     println(io, "GenericFluor with $n_states states:")
