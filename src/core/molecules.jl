@@ -31,7 +31,7 @@ fluor = GenericFluor(1e5, [-50.0 50.0; 1e-2 -1e-2])
 fluor = GenericFluor(; photons=1e5, k_off=10.0, k_on=1e-1)
 ```
 """
-mutable struct GenericFluor <: Molecule
+struct GenericFluor <: Molecule
     γ::AbstractFloat
     q::Array{<:AbstractFloat}
 end

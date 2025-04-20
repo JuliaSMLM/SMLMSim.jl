@@ -50,6 +50,7 @@ using .Core: CTMC, get_state, get_next, intensity_trace, kinetic_model
 using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
 using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
 using .Core: AbstractSim, SMLMSimParams # Add abstract types import
+using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
 
 # Include submodules after the Core imports are available
 include("static/StaticSMLM.jl")
@@ -136,6 +137,12 @@ export
     # Static SMLM types
     StaticSMLMParams,
     apply_noise
+
+# Track utility functions
+export
+    get_track,
+    get_num_tracks,
+    get_tracks
 
 # Visualization and imaging
 export
