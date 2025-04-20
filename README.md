@@ -107,6 +107,7 @@ using MicroscopePSFs # Needed for PSF types
 
 # Generate images from diffusion simulation output
 psf = GaussianPSF(0.15) # 150nm PSF width
+# Use smld_model to avoid double-counting localization errors
 images = gen_images(smld, psf; 
     frame_integration=10, # 10 simulation time steps for each camera frame
     support=1.0 # PSF support range

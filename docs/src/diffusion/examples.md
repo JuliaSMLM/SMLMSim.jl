@@ -6,6 +6,16 @@ CurrentModule = SMLMSim
 
 This page provides complete examples for using the diffusion-interaction simulation capabilities of SMLMSim.
 
+## Working with Trajectories
+
+SMLMSim provides several utility functions for working with trajectories:
+
+- `get_track(smld, id)`: Returns a new SMLD containing only emitters with the specified track_id
+- `get_num_tracks(smld)`: Returns the number of unique tracks in an SMLD
+- `get_tracks(smld)`: Returns a vector of SMDLs, one for each unique track
+
+These functions are useful for analyzing and visualizing trajectory data, as demonstrated in the examples below.
+
 ## Basic Diffusion Simulation
 
 This example demonstrates how to run a basic diffusion simulation and visualize the results:
@@ -32,9 +42,13 @@ params = DiffusionSMLMParams(
 # Run simulation
 smld = simulate(params; photons=1000.0)
 
-# Extract coordinates from different frames
-function extract_frame(smld, frame_num)
-    # Filter emitters for this frame
+# Extract coordinates based on monomer/dimer state for a specific frame
+function extract_frame_by_state(smld, frame_num)
+    # This approach doesn't use our new utility functions directly yet,
+    # but demonstrates what would be useful additions in the future
+    # (e.g., get_frame and filter_by_state functions)
+    
+    # Filter emitters for this frame the traditional way
     frame_emitters = filter(e -> e.frame == frame_num, smld.emitters)
     
     # Extract coordinates and states
@@ -68,7 +82,7 @@ for (i, frame) in enumerate(frames_to_show)
     )
     
     # Extract and plot data
-    x, y, colors = extract_frame(smld, frame)
+    x, y, colors = extract_frame_by_state(smld, frame)
     scatter!(ax, x, y, color=colors, markersize=6)
     
     # Set consistent axis limits
@@ -89,7 +103,6 @@ fig
 
 ```
 ![Basic Diffusion Simulation](diffusion_basic_simulation.png)
-```
 
 ## Frame Integration for Time-Lapse Imaging
 
@@ -129,6 +142,8 @@ psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 # Generate microscope images with frame integration
 # The frame_integration parameter determines how many simulation time
 # points are integrated into each output frame
+# Note: For diffusion simulations, the smld already contains correct positions without 
+# localization uncertainty, so we can use it directly for generating camera images
 images = gen_images(smld, psf;
     bg=5.0,               # background photons per pixel
     frame_integration=10,  # integrate 10 simulation steps per frame
@@ -144,7 +159,7 @@ ax = Axis(fig[1, 1],
 )
 
 # Select a frame to display
-frame_to_show = 15
+frame_to_show = 3  # Changed from 15 to a valid frame index (between 1 and 6)
 heatmap!(ax, transpose(images[:, :, frame_to_show]), colormap=:inferno)
 
 save("diffusion_frame_integration.png", fig)
@@ -153,7 +168,6 @@ fig
 
 ```
 ![Frame Integration for Time-Lapse Imaging](diffusion_frame_integration.png)
-```
 
 The `frame_integration` parameter is crucial for realistic diffusion imaging:
 
@@ -220,7 +234,6 @@ fig
 
 ```
 ![Analyzing Dimer Formation](diffusion_dimer_formation.png)
-```
 
 ## Generating Microscope Images
 
@@ -310,213 +323,115 @@ fig
 
 ```
 ![Generating Microscope Images](diffusion_microscope_images.png)
-```
 
-## Diffusion with Different Boundary Conditions
+## Two Interacting Particles
 
-This example compares periodic and reflecting boundary conditions:
-
-```@example
-using SMLMSim
-using CairoMakie
-
-# Set up simulations with different boundary conditions
-params_periodic = DiffusionSMLMParams(
-    density = 0.3,        # molecules per μm²
-    box_size = 10.0,      # μm
-    diff_monomer = 0.2,   # μm²/s (faster diffusion)
-    t_max = 10.0,         # s
-    boundary = "periodic"  # Periodic boundaries
-)
-
-params_reflecting = DiffusionSMLMParams(
-    density = 0.3,        # molecules per μm²
-    box_size = 10.0,      # μm
-    diff_monomer = 0.2,   # μm²/s (faster diffusion)
-    t_max = 10.0,         # s
-    boundary = "reflecting"  # Reflecting boundaries
-)
-
-# Run simulations
-smld_periodic = simulate(params_periodic)
-smld_reflecting = simulate(params_reflecting)
-
-# Function to extract trajectories
-function extract_trajectories(smld)
-    # Group emitters by ID
-    emitters_by_id = Dict()
-    for e in smld.emitters
-        if !haskey(emitters_by_id, e.id)
-            emitters_by_id[e.id] = []
-        end
-        push!(emitters_by_id[e.id], e)
-    end
-    
-    # Convert to trajectories
-    trajectories = []
-    for (id, emitters) in emitters_by_id
-        # Sort by timestamp
-        sort!(emitters, by = e -> e.timestamp)
-        
-        # Extract coordinates
-        times = [e.timestamp for e in emitters]
-        x = [e.x for e in emitters]
-        y = [e.y for e in emitters]
-        
-        push!(trajectories, (id=id, times=times, x=x, y=y))
-    end
-    
-    return trajectories
-end
-
-# Get trajectories
-traj_periodic = extract_trajectories(smld_periodic)
-traj_reflecting = extract_trajectories(smld_reflecting)
-
-# Visualize trajectories
-function plot_trajectories(trajectories, title, box_size)
-    fig = Figure(size=(700, 600))
-    
-    ax = Axis(fig[1, 1], 
-        title=title,
-        xlabel="x (μm)",
-        ylabel="y (μm)",
-        aspect=DataAspect()
-    )
-    
-    # Plot first 20 trajectories
-    for i in 1:min(20, length(trajectories))
-        traj = trajectories[i]
-        lines!(ax, traj.x, traj.y, color=Cycled(i), linewidth=1.5, alpha=0.7)
-        
-        # Mark start position
-        scatter!(ax, [traj.x[1]], [traj.y[1]], color=Cycled(i), marker=:circle, 
-                markersize=8)
-        
-        # Mark end position
-        scatter!(ax, [traj.x[end]], [traj.y[end]], color=Cycled(i), marker=:star, 
-                markersize=10)
-    end
-    
-    # Show box boundaries
-    box = [0 0; box_size 0; box_size box_size; 0 box_size; 0 0]
-    lines!(ax, box[:, 1], box[:, 2], color=:black, linewidth=2)
-    
-    # Set axis limits with some padding
-    limits!(ax, -0.5, box_size+0.5, -0.5, box_size+0.5)
-    
-    return fig
-end
-
-# Plot both types of trajectories
-fig_periodic = plot_trajectories(traj_periodic, "Periodic Boundaries", 
-                                params_periodic.box_size)
-fig_reflecting = plot_trajectories(traj_reflecting, "Reflecting Boundaries", 
-                                  params_reflecting.box_size)
-
-save("diffusion_periodic_boundaries.png", fig_periodic)
-save("diffusion_reflecting_boundaries.png", fig_reflecting)
-(fig_periodic, fig_reflecting)
-# output
-
-```
-![Diffusion with Periodic Boundaries](diffusion_periodic_boundaries.png)
-![Diffusion with Reflecting Boundaries](diffusion_reflecting_boundaries.png)
-```
-
-## Long-term Evolution of Dimer Population
-
-This example simulates the long-term evolution of dimer formation under different conditions:
+This example shows two particles interacting in a small box with reflecting boundary conditions:
 
 ```@example
 using SMLMSim
 using CairoMakie
 
-# Set up parameters for longer simulation
+# Set up a minimal simulation with just two particles
 params = DiffusionSMLMParams(
-    density = 0.5,        # molecules per μm²
-    box_size = 20.0,      # μm
+    density = 2.0,        # 2 particles in a 1×1 μm box
+    box_size = 1.0,       # 1 μm box for close interactions
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s
-    k_off = 0.1,          # s⁻¹
-    r_react = 0.01,       # μm
-    d_dimer = 0.05,       # μm
+    k_off = 0.5,          # s⁻¹ (moderate dimer stability)
+    r_react = 0.05,       # μm (large reaction radius for demonstration)
+    d_dimer = 0.07,       # μm (dimer separation)
     dt = 0.01,            # s
-    t_max = 60.0,         # s (longer simulation)
-    camera_framerate = 5.0 # fps (slower framerate for long simulation)
+    t_max = 5.0,          # s
+    boundary = "reflecting",  # Reflecting boundaries
+    camera_framerate = 10.0  # fps
 )
 
-# Run simulation
-smld = simulate(params)
+# Run simulation - override density to get exactly 2 particles
+smld = simulate(params; override_count=2, photons=1000.0)
 
-# Calculate dimer fraction over time
-frames, dimer_fractions = analyze_dimer_fraction(smld)
+# Get trajectories using the built-in function
+track_smlds = get_tracks(smld)
 
-# Convert frames to time
-time = (frames .- 1) ./ params.camera_framerate
-
-# Calculate theoretical equilibrium dimer fraction
-# For simple second-order kinetics with monomer-monomer association
-# and first-order dimer dissociation
-function theoretical_dimer_fraction(t, k_on, k_off, initial_concentration)
-    # k_on is in μm²/s units
-    # k_off is in s⁻¹ units
-    # initial_concentration is in molecules/μm² units
+# Convert to the format needed for plotting
+trajectories = []
+for track_smld in track_smlds
+    # Get ID from first emitter
+    id = track_smld.emitters[1].id
     
-    # Equilibrium constant (dimensionless)
-    K_eq = k_on / k_off
+    # Sort by timestamp
+    sort!(track_smld.emitters, by = e -> e.timestamp)
     
-    # Total concentration (constant)
-    c_total = initial_concentration
+    # Extract coordinates and state
+    times = [e.timestamp for e in track_smld.emitters]
+    x = [e.x for e in track_smld.emitters]
+    y = [e.y for e in track_smld.emitters]
+    states = [e.state for e in track_smld.emitters]
     
-    # Equilibrium dimer fraction
-    f_eq = (1 + 4*K_eq*c_total - sqrt(1 + 8*K_eq*c_total)) / (4*K_eq*c_total)
-    
-    # Time-dependent approach to equilibrium
-    # This is a simplified model assuming well-mixed conditions
-    τ = 1 / (k_off + k_on * c_total)
-    f_t = f_eq * (1 - exp(-t/τ))
-    
-    return f_t
+    push!(trajectories, (id=id, times=times, x=x, y=y, states=states))
 end
 
-# Estimate k_on from r_react and diffusion
-k_on = 2π * params.diff_monomer * params.r_react
-k_off = params.k_off
-c_total = params.density
+# Visualize interaction dynamics
+fig = Figure(size=(700, 600))
 
-# Calculate theoretical curve
-t_theory = LinRange(0, maximum(time), 1000)
-f_theory = theoretical_dimer_fraction.(t_theory, k_on, k_off, c_total)
-
-# Visualize results
-fig = Figure(size=(800, 500))
-
-ax = Axis(fig[1, 1],
-    title="Dimer Formation Dynamics",
-    xlabel="Time (s)",
-    ylabel="Fraction of molecules in dimers"
+ax = Axis(fig[1, 1], 
+    title="Two Particles in 1μm Box (Reflecting Boundaries)",
+    xlabel="x (μm)",
+    ylabel="y (μm)",
+    aspect=DataAspect()
 )
 
-# Plot simulation results
-scatter!(ax, time, dimer_fractions, color=:blue, markersize=6, 
-        label="Simulation")
+# Plot trajectories with state-dependent coloring
+for (i, traj) in enumerate(trajectories)
+    # Create segments with colors based on state
+    segments_x = []
+    segments_y = []
+    colors = []
+    
+    for j in 1:(length(traj.times)-1)
+        push!(segments_x, [traj.x[j], traj.x[j+1]])
+        push!(segments_y, [traj.y[j], traj.y[j+1]])
+        push!(colors, traj.states[j] == :monomer ? :blue : :red)
+    end
+    
+    # Plot each segment with appropriate color
+    for j in 1:length(segments_x)
+        lines!(ax, segments_x[j], segments_y[j], 
+               color=colors[j], linewidth=2, 
+               label=j==1 ? "Particle $(traj.id)" : nothing)
+    end
+    
+    # Mark starting position
+    scatter!(ax, [traj.x[1]], [traj.y[1]], 
+            color=:black, marker=:circle, markersize=10)
+    
+    # Mark ending position
+    scatter!(ax, [traj.x[end]], [traj.y[end]], 
+            color=:black, marker=:star, markersize=12)
+end
 
-# Plot theoretical curve
-lines!(ax, t_theory, f_theory, color=:red, linewidth=2, 
-      label="Theoretical model")
+# Show box boundaries
+box = [0 0; 1 0; 1 1; 0 1; 0 0]
+lines!(ax, box[:, 1], box[:, 2], color=:black, linewidth=2)
 
-# Add equilibrium line
-hlines!(ax, theoretical_dimer_fraction(Inf, k_on, k_off, c_total), 
-       color=:black, linestyle=:dash, linewidth=1, 
-       label="Equilibrium")
+# Add legend for state colors
+legend_elements = [
+    LineElement(color=:blue, linewidth=3),
+    LineElement(color=:red, linewidth=3),
+    MarkerElement(color=:black, marker=:circle, markersize=8),
+    MarkerElement(color=:black, marker=:star, markersize=10)
+]
+legend_labels = ["Monomer", "Dimer", "Start", "End"]
 
-axislegend(ax)
+Legend(fig[1, 2], legend_elements, legend_labels, "States")
 
-save("diffusion_long_term_evolution.png", fig)
+# Set axis limits with some padding
+limits!(ax, -0.05, 1.05, -0.05, 1.05)
+
+save("diffusion_two_particles.png", fig)
 fig
 # output
 
 ```
-![Long-term Evolution of Dimer Population](diffusion_long_term_evolution.png)
-```
+![Two Interacting Particles](diffusion_two_particles.png)
+

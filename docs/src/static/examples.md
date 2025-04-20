@@ -200,8 +200,11 @@ smld_true, smld_model, smld_noisy = simulate(
 # Create a PSF model (Gaussian with 150nm width)
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
+# Note: We use smld_model (not smld_noisy) to avoid double-counting uncertainty
+# smld_noisy already contains localization errors, and rendering camera images
+# naturally introduces noise, so using smld_noisy would apply noise twice
 # Generate image stack from emitter data with Poisson noise
-images = gen_images(smld_noisy, psf;
+images = gen_images(smld_model, psf;
     bg=10.0,            # background photons per pixel
     poisson_noise=true  # add realistic shot noise
 )
@@ -226,7 +229,7 @@ ax2 = Axis(fig[1, 2],
 )
 
 # Extract emitters in frame 20
-frame20_emitters = filter(e -> e.frame == 20, smld_noisy.emitters)
+frame20_emitters = filter(e -> e.frame == 20, smld_model.emitters)
 x = [e.x for e in frame20_emitters]
 y = [e.y for e in frame20_emitters]
 photons = [e.photons for e in frame20_emitters]
