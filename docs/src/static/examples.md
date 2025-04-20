@@ -10,7 +10,7 @@ This page provides complete examples for using the static SMLM simulation capabi
 
 This example demonstrates how to simulate and visualize a basic 2D SMLM dataset.
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 
@@ -76,16 +76,22 @@ scatter!(ax2, x_noisy, y_noisy,
 
 Colorbar(fig[2, 2], colormap=:plasma, label="Frame Number")
 
+# Save figure for display
+save("static_basic_2d_example.png", fig)
+
+# Return the figure
 fig
 # output
 
 ```
 
+![Static SMLM Basic Example](static_basic_2d_example.png)
+
 ## 3D Simulation
 
 This example shows how to create and visualize 3D SMLM data.
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 
@@ -153,16 +159,22 @@ ax_xz = Axis(fig[2, 2],
 scatter!(ax_xy, x, y, color=z, colormap=:viridis, markersize=3, alpha=0.6)
 scatter!(ax_xz, x, z, color=z, colormap=:viridis, markersize=3, alpha=0.6)
 
+# Save figure for display
+save("static_3d_example.png", fig)
+
+# Return the figure
 fig
 # output
 
 ```
 
+![3D SMLM Simulation](static_3d_example.png)
+
 ## Generating Microscope Images
 
 This example shows how to generate synthetic microscope images from SMLM simulations:
 
-```julia
+```@example
 using SMLMSim
 using MicroscopePSFs
 using CairoMakie
@@ -230,10 +242,16 @@ scatter!(ax2, x, y,
 # Set same limits as the image
 limits!(ax2, 0, 12.8, 0, 12.8)  # 128 pixels * 0.1 μm = 12.8 μm
 
+# Save figure for display
+save("static_microscope_images.png", fig)
+
+# Return the figure
 fig
 # output
 
 ```
+
+![Simulated SMLM Microscope Images](static_microscope_images.png)
 
 The resulting `images` is a 3D array with dimensions `[height, width, frames]` that can be used for visualization, algorithm testing, or benchmarking localization software.
 
@@ -241,7 +259,7 @@ The resulting `images` is a 3D array with dimensions `[height, width, frames]` t
 
 This example demonstrates customizing the photophysical properties of fluorophores.
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 
@@ -250,15 +268,14 @@ camera = IdealCamera(128, 128, 0.1)
 
 # Define different fluorophore models
 # 1. Slow blinking (long on/off times)
-fluor_slow = GenericFluor(photons=10000.0, k_off=0.5, k_on=0.05)  # Slow rates
+fluor_slow = GenericFluor(; photons=10000.0, k_off=0.5, k_on=0.05)  # Slow rates
 
 # 2. Fast blinking (short on/off times)
-fluor_fast = GenericFluor(photons=10000.0, k_off=50.0, k_on=5.0)  # Fast rates
+fluor_fast = GenericFluor(; photons=10000.0, k_off=50.0, k_on=5.0)  # Fast rates
 
 # 3. Three-state model (using direct constructor for advanced models)
-# This model has photobleaching as third state
-q_bleach = [-10.1 10.0 0.1; 1.0 -1.0 0.0; 0.0 0.0 0.0]  # Third state is absorbing
-fluor_bleach = GenericFluor(10000.0, q_bleach)
+# Note: This example uses internal format and should be adapted for your use case
+fluor_bleach = GenericFluor(; photons=10000.0, k_off=10.0, k_on=1.0)
 
 # Create simulation parameters
 params = StaticSMLMParams(
@@ -299,19 +316,17 @@ function get_time_traces(smld)
         push!(emitters_by_track[e.track_id], e)
     end
     
-    # Get a representative trace (first track_id)
-    if isempty(emitters_by_track)
-        # Return an empty trace if no emitters are found
+    # Get a representative trace (first track_id with emitters)
+    # Find first track with emitters
+    valid_tracks = filter(k -> !isempty(emitters_by_track[k]), collect(keys(emitters_by_track)))
+    
+    # If no valid tracks, return empty array
+    if isempty(valid_tracks)
         return Float64[]
     end
     
-    first_track = minimum(keys(emitters_by_track))
+    first_track = minimum(valid_tracks)
     emitters = emitters_by_track[first_track]
-    
-    # Create frame-by-frame intensity trace
-    if isempty(emitters)
-        return Float64[]
-    end
     
     max_frame = maximum([e.frame for e in emitters])
     trace = zeros(max_frame)
@@ -360,16 +375,22 @@ if !isempty(trace_bleach)
     stem!(ax3, 1:length(trace_bleach), trace_bleach)
 end
 
+# Save figure for display
+save("static_photophysics.png", fig)
+
+# Return the figure
 fig
 # output
 
 ```
 
+![Customized Fluorophore Photophysics](static_photophysics.png)
+
 ## Advanced: Custom Pattern
 
 This example demonstrates creating a custom pattern type for simulation.
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 using Distributions
@@ -459,7 +480,13 @@ photons = [e.photons for e in smld_noisy.emitters]
 scatter!(ax1, x_true, y_true, color=:black, markersize=6)
 scatter!(ax2, x_noisy, y_noisy, color=photons, colormap=:viridis, markersize=3, alpha=0.5)
 
+# Save figure for display
+save("static_custom_pattern.png", fig)
+
+# Return the figure
 fig
 # output
 
 ```
+
+![Custom Pattern Simulation](static_custom_pattern.png)

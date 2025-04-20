@@ -10,7 +10,7 @@ This page provides complete examples for using the diffusion-interaction simulat
 
 This example demonstrates how to run a basic diffusion simulation and visualize the results:
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 using MicroscopePSFs
@@ -83,17 +83,19 @@ fig[1:2, 4] = Legend(fig,
     "Molecular States"
 )
 
+save("diffusion_basic_simulation.png", fig)
 fig
 # output
 
 ```
+![Basic Diffusion Simulation](diffusion_basic_simulation.png)
 ```
 
 ## Frame Integration for Time-Lapse Imaging
 
 This example demonstrates how to use frame integration to create realistic time-lapse microscopy data from diffusion simulations:
 
-```julia
+```@example
 using SMLMSim
 using MicroscopePSFs
 using CairoMakie
@@ -145,9 +147,12 @@ ax = Axis(fig[1, 1],
 frame_to_show = 15
 heatmap!(ax, transpose(images[:, :, frame_to_show]), colormap=:inferno)
 
+save("diffusion_frame_integration.png", fig)
 fig
 # output
 
+```
+![Frame Integration for Time-Lapse Imaging](diffusion_frame_integration.png)
 ```
 
 The `frame_integration` parameter is crucial for realistic diffusion imaging:
@@ -160,7 +165,7 @@ The `frame_integration` parameter is crucial for realistic diffusion imaging:
 
 This example demonstrates how to analyze dimer formation dynamics:
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 
@@ -207,18 +212,21 @@ lines!(ax, time_stable, frac_stable, linewidth=3, color=:blue,
 lines!(ax, time_unstable, frac_unstable, linewidth=3, color=:red, 
        label="Unstable (k_off=0.5 s⁻¹)")
 
-axislegend(ax, position=:right)
+axislegend(ax)
 
+save("diffusion_dimer_formation.png", fig)
 fig
 # output
 
+```
+![Analyzing Dimer Formation](diffusion_dimer_formation.png)
 ```
 
 ## Generating Microscope Images
 
 This example shows how to generate microscope images from diffusion simulations:
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 using MicroscopePSFs
@@ -295,16 +303,20 @@ end
 
 # Show frames 10, 20, 30
 frame_indices = [10, 20, 30]
-display_frames(images_all, images_dimers, frame_indices)
+fig = display_frames(images_all, images_dimers, frame_indices)
+save("diffusion_microscope_images.png", fig)
+fig
 # output
 
+```
+![Generating Microscope Images](diffusion_microscope_images.png)
 ```
 
 ## Diffusion with Different Boundary Conditions
 
 This example compares periodic and reflecting boundary conditions:
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 
@@ -402,16 +414,21 @@ fig_periodic = plot_trajectories(traj_periodic, "Periodic Boundaries",
 fig_reflecting = plot_trajectories(traj_reflecting, "Reflecting Boundaries", 
                                   params_reflecting.box_size)
 
+save("diffusion_periodic_boundaries.png", fig_periodic)
+save("diffusion_reflecting_boundaries.png", fig_reflecting)
 (fig_periodic, fig_reflecting)
 # output
 
+```
+![Diffusion with Periodic Boundaries](diffusion_periodic_boundaries.png)
+![Diffusion with Reflecting Boundaries](diffusion_reflecting_boundaries.png)
 ```
 
 ## Long-term Evolution of Dimer Population
 
 This example simulates the long-term evolution of dimer formation under different conditions:
 
-```julia
+```@example
 using SMLMSim
 using CairoMakie
 
@@ -494,9 +511,12 @@ hlines!(ax, theoretical_dimer_fraction(Inf, k_on, k_off, c_total),
        color=:black, linestyle=:dash, linewidth=1, 
        label="Equilibrium")
 
-axislegend(ax, position=:right)
+axislegend(ax)
 
+save("diffusion_long_term_evolution.png", fig)
 fig
 # output
 
+```
+![Long-term Evolution of Dimer Population](diffusion_long_term_evolution.png)
 ```
