@@ -23,12 +23,13 @@ track_smld = get_track(smld, 5)
 ```
 """
 function get_track(smld::BasicSMLD, id::Int)
-    # Filter emitters by track_id
-    track_emitters = @filter(smld, track_id == id)
+    # Filter emitters by track_id directly using Julia's built-in filter function
+    # instead of relying on the @filter macro which might have issues
+    filtered_emitters = filter(e -> e.track_id == id, smld.emitters)
     
     # Create new SMLD with same metadata
     return BasicSMLD(
-        track_emitters.emitters,
+        filtered_emitters,
         smld.camera,
         smld.n_frames,
         smld.n_datasets,
@@ -86,22 +87,21 @@ first_track = track_smlds[1]
 """
 function get_tracks(smld::BasicSMLD)
     # Group emitters by track_id more efficiently
-    emitters_by_track = Dict{Int, Vector{eltype(smld.emitters)}}()
-    
+    track_ids = Set{Int}()
     for e in smld.emitters
-        if !haskey(emitters_by_track, e.track_id)
-            emitters_by_track[e.track_id] = eltype(smld.emitters)[]
-        end
-        push!(emitters_by_track[e.track_id], e)
+        push!(track_ids, e.track_id)
     end
     
     # Create a new SMLD for each track
-    track_ids = sort(collect(keys(emitters_by_track)))
-    track_smlds = Vector{BasicSMLD}(undef, length(track_ids))
+    sorted_track_ids = sort(collect(track_ids))
+    track_smlds = Vector{BasicSMLD}(undef, length(sorted_track_ids))
     
-    for (i, id) in enumerate(track_ids)
+    for (i, id) in enumerate(sorted_track_ids)
+        # Directly filter emitters for this track_id
+        filtered_emitters = filter(e -> e.track_id == id, smld.emitters)
+        
         track_smlds[i] = BasicSMLD(
-            emitters_by_track[id],
+            filtered_emitters,
             smld.camera,
             smld.n_frames,
             smld.n_datasets,

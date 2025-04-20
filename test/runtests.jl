@@ -24,6 +24,10 @@ using MicroscopePSFs
         include("test_camera_images.jl")
     end
     
+    @testset "Track Utilities" begin
+        include("test_track_utils.jl")
+    end
+    
     @testset "Integration Tests" begin
         include("test_integration.jl")
     end
