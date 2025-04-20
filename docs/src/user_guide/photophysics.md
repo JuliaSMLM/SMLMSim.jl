@@ -46,7 +46,7 @@ Fluorophore state transitions are modeled using a Continuous Time Markov Chain (
 ```julia
 # Create a CTMC for a two-state system
 # State 1: ON (fluorescent), State 2: OFF (dark)
-q = [0 5; 10 0]  # Units: s⁻¹
+q = [-5 5; 10 -10]  # Units: s⁻¹
 simulation_time = 10.0  # seconds
 initial_state = 2  # Start in dark state
 
@@ -69,7 +69,7 @@ To simulate the fluorescence signal over time, SMLMSim integrates photon emissio
 
 ```julia
 # Generate intensity trace for 1000 frames at 50 fps
-fluor = GenericFluor(γ=10000.0, q=[0 5; 10 0])
+fluor = GenericFluor(γ=10000.0, q=[-5 5; 10 -10])
 photons = intensity_trace(fluor, 1000, 50.0)
 
 # Plot the intensity trace
@@ -96,7 +96,7 @@ The simplest model contains just ON and OFF states:
 # kon = 5 s⁻¹, koff = 10 s⁻¹
 fluor = GenericFluor(
     γ=1e4,                # 10,000 photons/s
-    q=[0 10; 5 0]         # [ON→OFF; OFF→ON] rates in s⁻¹
+    q=[-10 10; 5 -5]      # [ON→OFF; OFF→ON] rates in s⁻¹
 )
 ```
 
@@ -111,7 +111,7 @@ For more realistic behavior including photobleaching:
 # State 1: ON, State 2: OFF, State 3: BLEACHED
 fluor = GenericFluor(
     γ=1e4,
-    q=[0 10 0.1; 5 0 0; 0 0 0]  # Note: state 3 is absorbing (no outgoing transitions)
+    q=[-10.1 10 0.1; 5 -5 0; 0 0 0]  # Note: state 3 is absorbing (no outgoing transitions)
 )
 ```
 
@@ -124,7 +124,7 @@ The `simulate()` function integrates these photophysical models automatically:
 ```julia
 # Simulation with custom fluorophore
 camera = IdealCamera(128, 128, 0.1)
-fluor = GenericFluor(γ=2e4, q=[0 20; 5 0])
+fluor = GenericFluor(γ=2e4, q=[-20 20; 5 -5])
 
 smld_true, smld_model, smld_noisy = simulate(
     molecule=fluor,
@@ -165,10 +165,10 @@ You can adjust these parameters to simulate different experimental conditions:
 
 ```julia
 # Bright fluorophore with high photon counts
-bright_fluor = GenericFluor(γ=5e4, q=[0 5; 1 0])
+bright_fluor = GenericFluor(γ=5e4, q=[-5 5; 1 -1])
 
 # Dim fluorophore with low photon counts
-dim_fluor = GenericFluor(γ=5e3, q=[0 10; 2 0])
+dim_fluor = GenericFluor(γ=5e3, q=[-10 10; 2 -2])
 
 # Simulate with different detection thresholds
 smld_true, smld_model, smld_noisy = simulate(
@@ -187,9 +187,9 @@ For more complex photophysical behavior, you can create larger rate matrices:
 # State 1: ON, States 2-3: OFF (different lifetimes), State 4: BLEACHED
 fluor = GenericFluor(
     γ=1e4,
-    q=[0 5 1 0.01;   # ON -> OFF1, OFF2, BLEACHED
-       2 0 0.5 0;    # OFF1 -> ON, OFF2
-       0.2 0.1 0 0;  # OFF2 -> ON, OFF1
+    q=[-6.01 5 1 0.01;   # ON -> OFF1, OFF2, BLEACHED
+       2 -2.5 0.5 0;    # OFF1 -> ON, OFF2
+       0.2 0.1 -0.3 0;  # OFF2 -> ON, OFF1
        0 0 0 0]      # BLEACHED (absorbing state)
 )
 ```

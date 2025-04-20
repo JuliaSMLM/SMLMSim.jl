@@ -25,7 +25,7 @@ params = StaticSMLMParams()
 
 # Custom parameters
 params = StaticSMLMParams(
-    ρ=2.0,                # 2 patterns per μm²
+    density=2.0,                # 2 patterns per μm²
     σ_psf=0.15,           # 150nm PSF width
     minphotons=100,       # Minimum photons for detection
     ndatasets=5,          # Number of independent datasets
@@ -38,7 +38,7 @@ params = StaticSMLMParams(
 
 ### Key Parameters
 
-- **`ρ` (density)**: Number of patterns per square micron
+- **`density`**: Number of patterns per square micron
 - **`σ_psf`**: Point spread function width in microns (impacts localization precision)
 - **`minphotons`**: Minimum photons required for detection
 - **`nframes`**: Number of frames in the simulation
@@ -58,7 +58,7 @@ camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 smld_true, smld_model, smld_noisy = simulate(
     params,
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
-    molecule=GenericFluor(γ=1e4, q=[0 10; 0.5 0]),  # fluorophore model
+    molecule=GenericFluor(1e4, [-10.0 10.0; 0.5 -0.5]),  # fluorophore model
     camera=camera
 )
 ```
@@ -67,7 +67,7 @@ Alternatively, you can use keyword arguments directly:
 
 ```julia
 smld_true, smld_model, smld_noisy = simulate(
-    ρ=1.0,                # patterns per μm²
+    density=1.0,                # patterns per μm²
     σ_psf=0.13,           # PSF width in μm
     nframes=1000,         # frames
     framerate=50.0,       # frames per second

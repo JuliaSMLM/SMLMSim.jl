@@ -67,10 +67,10 @@ params = DiffusionSMLMParams(
 )
 
 # Run diffusion simulation
-systems = simulate(params) # Returns a vector of system states over time
+smld = simulate(params) # Returns a BasicSMLD object with all emitters
 
 println("Simulated diffusion for $(params.t_max) seconds.")
-# 'systems' can be used for analysis or image generation
+# 'smld' can be used for analysis or image generation
 ```
 
 ## Core Concepts
@@ -107,7 +107,7 @@ using MicroscopePSFs # Needed for PSF types
 
 # Generate images from diffusion simulation output
 psf = GaussianPSF(0.15) # 150nm PSF width
-images = gen_images(systems, psf; 
+images = gen_images(smld, psf; 
     frame_integration=10, # 10 simulation time steps for each camera frame
     support=1.0 # PSF support range
     ) 
@@ -123,7 +123,7 @@ using CairoMakie # Requires installation: Pkg.add("CairoMakie")
 using MicroscopePSFs
 
 # --- Simulation Setup ---
-camera = IdealCamera(128, 128, 0.1) # Use n_pixels constructor
+camera = IdealCamera(128, 128, 0.1) # 128×128 pixels, 100nm pixels
 params = StaticSMLMParams(density=1.0, σ_psf=0.13)
 smld_true, smld_model, smld_noisy = simulate(
     params,

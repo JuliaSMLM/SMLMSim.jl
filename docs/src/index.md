@@ -61,7 +61,7 @@ camera = IdealCamera(128, 128, 0.1)
 
 # Run a basic static simulation
 smld_true, smld_model, smld_noisy = simulate(
-    ρ=1.0,                # 1 pattern per μm²
+    density=1.0,                # 1 pattern per μm²
     σ_psf=0.13,           # 130nm PSF width
     pattern=Nmer2D(n=8, d=0.1),  # 8-molecule circular pattern (100nm diameter)
     camera=camera
