@@ -76,16 +76,10 @@ scatter!(ax2, x_noisy, y_noisy,
 
 Colorbar(fig[2, 2], colormap=:plasma, label="Frame Number")
 
-# Save figure for display
-save("static_basic_2d_example.png", fig)
-
 # Return the figure
 fig
-# output
 
 ```
-
-![Static SMLM Basic Example](static_basic_2d_example.png)
 
 ## 3D Simulation
 
@@ -159,16 +153,10 @@ ax_xz = Axis(fig[2, 2],
 scatter!(ax_xy, x, y, color=z, colormap=:viridis, markersize=3, alpha=0.6)
 scatter!(ax_xz, x, z, color=z, colormap=:viridis, markersize=3, alpha=0.6)
 
-# Save figure for display
-save("static_3d_example.png", fig)
-
 # Return the figure
 fig
-# output
 
 ```
-
-![3D SMLM Simulation](static_3d_example.png)
 
 ## Generating Microscope Images
 
@@ -245,16 +233,12 @@ scatter!(ax2, x, y,
 # Set same limits as the image
 limits!(ax2, 0, 12.8, 0, 12.8)  # 128 pixels * 0.1 μm = 12.8 μm
 
-# Save figure for display
-save("static_microscope_images.png", fig)
 
 # Return the figure
 fig
-# output
 
 ```
 
-![Simulated SMLM Microscope Images](static_microscope_images.png)
 
 The resulting `images` is a 3D array with dimensions `[height, width, frames]` that can be used for visualization, algorithm testing, or benchmarking localization software.
 
@@ -378,16 +362,12 @@ if !isempty(trace_bleach)
     stem!(ax3, 1:length(trace_bleach), trace_bleach)
 end
 
-# Save figure for display
-save("static_photophysics.png", fig)
 
 # Return the figure
 fig
-# output
 
 ```
 
-![Customized Fluorophore Photophysics](static_photophysics.png)
 
 ## Advanced: Custom Pattern
 
@@ -483,13 +463,8 @@ photons = [e.photons for e in smld_noisy.emitters]
 scatter!(ax1, x_true, y_true, color=:black, markersize=6)
 scatter!(ax2, x_noisy, y_noisy, color=photons, colormap=:viridis, markersize=3, alpha=0.5)
 
-# Save figure for display
-save("static_custom_pattern.png", fig)
-
 # Return the figure
 fig
-# output
 
 ```
 
-![Custom Pattern Simulation](static_custom_pattern.png)
