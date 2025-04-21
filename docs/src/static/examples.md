@@ -100,7 +100,8 @@ ax3d = Axis3(fig[1, 1],
     xlabel="x (μm)",
     ylabel="y (μm)",
     zlabel="z (μm)",
-    title="3D SMLM Simulation"
+    title="3D SMLM Simulation",
+    aspect = :data
 )
 
 # Plot localizations with z-dependent color

@@ -118,20 +118,25 @@ Base.@kwdef mutable struct DiffusionSMLMParams <: SMLMSimParams
 end
 
 """
-    initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.0)
+    initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.0; override_count::Union{Nothing, Int}=nothing)
 
 Create initial emitter positions for the simulation.
 
 # Arguments
 - `params::DiffusionSMLMParams`: Simulation parameters
 - `photons::Float64=1000.0`: Number of photons per emitter
+- `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Vector of initialized emitters
 """
-function initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.0)
+function initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.0; override_count::Union{Nothing, Int}=nothing)
     # Calculate number of molecules
-    n_molecules = round(Int, params.density * params.box_size^params.ndims)
+    n_molecules = if override_count !== nothing
+        override_count
+    else
+        round(Int, params.density * params.box_size^params.ndims)
+    end
     
     # Create array for emitters
     if params.ndims == 2
@@ -149,7 +154,7 @@ function initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.
                 0.0,                       # Initial timestamp
                 1,                         # Initial frame
                 1,                         # Dataset
-                i,                         # ID
+                i,                         # track_id
                 :monomer,                  # Initial state
                 nothing                    # No partner initially
             )
@@ -170,7 +175,7 @@ function initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.
                 0.0,                       # Initial timestamp
                 1,                         # Initial frame
                 1,                         # Dataset
-                i,                         # ID
+                i,                         # track_id
                 :monomer,                  # Initial state
                 nothing                    # No partner initially
             )
@@ -202,21 +207,21 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
     
     # Process all emitters
     for (i, e1) in enumerate(emitters)
-        e1.id in processed && continue
+        e1.track_id in processed && continue
         
         if e1.state == :monomer
             # Check if this monomer forms a dimer with any other monomer
             found_dimer = false
             
             for (j, e2) in enumerate(emitters[i+1:end])
-                e2.id in processed && continue
+                e2.track_id in processed && continue
                 e2.state == :monomer || continue
                 
                 if can_dimerize(e1, e2, params.r_react)
                     # Create new dimer pair
                     d1, d2 = dimerize(e1, e2, params.d_dimer)
                     push!(new_emitters, d1, d2)
-                    push!(processed, e1.id, e2.id)
+                    push!(processed, e1.track_id, e2.track_id)
                     found_dimer = true
                     break
                 end
@@ -231,9 +236,9 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                 new_e = apply_boundary(new_e, params.box_size, params.boundary)
                 
                 push!(new_emitters, new_e)
-                push!(processed, e1.id)
+                push!(processed, e1.track_id)
             end
-        elseif e1.state == :dimer && !(e1.id in processed)
+        elseif e1.state == :dimer && !(e1.track_id in processed)
             # Check for dissociation
             if should_dissociate(e1, params.k_off, dt)
                 # Find partner and create two new monomers
@@ -248,11 +253,11 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                 m2 = apply_boundary(m2, params.box_size, params.boundary)
                 
                 push!(new_emitters, m1, m2)
-                push!(processed, e1.id, e1.partner_id)
+                push!(processed, e1.track_id, e1.partner_id)
             else
                 # Find partner and update dimer
-                partner_idx = findfirst(e -> e.id == e1.partner_id, emitters)
-                if !isnothing(partner_idx) && !(emitters[partner_idx].id in processed)
+                partner_idx = findfirst(e -> e.track_id == e1.partner_id, emitters)
+                if !isnothing(partner_idx) && !(emitters[partner_idx].track_id in processed)
                     e2 = emitters[partner_idx]
                     
                     # Apply dimer diffusion
@@ -269,7 +274,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     d2 = apply_boundary(d2, params.box_size, params.boundary)
                     
                     push!(new_emitters, d1, d2)
-                    push!(processed, e1.id, e2.id)
+                    push!(processed, e1.track_id, e2.track_id)
                 end
             end
         end
@@ -309,7 +314,7 @@ function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, 
                     time,               # Current timestamp
                     frame_num,          # Frame number
                     e.dataset,          # Dataset
-                    e.id,               # ID
+                    e.track_id,               # ID
                     e.state,            # State
                     e.partner_id        # Partner ID
                 )
@@ -320,7 +325,7 @@ function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, 
                     time,               # Current timestamp
                     frame_num,          # Frame number
                     e.dataset,          # Dataset
-                    e.id,               # ID
+                    e.track_id,               # ID
                     e.state,            # State
                     e.partner_id        # Partner ID
                 )
@@ -333,14 +338,20 @@ function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, 
 end
 
 """
-    simulate(params::DiffusionSMLMParams; photons::Float64=1000.0, kwargs...)
+    simulate(params::DiffusionSMLMParams; 
+             starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
+             photons::Float64=1000.0, 
+             override_count::Union{Nothing, Int}=nothing,
+             kwargs...)
 
 Run a Smoluchowski diffusion simulation and return a BasicSMLD object
 with emitters that have both frame number and timestamp information.
 
 # Arguments
 - `params::DiffusionSMLMParams`: Simulation parameters
+- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}`: Optional starting emitters
 - `photons::Float64=1000.0`: Number of photons per emitter
+- `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 
 # Keyword Arguments
 - Any additional parameters are ignored (allows unified interface with other simulate methods)
@@ -358,15 +369,23 @@ params = DiffusionSMLMParams(
     camera_exposure = 0.04   # 40ms exposure
 )
 
-# Run simulation
+# Run basic simulation
 smld = simulate(params)
 
-# Generate images
-psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(psf, smld)
+# Run simulation with exactly 2 particles
+smld = simulate(params; override_count=2)
+
+# Use previous simulation state as starting conditions for a new simulation
+final_frame = maximum([e.frame for e in smld.emitters])
+final_state_emitters = filter(e -> e.frame == final_frame, smld.emitters)
+smld_continued = simulate(params; starting_conditions=final_state_emitters)
 ```
 """
-function simulate(params::DiffusionSMLMParams; photons::Float64=1000.0, kwargs...)
+function simulate(params::DiffusionSMLMParams; 
+                 starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
+                 photons::Float64=1000.0, 
+                 override_count::Union{Nothing, Int}=nothing,
+                 kwargs...)
     # Initialize
     n_steps = round(Int, params.t_max / params.dt)
     
@@ -376,7 +395,59 @@ function simulate(params::DiffusionSMLMParams; photons::Float64=1000.0, kwargs..
     camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
     
     # Initialize emitters
-    emitters = initialize_emitters(params, photons)
+    if starting_conditions !== nothing
+        # Extract emitters from starting_conditions
+        if starting_conditions isa SMLD
+            # Get emitters from SMLD, using the most recent frame
+            max_frame = maximum([e.frame for e in starting_conditions.emitters])
+            start_emitters = filter(e -> e.frame == max_frame, starting_conditions.emitters)
+        else
+            # Already a vector of emitters
+            start_emitters = starting_conditions
+        end
+        
+        # Validate emitter types
+        if isempty(start_emitters)
+            error("Starting conditions contain no emitters")
+        end
+        
+        if !(eltype(start_emitters) <: AbstractDiffusingEmitter)
+            error("Starting conditions must contain diffusing emitters")
+        end
+        
+        # Create deep copies of the starting emitters
+        emitters = deepcopy.(start_emitters)
+        
+        # Reset timestamps to start at 0.0 and frame to 1
+        for i in eachindex(emitters)
+            if isa(emitters[i], DiffusingEmitter2D)
+                emitters[i] = DiffusingEmitter2D{typeof(emitters[i].x)}(
+                    emitters[i].x, emitters[i].y,  # Position
+                    emitters[i].photons,           # Photons
+                    0.0,                           # Reset timestamp to 0
+                    1,                             # Initial frame
+                    emitters[i].dataset,           # Dataset
+                    emitters[i].track_id,                # ID
+                    emitters[i].state,             # State
+                    emitters[i].partner_id         # Partner ID
+                )
+            elseif isa(emitters[i], DiffusingEmitter3D)
+                emitters[i] = DiffusingEmitter3D{typeof(emitters[i].x)}(
+                    emitters[i].x, emitters[i].y, emitters[i].z,  # Position
+                    emitters[i].photons,                         # Photons
+                    0.0,                                         # Reset timestamp to 0
+                    1,                                           # Initial frame
+                    emitters[i].dataset,                         # Dataset
+                    emitters[i].track_id,                              # ID
+                    emitters[i].state,                           # State
+                    emitters[i].partner_id                       # Partner ID
+                )
+            end
+        end
+    else
+        # Initialize emitters using the standard approach
+        emitters = initialize_emitters(params, photons; override_count=override_count)
+    end
     
     # Store camera-frame emitters
     camera_emitters = Vector{eltype(emitters)}()
@@ -402,4 +473,101 @@ function simulate(params::DiffusionSMLMParams; photons::Float64=1000.0, kwargs..
     
     # Convert to SMLD
     return create_smld(camera_emitters, camera, params)
+end
+
+"""
+    convert_to_diffusing_emitters(emitters::Vector{<:AbstractEmitter}, photons::Float64=1000.0, state::Symbol=:monomer)
+
+Convert regular emitters to diffusing emitters for use as starting conditions.
+
+# Arguments
+- `emitters::Vector{<:AbstractEmitter}`: Vector of static emitters to convert
+- `photons::Float64=1000.0`: Number of photons to assign
+- `state::Symbol=:monomer`: Initial state (:monomer or :dimer)
+
+# Returns
+- `Vector{<:AbstractDiffusingEmitter}`: Vector of diffusing emitters
+
+# Example
+```julia
+# Convert static emitters to diffusing emitters
+static_emitters = smld_static.emitters
+diffusing_emitters = convert_to_diffusing_emitters(static_emitters)
+
+# Use as starting conditions for a diffusion simulation
+params = DiffusionSMLMParams(t_max=10.0)
+smld = simulate(params; starting_conditions=diffusing_emitters)
+```
+"""
+function convert_to_diffusing_emitters(emitters::Vector{<:AbstractEmitter}, photons::Float64=1000.0, state::Symbol=:monomer)
+    diffusing_emitters = Vector{Union{DiffusingEmitter2D{Float64}, DiffusingEmitter3D{Float64}}}()
+    
+    for (i, e) in enumerate(emitters)
+        if isa(e, Emitter2D) || isa(e, Emitter2DFit)
+            # Create a new diffusing emitter from the static one
+            diffusing_e = DiffusingEmitter2D{Float64}(
+                e.x, e.y,           # Position
+                photons,            # Photons
+                0.0,                # Initial timestamp
+                1,                  # Initial frame
+                e.dataset,          # Dataset
+                e.track_id,         # ID
+                state,              # Initial state
+                nothing             # No partner initially
+            )
+            push!(diffusing_emitters, diffusing_e)
+        elseif isa(e, Emitter3D) || isa(e, Emitter3DFit)
+            # Create new 3D diffusing emitter
+            diffusing_e = DiffusingEmitter3D{Float64}(
+                e.x, e.y, e.z,      # Position
+                photons,            # Photons
+                0.0,                # Initial timestamp
+                1,                  # Initial frame
+                e.dataset,          # Dataset
+                e.track_id,         # ID
+                state,              # Initial state
+                nothing             # No partner initially
+            )
+            push!(diffusing_emitters, diffusing_e)
+        else
+            error("Unsupported emitter type: $(typeof(e))")
+        end
+    end
+    
+    return diffusing_emitters
+end
+
+"""
+    extract_final_state(smld::SMLD)
+
+Extract the emitters from the final frame of a simulation to use as starting conditions.
+
+# Arguments
+- `smld::SMLD`: SMLD containing emitters from a simulation
+
+# Returns
+- `Vector{<:AbstractEmitter}`: Emitters from the final frame
+
+# Example
+```julia
+# Run a simulation
+params = DiffusionSMLMParams(t_max=5.0)
+smld = simulate(params)
+
+# Extract final state
+final_state = extract_final_state(smld)
+
+# Continue simulation with new parameters
+params_new = DiffusionSMLMParams(t_max=10.0, diff_monomer=0.2)
+smld_continued = simulate(params_new; starting_conditions=final_state)
+```
+"""
+function extract_final_state(smld::SMLD)
+    # Find the maximum frame number
+    max_frame = maximum([e.frame for e in smld.emitters])
+    
+    # Filter emitters from the maximum frame
+    final_emitters = filter(e -> e.frame == max_frame, smld.emitters)
+    
+    return final_emitters
 end

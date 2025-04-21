@@ -63,6 +63,41 @@ function get_monomers(smld::BasicSMLD)
 end
 
 """
+    filter_by_state(smld::BasicSMLD, state::Symbol)
+
+Filter emitters by their state (monomer or dimer).
+
+# Arguments
+- `smld::BasicSMLD`: The original SMLD with diffusing emitters
+- `state::Symbol`: State to filter by (:monomer or :dimer)
+
+# Returns
+- `BasicSMLD`: New SMLD containing only emitters with the specified state
+
+# Example
+```julia
+# Get only monomers
+monomer_smld = filter_by_state(smld, :monomer)
+
+# Get only dimers
+dimer_smld = filter_by_state(smld, :dimer)
+```
+"""
+function filter_by_state(smld::BasicSMLD, state::Symbol)
+    # Filter emitters by state
+    filtered_emitters = filter(e -> e.state == state, smld.emitters)
+    
+    # Create new SMLD with same metadata
+    return BasicSMLD(
+        filtered_emitters,
+        smld.camera,
+        smld.n_frames,
+        smld.n_datasets,
+        copy(smld.metadata)
+    )
+end
+
+"""
     analyze_dimer_fraction(smld::BasicSMLD)
 
 Calculate the fraction of dimers per frame.
@@ -91,7 +126,7 @@ function analyze_dimer_fraction(smld::BasicSMLD)
         frame_emitters = filter(e -> e.frame == frame, smld.emitters)
         
         # Get unique molecule IDs (since dimers have two emitters)
-        unique_ids = unique([e.id for e in frame_emitters])
+        unique_ids = unique([e.track_id for e in frame_emitters])
         n_molecules = length(unique_ids)
         
         # Count dimers
@@ -132,7 +167,7 @@ states = [h[2] for h in history]
 """
 function track_state_changes(smld::BasicSMLD)
     # Get all unique molecule IDs
-    molecule_ids = unique([e.id for e in smld.emitters])
+    molecule_ids = unique([e.track_id for e in smld.emitters])
     
     # Initialize state history
     state_history = Dict{Int, Vector{Tuple{Int, Symbol}}}()
@@ -140,7 +175,7 @@ function track_state_changes(smld::BasicSMLD)
     # For each molecule, track state changes
     for id in molecule_ids
         # Get all emitters for this molecule, ordered by frame
-        mol_emitters = filter(e -> e.id == id, smld.emitters)
+        mol_emitters = filter(e -> e.track_id == id, smld.emitters)
         sort!(mol_emitters, by = e -> e.frame)
         
         # Extract frame and state
