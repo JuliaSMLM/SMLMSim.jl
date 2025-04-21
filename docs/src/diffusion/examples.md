@@ -97,12 +97,9 @@ fig[1:2, 4] = Legend(fig,
     "Molecular States"
 )
 
-save("diffusion_basic_simulation.png", fig)
 fig
-# output
 
 ```
-![Basic Diffusion Simulation](diffusion_basic_simulation.png)
 
 ## Frame Integration for Time-Lapse Imaging
 
@@ -162,12 +159,8 @@ ax = Axis(fig[1, 1],
 frame_to_show = 3  # Changed from 15 to a valid frame index (between 1 and 6)
 heatmap!(ax, transpose(images[:, :, frame_to_show]), colormap=:inferno)
 
-save("diffusion_frame_integration.png", fig)
 fig
-# output
-
 ```
-![Frame Integration for Time-Lapse Imaging](diffusion_frame_integration.png)
 
 The `frame_integration` parameter is crucial for realistic diffusion imaging:
 
@@ -228,12 +221,9 @@ lines!(ax, time_unstable, frac_unstable, linewidth=3, color=:red,
 
 axislegend(ax)
 
-save("diffusion_dimer_formation.png", fig)
 fig
-# output
 
 ```
-![Analyzing Dimer Formation](diffusion_dimer_formation.png)
 
 ## Generating Microscope Images
 
@@ -317,12 +307,7 @@ end
 # Show frames 10, 20, 30
 frame_indices = [10, 20, 30]
 fig = display_frames(images_all, images_dimers, frame_indices)
-save("diffusion_microscope_images.png", fig)
-fig
-# output
-
 ```
-![Generating Microscope Images](diffusion_microscope_images.png)
 
 ## Two Interacting Particles
 
@@ -428,10 +413,7 @@ Legend(fig[1, 2], legend_elements, legend_labels, "States")
 # Set axis limits with some padding
 limits!(ax, -0.05, 1.05, -0.05, 1.05)
 
-save("diffusion_two_particles.png", fig)
 fig
-# output
 
 ```
-![Two Interacting Particles](diffusion_two_particles.png)
 
