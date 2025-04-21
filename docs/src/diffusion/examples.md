@@ -27,7 +27,7 @@ using MicroscopePSFs
 
 # Set up simulation parameters
 params = DiffusionSMLMParams(
-    density = 0.5,        # molecules per μm²
+    density = 2.0,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s
@@ -136,14 +136,12 @@ camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 # Create PSF model
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
-# Generate microscope images with frame integration
-# The frame_integration parameter determines how many simulation time
-# points are integrated into each output frame
-# Note: For diffusion simulations, the smld already contains correct positions without 
-# localization uncertainty, so we can use it directly for generating camera images
+# Generate microscope images from simulation
+# For diffusion simulations, the camera integration time (exposure) has already been
+# modeled in the simulation process, so each frame already includes the positions
+# from all emitters that appeared during the exposure window
 images = gen_images(smld, psf;
     bg=5.0,               # background photons per pixel
-    frame_integration=10,  # integrate 10 simulation steps per frame
     poisson_noise=true     # add photon counting noise
 )
 
@@ -162,11 +160,12 @@ heatmap!(ax, transpose(images[:, :, frame_to_show]), colormap=:inferno)
 fig
 ```
 
-The `frame_integration` parameter is crucial for realistic diffusion imaging:
+The simulation already handles motion blur effects in a realistic way:
 
-- With high values, each camera frame integrates multiple diffusion steps, creating motion blur effects typical in real microscopy
-- The integrated frames combine positions from multiple simulation time points, accurately modeling camera exposure
-- Fast-moving particles appear more blurred while slow or stationary ones remain sharp
+- The `camera_exposure` parameter in the simulation determines how long each camera frame integrates photons
+- During the exposure window, multiple emitter positions from the same track_id are captured
+- This naturally creates motion blur effects where fast-moving particles appear more blurred
+- The resulting images accurately represent what would be seen in real microscopy experiments
 
 ## Analyzing Dimer Formation
 
@@ -438,216 +437,3 @@ fig
 
 ```
 
-## Multi-Stage Simulation with Modified Parameters
-
-This example demonstrates how to run a simulation in multiple stages with different parameters, using the final state of one simulation as the starting point for the next:
-
-```@example
-using SMLMSim
-using CairoMakie
-
-# Stage 1: Initial diffusion with specific starting positions
-params1 = DiffusionSMLMParams(
-    box_size = 1.0,       # 1 μm box
-    diff_monomer = 0.05,  # μm²/s (slow diffusion)
-    diff_dimer = 0.02,    # μm²/s
-    k_off = 0.2,          # s⁻¹
-    r_react = 0.05,       # μm
-    d_dimer = 0.07,       # μm
-    dt = 0.01,            # s
-    t_max = 2.0,          # s (short first stage)
-    boundary = "reflecting",
-    camera_framerate = 10.0
-)
-
-# Create initial positions for particles at opposite corners
-particle1 = DiffusingEmitter2D{Float64}(0.1, 0.1, 1000.0, 0.0, 1, 1, 1, :monomer, nothing)
-particle2 = DiffusingEmitter2D{Float64}(0.9, 0.9, 1000.0, 0.0, 1, 1, 2, :monomer, nothing)
-
-# Run first stage of simulation
-smld1 = simulate(params1; starting_conditions=[particle1, particle2])
-
-# Extract the final state from the first simulation
-final_state = extract_final_state(smld1)
-
-# Stage 2: Continue with faster diffusion and different dissociation rate
-params2 = DiffusionSMLMParams(
-    box_size = 1.0,       # Same box size
-    diff_monomer = 0.2,   # μm²/s (faster diffusion)
-    diff_dimer = 0.1,     # μm²/s
-    k_off = 0.05,         # s⁻¹ (more stable dimers)
-    r_react = 0.05,       # μm
-    d_dimer = 0.07,       # μm
-    dt = 0.01,            # s
-    t_max = 3.0,          # s (additional 3 seconds)
-    boundary = "reflecting",
-    camera_framerate = 10.0
-)
-
-# Run second stage using final state from first stage
-smld2 = simulate(params2; starting_conditions=final_state)
-
-# Combine results from both stages to show full trajectory
-# Adjust timestamps and frames for stage 2 to continue from stage 1
-combined_emitters = []
-
-# Add all emitters from stage 1
-append!(combined_emitters, smld1.emitters)
-
-# Add emitters from stage 2 with adjusted timestamps and frames
-max_time = maximum([e.timestamp for e in smld1.emitters])
-max_frame = maximum([e.frame for e in smld1.emitters])
-
-for e in smld2.emitters
-    if isa(e, DiffusingEmitter2D)
-        # Create new emitter with adjusted timestamp and frame
-        adjusted_emitter = DiffusingEmitter2D{typeof(e.x)}(
-            e.x, e.y,                 # Position
-            e.photons,                # Photons
-            e.timestamp + max_time,   # Adjusted timestamp
-            e.frame + max_frame,      # Adjusted frame
-            e.dataset,                # Dataset
-            e.id,                     # ID
-            e.state,                  # State
-            e.partner_id              # Partner ID
-        )
-        push!(combined_emitters, adjusted_emitter)
-    end
-end
-
-# Create combined SMLD
-combined_metadata = copy(smld1.metadata)
-combined_metadata["simulation_type"] = "multi_stage"
-combined_metadata["stage1_params"] = params1
-combined_metadata["stage2_params"] = params2
-
-camera = IdealCamera(1:10, 1:10, 0.1)  # Simple camera for visualization
-combined_smld = BasicSMLD(
-    combined_emitters,
-    camera,
-    max_frame + maximum([e.frame for e in smld2.emitters]),
-    1,
-    combined_metadata
-)
-
-# Get trajectories from combined data
-track_smlds = get_tracks(combined_smld)
-
-# Process trajectories for visualization
-trajectories = []
-for track_smld in track_smlds
-    # Get ID from first emitter
-    id = track_smld.emitters[1].track_id
-    
-    # Sort by timestamp
-    sort!(track_smld.emitters, by = e -> e.timestamp)
-    
-    # Extract coordinates and state
-    times = [e.timestamp for e in track_smld.emitters]
-    x = [e.x for e in track_smld.emitters]
-    y = [e.y for e in track_smld.emitters]
-    states = [e.state for e in track_smld.emitters]
-    
-    push!(trajectories, (id=id, times=times, x=x, y=y, states=states))
-end
-
-# Create visualization showing both stages
-fig = Figure(size=(900, 400))
-
-# Create two side-by-side plots
-ax1 = Axis(fig[1, 1], 
-    title="Stage 1: Slow Diffusion",
-    xlabel="x (μm)",
-    ylabel="y (μm)",
-    aspect=DataAspect()
-)
-
-ax2 = Axis(fig[1, 2], 
-    title="Stage 2: Fast Diffusion",
-    xlabel="x (μm)",
-    ylabel="y (μm)",
-    aspect=DataAspect()
-)
-
-# Box boundaries
-box = [0 0; 1 0; 1 1; 0 1; 0 0]
-lines!(ax1, box[:, 1], box[:, 2], color=:black, linewidth=1)
-lines!(ax2, box[:, 1], box[:, 2], color=:black, linewidth=1)
-
-# Plot trajectories with different colors for each stage
-for (i, traj) in enumerate(trajectories)
-    # Determine the time cutoff between stages
-    stage_separation = max_time
-    
-    # Find indices for each stage
-    stage1_indices = findall(t -> t <= stage_separation, traj.times)
-    stage2_indices = findall(t -> t > stage_separation, traj.times)
-    
-    # Plot stage 1 trajectory
-    if !isempty(stage1_indices)
-        x1 = traj.x[stage1_indices]
-        y1 = traj.y[stage1_indices]
-        states1 = traj.states[stage1_indices]
-        
-        # Plot segments with state-dependent colors
-        for j in 1:(length(stage1_indices)-1)
-            lines!(ax1, 
-                [x1[j], x1[j+1]], 
-                [y1[j], y1[j+1]], 
-                color = states1[j] == :monomer ? :blue : :red,
-                linewidth = 2
-            )
-        end
-        
-        # Mark start and end points
-        scatter!(ax1, [x1[1]], [y1[1]], color=:black, marker=:circle, markersize=8)
-        scatter!(ax1, [x1[end]], [y1[end]], color=:black, marker=:star, markersize=10)
-    end
-    
-    # Plot stage 2 trajectory
-    if !isempty(stage2_indices)
-        x2 = traj.x[stage2_indices]
-        y2 = traj.y[stage2_indices]
-        states2 = traj.states[stage2_indices]
-        
-        # Plot segments with state-dependent colors
-        for j in 1:(length(stage2_indices)-1)
-            lines!(ax2, 
-                [x2[j], x2[j+1]], 
-                [y2[j], y2[j+1]], 
-                color = states2[j] == :monomer ? :blue : :red,
-                linewidth = 2
-            )
-        end
-        
-        # Mark start and end points
-        scatter!(ax2, [x2[1]], [y2[1]], color=:black, marker=:circle, markersize=8)
-        scatter!(ax2, [x2[end]], [y2[end]], color=:black, marker=:star, markersize=10)
-    end
-end
-
-# Add a legend
-fig[1, 3] = Legend(fig,
-    [
-        LineElement(color=:blue, linewidth=3),
-        LineElement(color=:red, linewidth=3),
-        MarkerElement(color=:black, marker=:circle, markersize=8),
-        MarkerElement(color=:black, marker=:star, markersize=10)
-    ],
-    ["Monomer", "Dimer", "Start", "End"],
-    "States"
-)
-
-# Set axis limits with padding
-limits!(ax1, -0.05, 1.05, -0.05, 1.05)
-limits!(ax2, -0.05, 1.05, -0.05, 1.05)
-
-fig
-```
-
-This example demonstrates how the starting conditions feature allows for flexible multi-stage simulations where parameters like diffusion coefficients and reaction rates can be changed between stages. This can be useful for modeling complex scenarios such as:
-
-- Environmental changes affecting molecular behavior
-- Dynamic transitions between different experimental conditions
-- Studying the effects of sudden parameter changes on molecular interactions
-- Creating more complex and realistic biological models

@@ -148,7 +148,6 @@ state_history = track_state_changes(smld)  # Track state transitions
 ```julia
 # Generate image stack
 images = gen_images(smld, psf;
-    frame_integration = 1,    # Time steps per frame
     bg = 0.0,                 # Background photons
     poisson_noise = false     # Add shot noise
 )
@@ -235,7 +234,7 @@ dimer_lifetime = analyze_dimer_lifetime(smld)
 
 # Generate time-lapse images
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld, psf, frame_integration=10, bg=5.0, poisson_noise=true)
+images = gen_images(smld, psf, bg=5.0, poisson_noise=true)
 ```
 
 ### Multi-Stage Diffusion Simulation with Starting Conditions

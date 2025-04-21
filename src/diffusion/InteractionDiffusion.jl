@@ -85,6 +85,7 @@ export
     
     # SMLD conversion utilities
     create_smld,
-    get_frame
+    get_frame,
+    extract_final_state
 
 end
