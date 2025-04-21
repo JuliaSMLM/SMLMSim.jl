@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Examples · SMLMSim.jl</title><meta name="title" content="Examples · SMLMSim.jl"/><meta property="og:title" content="Examples · SMLMSim.jl"/><meta property="twitter:title" content="Examples · SMLMSim.jl"/><meta name="description" content="Documentation for SMLMSim.jl."/><meta property="og:description" content="Documentation for SMLMSim.jl."/><meta property="twitter:description" content="Documentation for SMLMSim.jl."/><meta property="og:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><meta property="twitter:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><link rel="canonical" href="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">SMLMSim.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Core Components</span><ul><li><a class="tocitem" href="../../core/patterns/">Patterns</a></li><li><a class="tocitem" href="../../core/photophysics/">Photophysics</a></li><li><a class="tocitem" href="../../core/noise/">Localization Uncertainty</a></li></ul></li><li><span class="tocitem">Static SMLM</span><ul><li><a class="tocitem" href="../overview/">Overview</a></li><li class="is-active"><a class="tocitem" href>Examples</a><ul class="internal"><li><a class="tocitem" href="#Basic-2D-Simulation"><span>Basic 2D Simulation</span></a></li><li><a class="tocitem" href="#3D-Simulation"><span>3D Simulation</span></a></li><li><a class="tocitem" href="#Generating-Microscope-Images"><span>Generating Microscope Images</span></a></li><li><a class="tocitem" href="#Customizing-Photophysics"><span>Customizing Photophysics</span></a></li><li><a class="tocitem" href="#Advanced:-Custom-Pattern"><span>Advanced: Custom Pattern</span></a></li></ul></li></ul></li><li><span class="tocitem">Diffusion-Interaction</span><ul><li><a class="tocitem" href="../../diffusion/overview/">Overview</a></li><li><a class="tocitem" href="../../diffusion/examples/">Examples</a></li></ul></li><li><a class="tocitem" href="../../images/">Microscope Images</a></li><li><a class="tocitem" href="../../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Static SMLM</a></li><li class="is-active"><a href>Examples</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Examples</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl/blob/main/docs/src/static/examples.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Static-SMLM-Examples"><a class="docs-heading-anchor" href="#Static-SMLM-Examples">Static SMLM Examples</a><a id="Static-SMLM-Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Static-SMLM-Examples" title="Permalink"></a></h1><p>This page provides complete examples for using the static SMLM simulation capabilities of SMLMSim.</p><h2 id="Basic-2D-Simulation"><a class="docs-heading-anchor" href="#Basic-2D-Simulation">Basic 2D Simulation</a><a id="Basic-2D-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Basic-2D-Simulation" title="Permalink"></a></h2><p>This example demonstrates how to simulate and visualize a basic 2D SMLM dataset.</p><pre><code class="language-julia hljs">using SMLMSim
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Examples · SMLMSim.jl</title><meta name="title" content="Examples · SMLMSim.jl"/><meta property="og:title" content="Examples · SMLMSim.jl"/><meta property="twitter:title" content="Examples · SMLMSim.jl"/><meta name="description" content="Documentation for SMLMSim.jl."/><meta property="og:description" content="Documentation for SMLMSim.jl."/><meta property="twitter:description" content="Documentation for SMLMSim.jl."/><meta property="og:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><meta property="twitter:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><link rel="canonical" href="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">SMLMSim.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Core Components</span><ul><li><a class="tocitem" href="../../core/patterns/">Patterns</a></li><li><a class="tocitem" href="../../core/photophysics/">Photophysics</a></li><li><a class="tocitem" href="../../core/noise/">Localization Uncertainty</a></li></ul></li><li><span class="tocitem">Static SMLM</span><ul><li><a class="tocitem" href="../overview/">Overview</a></li><li class="is-active"><a class="tocitem" href>Examples</a><ul class="internal"><li><a class="tocitem" href="#Basic-2D-Simulation"><span>Basic 2D Simulation</span></a></li><li><a class="tocitem" href="#3D-Simulation"><span>3D Simulation</span></a></li><li><a class="tocitem" href="#Generating-Microscope-Images"><span>Generating Microscope Images</span></a></li><li><a class="tocitem" href="#Advanced:-Custom-Pattern"><span>Advanced: Custom Pattern</span></a></li></ul></li></ul></li><li><span class="tocitem">Diffusion-Interaction</span><ul><li><a class="tocitem" href="../../diffusion/overview/">Overview</a></li><li><a class="tocitem" href="../../diffusion/examples/">Examples</a></li></ul></li><li><a class="tocitem" href="../../images/">Microscope Images</a></li><li><a class="tocitem" href="../../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Static SMLM</a></li><li class="is-active"><a href>Examples</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Examples</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl/blob/main/docs/src/static/examples.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Static-SMLM-Examples"><a class="docs-heading-anchor" href="#Static-SMLM-Examples">Static SMLM Examples</a><a id="Static-SMLM-Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Static-SMLM-Examples" title="Permalink"></a></h1><p>This page provides complete examples for using the static SMLM simulation capabilities of SMLMSim.</p><h2 id="Basic-2D-Simulation"><a class="docs-heading-anchor" href="#Basic-2D-Simulation">Basic 2D Simulation</a><a id="Basic-2D-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Basic-2D-Simulation" title="Permalink"></a></h2><p>This example demonstrates how to simulate and visualize a basic 2D SMLM dataset.</p><pre><code class="language-julia hljs">using SMLMSim
 using CairoMakie
 
 # Create camera with physical pixel size
-camera = IdealCamera(128, 256, 0.1)  # 128×256 pixels, 100nm pixels
+camera = IdealCamera(128, 64, 0.1)  # 128×64 pixels, 100nm pixels
 
 # Create simulation parameters
 params = StaticSMLMParams(
-    density = 1.0,        # emitters per μm²
+    density = 1.0,        # patterns per μm²
     σ_psf = 0.13,         # PSF width in μm
 )
 
@@ -44,32 +44,8 @@ scatter!(ax1, x_noisy, y_noisy,
     alpha=0.6
 )
 
-Colorbar(fig[1, 2], colormap=:viridis, label=&quot;Photons&quot;)
-
-# Temporal color-coding in second plot
-ax2 = Axis(fig[2, 1],
-    title=&quot;Temporal Color-Coding&quot;,
-    xlabel=&quot;x (μm)&quot;,
-    ylabel=&quot;y (μm)&quot;,
-    aspect=DataAspect(),
-    yreversed=true
-)
-
-scatter!(ax2, x_noisy, y_noisy,
-    color=frame_nums,
-    colormap=:plasma,
-    markersize=4,
-    alpha=0.6
-)
-
-Colorbar(fig[2, 2], colormap=:plasma, label=&quot;Frame Number&quot;)
-
-# Save figure for display
-save(&quot;static_basic_2d_example.png&quot;, fig)
-
 # Return the figure
-fig
-# output</code></pre><img src="ffce5f10.png" alt="Example block output"/><p><img src="../static_basic_2d_example.png" alt="Static SMLM Basic Example"/></p><h2 id="3D-Simulation"><a class="docs-heading-anchor" href="#3D-Simulation">3D Simulation</a><a id="3D-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#3D-Simulation" title="Permalink"></a></h2><p>This example shows how to create and visualize 3D SMLM data.</p><pre><code class="language-julia hljs">using SMLMSim
+fig</code></pre><img src="88ee5425.png" alt="Example block output"/><h2 id="3D-Simulation"><a class="docs-heading-anchor" href="#3D-Simulation">3D Simulation</a><a id="3D-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#3D-Simulation" title="Permalink"></a></h2><p>This example shows how to create and visualize 3D SMLM data.</p><pre><code class="language-julia hljs">using SMLMSim
 using CairoMakie
 
 # Create camera with physical pixel size
@@ -103,8 +79,7 @@ ax3d = Axis3(fig[1, 1],
     xlabel=&quot;x (μm)&quot;,
     ylabel=&quot;y (μm)&quot;,
     zlabel=&quot;z (μm)&quot;,
-    title=&quot;3D SMLM Simulation&quot;,
-    aspect=(1, 1, 1)
+    title=&quot;3D SMLM Simulation&quot;
 )
 
 # Plot localizations with z-dependent color
@@ -115,33 +90,7 @@ scatter!(ax3d, x, y, z,
     alpha=0.6
 )
 
-Colorbar(fig[1, 2], colormap=:viridis, label=&quot;z position (μm)&quot;)
-
-# Create 2D projections
-ax_xy = Axis(fig[2, 1],
-    title=&quot;XY Projection&quot;,
-    xlabel=&quot;x (μm)&quot;,
-    ylabel=&quot;y (μm)&quot;,
-    aspect=DataAspect(),
-    yreversed=true
-)
-
-ax_xz = Axis(fig[2, 2],
-    title=&quot;XZ Projection&quot;,
-    xlabel=&quot;x (μm)&quot;,
-    ylabel=&quot;z (μm)&quot;,
-    aspect=DataAspect()
-)
-
-scatter!(ax_xy, x, y, color=z, colormap=:viridis, markersize=3, alpha=0.6)
-scatter!(ax_xz, x, z, color=z, colormap=:viridis, markersize=3, alpha=0.6)
-
-# Save figure for display
-save(&quot;static_3d_example.png&quot;, fig)
-
-# Return the figure
-fig
-# output</code></pre><img src="1d487bfd.png" alt="Example block output"/><p><img src="../static_3d_example.png" alt="3D SMLM Simulation"/></p><h2 id="Generating-Microscope-Images"><a class="docs-heading-anchor" href="#Generating-Microscope-Images">Generating Microscope Images</a><a id="Generating-Microscope-Images-1"></a><a class="docs-heading-anchor-permalink" href="#Generating-Microscope-Images" title="Permalink"></a></h2><p>This example shows how to generate synthetic microscope images from SMLM simulations:</p><pre><code class="language-julia hljs">using SMLMSim
+fig</code></pre><img src="fb053ab8.png" alt="Example block output"/><h2 id="Generating-Microscope-Images"><a class="docs-heading-anchor" href="#Generating-Microscope-Images">Generating Microscope Images</a><a id="Generating-Microscope-Images-1"></a><a class="docs-heading-anchor-permalink" href="#Generating-Microscope-Images" title="Permalink"></a></h2><p>This example shows how to generate synthetic microscope images from SMLM simulations:</p><pre><code class="language-julia hljs">using SMLMSim
 using MicroscopePSFs
 using CairoMakie
 
@@ -150,7 +99,7 @@ camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # Create simulation parameters
 params = StaticSMLMParams(
-    density = 0.5,        # patterns per μm²
+    density = 2.0,        # patterns per μm²
     σ_psf = 0.13,         # 130nm PSF width
     nframes = 100,        # 100 frames
     framerate = 20.0      # 20 fps
@@ -171,7 +120,7 @@ psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 # naturally introduces noise, so using smld_noisy would apply noise twice
 # Generate image stack from emitter data with Poisson noise
 images = gen_images(smld_model, psf;
-    bg=10.0,            # background photons per pixel
+    bg=5.0,            # background photons per pixel
     poisson_noise=true  # add realistic shot noise
 )
 
@@ -208,135 +157,8 @@ scatter!(ax2, x, y,
     alpha=0.8
 )
 
-# Set same limits as the image
-limits!(ax2, 0, 12.8, 0, 12.8)  # 128 pixels * 0.1 μm = 12.8 μm
-
-# Save figure for display
-save(&quot;static_microscope_images.png&quot;, fig)
-
 # Return the figure
-fig
-# output</code></pre><img src="c7c62cbf.png" alt="Example block output"/><p><img src="../static_microscope_images.png" alt="Simulated SMLM Microscope Images"/></p><p>The resulting <code>images</code> is a 3D array with dimensions <code>[height, width, frames]</code> that can be used for visualization, algorithm testing, or benchmarking localization software.</p><h2 id="Customizing-Photophysics"><a class="docs-heading-anchor" href="#Customizing-Photophysics">Customizing Photophysics</a><a id="Customizing-Photophysics-1"></a><a class="docs-heading-anchor-permalink" href="#Customizing-Photophysics" title="Permalink"></a></h2><p>This example demonstrates customizing the photophysical properties of fluorophores.</p><pre><code class="language-julia hljs">using SMLMSim
-using CairoMakie
-
-# Create camera
-camera = IdealCamera(128, 128, 0.1)
-
-# Define different fluorophore models
-# 1. Slow blinking (long on/off times)
-fluor_slow = GenericFluor(; photons=10000.0, k_off=0.5, k_on=0.05)  # Slow rates
-
-# 2. Fast blinking (short on/off times)
-fluor_fast = GenericFluor(; photons=10000.0, k_off=50.0, k_on=5.0)  # Fast rates
-
-# 3. Three-state model (using direct constructor for advanced models)
-# Note: This example uses internal format and should be adapted for your use case
-fluor_bleach = GenericFluor(; photons=10000.0, k_off=10.0, k_on=1.0)
-
-# Create simulation parameters
-params = StaticSMLMParams(
-    density = 0.2,
-    nframes = 2000
-)
-
-# Run simulations with different fluorophore models
-_, _, smld_slow = simulate(
-    params;
-    pattern=Nmer2D(n=3, d=0.2),
-    molecule=fluor_slow,
-    camera=camera
-)
-
-_, _, smld_fast = simulate(
-    params;
-    pattern=Nmer2D(n=3, d=0.2),
-    molecule=fluor_fast,
-    camera=camera
-)
-
-_, _, smld_bleach = simulate(
-    params;
-    pattern=Nmer2D(n=3, d=0.2),
-    molecule=fluor_bleach,
-    camera=camera
-)
-
-# Extract data for analysis
-function get_time_traces(smld)
-    # Group emitters by track_id (original position)
-    emitters_by_track = Dict()
-    for e in smld.emitters
-        if !haskey(emitters_by_track, e.track_id)
-            emitters_by_track[e.track_id] = []
-        end
-        push!(emitters_by_track[e.track_id], e)
-    end
-
-    # Get a representative trace (first track_id with emitters)
-    # Find first track with emitters
-    valid_tracks = filter(k -&gt; !isempty(emitters_by_track[k]), collect(keys(emitters_by_track)))
-
-    # If no valid tracks, return empty array
-    if isempty(valid_tracks)
-        return Float64[]
-    end
-
-    first_track = minimum(valid_tracks)
-    emitters = emitters_by_track[first_track]
-
-    max_frame = maximum([e.frame for e in emitters])
-    trace = zeros(max_frame)
-    for e in emitters
-        trace[e.frame] = e.photons
-    end
-
-    return trace
-end
-
-# Get traces for each model
-trace_slow = get_time_traces(smld_slow)
-trace_fast = get_time_traces(smld_fast)
-trace_bleach = get_time_traces(smld_bleach)
-
-# Visualization
-fig = Figure(size=(900, 700))
-
-# Plot time traces
-ax1 = Axis(fig[1, 1],
-    title=&quot;Slow Blinking&quot;,
-    xlabel=&quot;Frame&quot;,
-    ylabel=&quot;Photons&quot;
-)
-
-ax2 = Axis(fig[2, 1],
-    title=&quot;Fast Blinking&quot;,
-    xlabel=&quot;Frame&quot;,
-    ylabel=&quot;Photons&quot;
-)
-
-ax3 = Axis(fig[3, 1],
-    title=&quot;Photobleaching Model&quot;,
-    xlabel=&quot;Frame&quot;,
-    ylabel=&quot;Photons&quot;
-)
-
-# Plot traces
-if !isempty(trace_slow)
-    stem!(ax1, 1:length(trace_slow), trace_slow)
-end
-if !isempty(trace_fast)
-    stem!(ax2, 1:length(trace_fast), trace_fast)
-end
-if !isempty(trace_bleach)
-    stem!(ax3, 1:length(trace_bleach), trace_bleach)
-end
-
-# Save figure for display
-save(&quot;static_photophysics.png&quot;, fig)
-
-# Return the figure
-fig
-# output</code></pre><img src="9082f7a6.png" alt="Example block output"/><p><img src="../static_photophysics.png" alt="Customized Fluorophore Photophysics"/></p><h2 id="Advanced:-Custom-Pattern"><a class="docs-heading-anchor" href="#Advanced:-Custom-Pattern">Advanced: Custom Pattern</a><a id="Advanced:-Custom-Pattern-1"></a><a class="docs-heading-anchor-permalink" href="#Advanced:-Custom-Pattern" title="Permalink"></a></h2><p>This example demonstrates creating a custom pattern type for simulation.</p><pre><code class="language-julia hljs">using SMLMSim
+fig</code></pre><img src="c204d86b.png" alt="Example block output"/><p>The resulting <code>images</code> is a 3D array with dimensions <code>[height, width, frames]</code> that can be used for visualization, algorithm testing, or benchmarking localization software.</p><h2 id="Advanced:-Custom-Pattern"><a class="docs-heading-anchor" href="#Advanced:-Custom-Pattern">Advanced: Custom Pattern</a><a id="Advanced:-Custom-Pattern-1"></a><a class="docs-heading-anchor-permalink" href="#Advanced:-Custom-Pattern" title="Permalink"></a></h2><p>This example demonstrates creating a custom pattern type for simulation.</p><pre><code class="language-julia hljs">using SMLMSim
 using CairoMakie
 using Distributions
 
@@ -377,10 +199,10 @@ function JitteredGrid2D(; nx=5, ny=5, dx=0.05, dy=0.05, jitter=0.01)
 end
 
 # Create camera
-camera = IdealCamera(128, 128, 0.1)
+camera = IdealCamera(64, 64, 0.1)
 
 # Create custom pattern
-grid = JitteredGrid2D(nx=8, ny=8, dx=0.05, dy=0.05, jitter=0.01)
+grid = JitteredGrid2D()
 
 # Create simulation parameters
 params = StaticSMLMParams(
@@ -425,9 +247,5 @@ photons = [e.photons for e in smld_noisy.emitters]
 scatter!(ax1, x_true, y_true, color=:black, markersize=6)
 scatter!(ax2, x_noisy, y_noisy, color=photons, colormap=:viridis, markersize=3, alpha=0.5)
 
-# Save figure for display
-save(&quot;static_custom_pattern.png&quot;, fig)
-
 # Return the figure
-fig
-# output</code></pre><img src="6884a1ef.png" alt="Example block output"/><p><img src="../static_custom_pattern.png" alt="Custom Pattern Simulation"/></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../overview/">« Overview</a><a class="docs-footer-nextpage" href="../../diffusion/overview/">Overview »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.10.1 on <span class="colophon-date" title="Sunday 20 April 2025 23:41">Sunday 20 April 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+fig</code></pre><img src="39ea0595.png" alt="Example block output"/></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../overview/">« Overview</a><a class="docs-footer-nextpage" href="../../diffusion/overview/">Overview »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.10.1 on <span class="colophon-date" title="Monday 21 April 2025 19:47">Monday 21 April 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
