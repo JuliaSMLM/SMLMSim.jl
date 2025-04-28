@@ -27,7 +27,7 @@ using MicroscopePSFs
 
 # Set up simulation parameters
 params = DiffusionSMLMParams(
-    density = 0.5,        # molecules per μm²
+    density = 2.0,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s
@@ -97,12 +97,9 @@ fig[1:2, 4] = Legend(fig,
     "Molecular States"
 )
 
-save("diffusion_basic_simulation.png", fig)
 fig
-# output
 
 ```
-![Basic Diffusion Simulation](diffusion_basic_simulation.png)
 
 ## Frame Integration for Time-Lapse Imaging
 
@@ -139,14 +136,12 @@ camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 # Create PSF model
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
-# Generate microscope images with frame integration
-# The frame_integration parameter determines how many simulation time
-# points are integrated into each output frame
-# Note: For diffusion simulations, the smld already contains correct positions without 
-# localization uncertainty, so we can use it directly for generating camera images
+# Generate microscope images from simulation
+# For diffusion simulations, the camera integration time (exposure) has already been
+# modeled in the simulation process, so each frame already includes the positions
+# from all emitters that appeared during the exposure window
 images = gen_images(smld, psf;
     bg=5.0,               # background photons per pixel
-    frame_integration=10,  # integrate 10 simulation steps per frame
     poisson_noise=true     # add photon counting noise
 )
 
@@ -162,18 +157,15 @@ ax = Axis(fig[1, 1],
 frame_to_show = 3  # Changed from 15 to a valid frame index (between 1 and 6)
 heatmap!(ax, transpose(images[:, :, frame_to_show]), colormap=:inferno)
 
-save("diffusion_frame_integration.png", fig)
 fig
-# output
-
 ```
-![Frame Integration for Time-Lapse Imaging](diffusion_frame_integration.png)
 
-The `frame_integration` parameter is crucial for realistic diffusion imaging:
+The simulation already handles motion blur effects in a realistic way:
 
-- With high values, each camera frame integrates multiple diffusion steps, creating motion blur effects typical in real microscopy
-- The integrated frames combine positions from multiple simulation time points, accurately modeling camera exposure
-- Fast-moving particles appear more blurred while slow or stationary ones remain sharp
+- The `camera_exposure` parameter in the simulation determines how long each camera frame integrates photons
+- During the exposure window, multiple emitter positions from the same track_id are captured
+- This naturally creates motion blur effects where fast-moving particles appear more blurred
+- The resulting images accurately represent what would be seen in real microscopy experiments
 
 ## Analyzing Dimer Formation
 
@@ -228,12 +220,9 @@ lines!(ax, time_unstable, frac_unstable, linewidth=3, color=:red,
 
 axislegend(ax)
 
-save("diffusion_dimer_formation.png", fig)
 fig
-# output
 
 ```
-![Analyzing Dimer Formation](diffusion_dimer_formation.png)
 
 ## Generating Microscope Images
 
@@ -317,16 +306,11 @@ end
 # Show frames 10, 20, 30
 frame_indices = [10, 20, 30]
 fig = display_frames(images_all, images_dimers, frame_indices)
-save("diffusion_microscope_images.png", fig)
-fig
-# output
-
 ```
-![Generating Microscope Images](diffusion_microscope_images.png)
 
 ## Two Interacting Particles
 
-This example shows two particles interacting in a small box with reflecting boundary conditions:
+This example shows two particles interacting in a small box with reflecting boundary conditions, using the new starting conditions feature to place them at specific initial positions:
 
 ```@example
 using SMLMSim
@@ -334,7 +318,6 @@ using CairoMakie
 
 # Set up a minimal simulation with just two particles
 params = DiffusionSMLMParams(
-    density = 2.0,        # 2 particles in a 1×1 μm box
     box_size = 1.0,       # 1 μm box for close interactions
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s
@@ -344,20 +327,42 @@ params = DiffusionSMLMParams(
     dt = 0.01,            # s
     t_max = 5.0,          # s
     boundary = "reflecting",  # Reflecting boundaries
-    camera_framerate = 10.0  # fps
+    camera_framerate = 10.0   # fps
 )
 
-# Run simulation - override density to get exactly 2 particles
-smld = simulate(params; override_count=2, photons=1000.0)
+# Create two particles with specific initial positions
+particle1 = DiffusingEmitter2D{Float64}(
+    0.2, 0.2,       # Position in lower-left quadrant
+    1000.0,         # Photons
+    0.0,            # Initial timestamp
+    1,              # Initial frame
+    1,              # Dataset
+    1,              # track_id
+    :monomer,       # Initial state
+    nothing         # No partner initially
+)
 
-# Get trajectories using the built-in function
+particle2 = DiffusingEmitter2D{Float64}(
+    0.8, 0.8,       # Position in upper-right quadrant
+    1000.0,         # Photons
+    0.0,            # Initial timestamp
+    1,              # Initial frame
+    1,              # Dataset
+    2,              # track_id
+    :monomer,       # Initial state
+    nothing         # No partner initially
+)
+
+# Run simulation with custom starting positions
+smld = simulate(params; starting_conditions=[particle1, particle2])
+
 track_smlds = get_tracks(smld)
 
 # Convert to the format needed for plotting
 trajectories = []
 for track_smld in track_smlds
     # Get ID from first emitter
-    id = track_smld.emitters[1].id
+    id = track_smld.emitters[1].track_id
     
     # Sort by timestamp
     sort!(track_smld.emitters, by = e -> e.timestamp)
@@ -428,10 +433,7 @@ Legend(fig[1, 2], legend_elements, legend_labels, "States")
 # Set axis limits with some padding
 limits!(ax, -0.05, 1.05, -0.05, 1.05)
 
-save("diffusion_two_particles.png", fig)
 fig
-# output
 
 ```
-![Two Interacting Particles](diffusion_two_particles.png)
 

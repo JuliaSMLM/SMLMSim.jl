@@ -25,8 +25,8 @@ AbstractEmitter                  # Base type for all emitters
 ├── Emitter2D/3D                 # Basic emitters without uncertainties
 ├── Emitter2DFit/3DFit           # Emitters with uncertainties
 └── AbstractDiffusingEmitter     # Base for diffusing emitters
-    ├── DiffusingEmitter2D       # 2D diffusing emitter
-    └── DiffusingEmitter3D       # 3D diffusing emitter
+    ├── DiffusingEmitter2D       # 2D diffusing emitter with track_id and partner_id
+    └── DiffusingEmitter3D       # 3D diffusing emitter with track_id and partner_id
 ```
 
 ## Core Parameter Types
@@ -62,13 +62,17 @@ DiffusionSMLMParams(
 ```julia
 # Static SMLM simulation
 simulate(params::StaticSMLMParams; 
+         starting_conditions=nothing,  # Optional custom emitter configuration
          pattern=Nmer2D(), 
          molecule=GenericFluor(1e4, [-10.0 10.0; 0.5 -0.5]), 
          camera=IdealCamera(128, 128, 0.1))
   -> Tuple{BasicSMLD, BasicSMLD, BasicSMLD}  # (true, model, noisy)
 
 # Diffusion simulation
-simulate(params::DiffusionSMLMParams; photons=1000.0) 
+simulate(params::DiffusionSMLMParams; 
+         starting_conditions=nothing,  # Optional custom emitter configuration
+         photons=1000.0,
+         override_count=nothing)       # Optional exact number of molecules
   -> BasicSMLD  # Single SMLD with all diffusing emitters
 ```
 
@@ -86,6 +90,19 @@ x, y, z = uniform3D(1.0, pattern3d, 10.0, 10.0, zrange=[-1.0, 1.0])
 # Rotate patterns
 rotate!(pattern, π/4)  # Rotate 2D pattern by 45 degrees
 rotate!(pattern3d, α, β, γ)  # Rotate 3D pattern with Euler angles
+```
+
+### Starting Conditions Helpers
+
+```julia
+# Convert static emitters to diffusing emitters
+diffusing_emitters = convert_to_diffusing_emitters(static_emitters, 1000.0, :monomer)
+
+# Extract final state from a simulation for continued simulation
+final_state = extract_final_state(smld)
+
+# Use final state as starting conditions
+smld_continued = simulate(params; starting_conditions=final_state)
 ```
 
 ### Photophysics
@@ -131,7 +148,6 @@ state_history = track_state_changes(smld)  # Track state transitions
 ```julia
 # Generate image stack
 images = gen_images(smld, psf;
-    frame_integration = 1,    # Time steps per frame
     bg = 0.0,                 # Background photons
     poisson_noise = false     # Add shot noise
 )
@@ -166,6 +182,27 @@ psf = GaussianPSF(0.15)  # 150nm PSF width
 images = gen_images(smld_model, psf, bg=5.0, poisson_noise=true)
 ```
 
+### Starting with Custom Initial Positions
+
+```julia
+# Create custom initial positions
+custom_emitters = [
+    Emitter2DFit{Float64}(
+        x, y,                # Custom positions
+        1.0, 0.0,            # photons, background
+        0.0, 0.0, 0.0, 0.0;  # uncertainties
+        track_id=i           # track ID
+    ) for (i, (x, y)) in enumerate(zip([0.0, 0.5], [0.0, 0.0]))
+]
+
+# Run simulation with custom initial positions
+params = StaticSMLMParams()
+smld_true, smld_model, smld_noisy = simulate(
+    params;
+    starting_conditions=custom_emitters
+)
+```
+
 ### Diffusion-Interaction Simulation Workflow
 
 1. **Define diffusion parameters**: Create `DiffusionSMLMParams` with diffusion coefficients, box size, etc.
@@ -197,7 +234,29 @@ dimer_lifetime = analyze_dimer_lifetime(smld)
 
 # Generate time-lapse images
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld, psf, frame_integration=10, bg=5.0, poisson_noise=true)
+images = gen_images(smld, psf, bg=5.0, poisson_noise=true)
+```
+
+### Multi-Stage Diffusion Simulation with Starting Conditions
+
+```julia
+# Initial simulation
+params_initial = DiffusionSMLMParams(
+    diff_monomer = 0.1,      # μm²/s
+    t_max = 5.0              # 5 seconds simulation
+)
+smld_initial = simulate(params_initial)
+
+# Extract final state
+final_state = extract_final_state(smld_initial)
+
+# Continue simulation with different parameters
+params_continued = DiffusionSMLMParams(
+    diff_monomer = 0.2,      # μm²/s (faster diffusion)
+    t_max = 10.0,            # 10 seconds more simulation
+    k_off = 0.1              # s⁻¹ (different dissociation rate)
+)
+smld_continued = simulate(params_continued; starting_conditions=final_state)
 ```
 
 Notes:

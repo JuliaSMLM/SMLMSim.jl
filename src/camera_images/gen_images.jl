@@ -12,7 +12,6 @@ Generate camera images from SMLD data using the specified PSF model.
 # Keyword arguments
 - `dataset::Int=1`: Dataset number to use from SMLD
 - `frames=nothing`: Specific frames to generate (default: all frames in smld.n_frames)
-- `frame_integration::Int=1`: Number of consecutive frames to integrate into one image
 - `support::Union{Real,Tuple{<:Real,<:Real,<:Real,<:Real}}=Inf`: PSF support region size
 - `sampling::Int=2`: Supersampling factor for PSF integration
 - `threaded::Bool=true`: Enable multithreading for faster computation
@@ -27,7 +26,6 @@ Generate camera images from SMLD data using the specified PSF model.
 function gen_images(smld::SMLD, psf::AbstractPSF; 
           dataset::Int=1,
           frames=nothing,
-          frame_integration::Int=1, 
           support::Union{Real,Tuple{<:Real,<:Real,<:Real,<:Real}}=Inf,
           sampling::Int=2,
           threaded::Bool=true,
@@ -44,14 +42,6 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
         frames = 1:smld.n_frames
     end
     
-    # Group frames for integration
-    if frame_integration > 1
-        frame_groups = [frames[i:min(i+frame_integration-1, length(frames))] 
-                       for i in 1:frame_integration:length(frames)]
-    else
-        frame_groups = [[f] for f in frames]
-    end
-    
     # Get camera dimensions from SMLD
     camera = smld.camera
     width = length(camera.pixel_edges_x) - 1
@@ -65,18 +55,18 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
     end
     
     # Pre-allocate output array
-    images = zeros(T, height, width, length(frame_groups))
+    images = zeros(T, height, width, length(frames))
     
-    # Process each frame group
-    for (i, frame_group) in enumerate(frame_groups)
-        # Filter emitters for this frame group
-        frame_smld = filter_frames(dataset_smld, frame_group)
+    # Process each frame individually
+    for (i, frame_num) in enumerate(frames)
+        # Filter emitters for this frame
+        frame_emitters = filter(e -> e.frame == frame_num, dataset_smld.emitters)
         
         # Add background to all images
         images[:,:,i] .+= bg
         
-        # Skip image generation if no emitters in this frame group
-        if isempty(frame_smld.emitters)
+        # Skip image generation if no emitters in this frame
+        if isempty(frame_emitters)
             continue
         end
         
@@ -84,7 +74,7 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
         img = integrate_pixels(
             psf, 
             smld.camera, 
-            frame_smld.emitters; 
+            frame_emitters; 
             support=support,
             sampling=sampling,
             threaded=threaded

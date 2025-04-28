@@ -72,7 +72,7 @@ include("api.jl")
 # Import specific functions from InteractionDiffusion
 using .InteractionDiffusion: DiffusionSMLMParams, get_dimers, 
                             get_monomers, analyze_dimer_fraction, analyze_dimer_lifetime,
-                            DiffusingEmitter2D, DiffusingEmitter3D
+                            DiffusingEmitter2D, DiffusingEmitter3D, extract_final_state
 
 # Import from StaticSMLM
 using .StaticSMLM: StaticSMLMParams, apply_noise
@@ -118,7 +118,8 @@ export
     get_dimers,
     get_monomers,
     analyze_dimer_fraction,
-    analyze_dimer_lifetime
+    analyze_dimer_lifetime,
+    extract_final_state
 
 # Pattern simulation types and functions
 export

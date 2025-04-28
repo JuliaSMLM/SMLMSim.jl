@@ -22,7 +22,7 @@ and temporal information, plus molecular state information.
 - `timestamp::T`: actual simulation time in seconds
 - `frame::Int`: camera frame number based on framerate and exposure
 - `dataset::Int`: dataset identifier
-- `id::Int`: unique molecule identifier 
+- `track_id::Int`: unique molecule identifier 
 - `state::Symbol`: molecular state (:monomer or :dimer)
 - `partner_id::Union{Int,Nothing}`: ID of linked molecule (for dimers), or nothing for monomers
 """
@@ -38,7 +38,7 @@ struct DiffusingEmitter2D{T<:AbstractFloat} <: AbstractDiffusingEmitter
     
     # Bookkeeping properties
     dataset::Int
-    id::Int
+    track_id::Int  # Changed from id to track_id to be consistent with other emitters
     
     # Diffusion-specific properties
     state::Symbol              # :monomer or :dimer
@@ -59,7 +59,7 @@ and temporal information, plus molecular state information.
 - `timestamp::T`: actual simulation time in seconds
 - `frame::Int`: camera frame number based on framerate and exposure
 - `dataset::Int`: dataset identifier
-- `id::Int`: unique molecule identifier
+- `track_id::Int`: unique molecule identifier
 - `state::Symbol`: molecular state (:monomer or :dimer)
 - `partner_id::Union{Int,Nothing}`: ID of linked molecule (for dimers), or nothing for monomers
 """
@@ -74,7 +74,7 @@ struct DiffusingEmitter3D{T<:AbstractFloat} <: AbstractDiffusingEmitter
     timestamp::T
     frame::Int
     dataset::Int
-    id::Int
+    track_id::Int  # Changed from id to track_id to be consistent with other emitters
     state::Symbol
     partner_id::Union{Int,Nothing}
 end
@@ -92,7 +92,7 @@ function Base.show(io::IO, ::MIME"text/plain", e::DiffusingEmitter2D{T}) where T
     println(io, "  Photons: $(e.photons)")
     println(io, "  Time: $(e.timestamp) s, frame: $(e.frame)")
     println(io, "  State: $(e.state)")
-    println(io, "  ID: $(e.id)")
+    println(io, "  ID: $(e.track_id)")
     print(io, "  Link: $link_str")
 end
 
@@ -108,6 +108,47 @@ function Base.show(io::IO, ::MIME"text/plain", e::DiffusingEmitter3D{T}) where T
     println(io, "  Photons: $(e.photons)")
     println(io, "  Time: $(e.timestamp) s, frame: $(e.frame)")
     println(io, "  State: $(e.state)")
-    println(io, "  ID: $(e.id)")
+    println(io, "  ID: $(e.track_id)")
     print(io, "  Link: $link_str")
 end
+
+# Add copy and deepcopy methods for diffusing emitter types
+"""
+    Base.copy(e::DiffusingEmitter2D)
+
+Create a copy of a 2D diffusing emitter.
+"""
+function Base.copy(e::DiffusingEmitter2D{T}) where T <: AbstractFloat
+    DiffusingEmitter2D{T}(
+        e.x, e.y,           # Position
+        e.photons,          # Photons
+        e.timestamp,        # Timestamp
+        e.frame,            # Frame
+        e.dataset,          # Dataset
+        e.track_id,         # ID (now track_id)
+        e.state,            # State
+        e.partner_id        # Partner ID
+    )
+end
+
+"""
+    Base.copy(e::DiffusingEmitter3D)
+
+Create a copy of a 3D diffusing emitter.
+"""
+function Base.copy(e::DiffusingEmitter3D{T}) where T <: AbstractFloat
+    DiffusingEmitter3D{T}(
+        e.x, e.y, e.z,      # Position
+        e.photons,          # Photons
+        e.timestamp,        # Timestamp
+        e.frame,            # Frame
+        e.dataset,          # Dataset
+        e.track_id,         # ID (now track_id)
+        e.state,            # State
+        e.partner_id        # Partner ID
+    )
+end
+
+# Add deepcopy methods (for immutable structs, copy and deepcopy can be the same)
+Base.deepcopy(e::DiffusingEmitter2D) = copy(e)
+Base.deepcopy(e::DiffusingEmitter3D) = copy(e)

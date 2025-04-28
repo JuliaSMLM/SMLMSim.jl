@@ -81,9 +81,11 @@ export
     analyze_dimer_fraction,
     analyze_dimer_lifetime,
     track_state_changes,
+    filter_by_state,
     
     # SMLD conversion utilities
     create_smld,
-    get_frame
+    get_frame,
+    extract_final_state
 
 end
