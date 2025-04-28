@@ -208,17 +208,25 @@ The main simulation function with multiple methods for different simulation type
 
 ```julia
 # Static SMLM simulation
+# First create simulation parameters
+params = StaticSMLMParams()
+
+# Then run simulation
 smld_true, smld_model, smld_noisy = simulate(
-    StaticSMLMParams;
-    pattern::Pattern=Nmer2D(),
-    molecule::Molecule=GenericFluor(),
-    camera::AbstractCamera=IdealCamera(128, 128, 0.1)
+    params;
+    pattern=Nmer2D(),
+    molecule=GenericFluor(),
+    camera=IdealCamera(128, 128, 0.1)
 )
 
 # Diffusion simulation
+# First create simulation parameters
+params_diff = DiffusionSMLMParams()
+
+# Then run simulation
 smld = simulate(
-    DiffusionSMLMParams;
-    photons::Float64=1000.0
+    params_diff;
+    photons=1000.0
 )
 ```
 
@@ -227,14 +235,22 @@ smld = simulate(
 Generate kinetic blinking model from existing localization data.
 
 ```julia
+# Example of how to call kinetic_model
+# First create or obtain the required inputs
+smld_true = ... # Some BasicSMLD with true positions
+fluor = GenericFluor(1e4, [-10.0 10.0; 0.5 -0.5])  # Fluorophore model
+nframes = 1000    # Number of frames
+framerate = 50.0  # Frames per second
+
+# Call the function
 smld_model = kinetic_model(
-    smld::BasicSMLD,
-    f::Molecule,
-    nframes::Int,
-    framerate::Real;
-    ndatasets::Int=1,
-    minphotons=50.0,
-    state1::Union{Int, Symbol}=:equilibrium
+    smld_true,     # BasicSMLD with emitter positions
+    fluor,         # Molecule with kinetic rates
+    nframes,       # Number of frames
+    framerate;     # Frames per second
+    ndatasets=1,   # Number of independent datasets
+    minphotons=50.0, # Minimum photons for detection
+    state1=:equilibrium  # Initial state sampling
 )
 ```
 
@@ -243,11 +259,16 @@ smld_model = kinetic_model(
 Add localization uncertainty to emitter positions based on photon counts.
 
 ```julia
-# Add noise to 2D emitters
-smld_noisy = apply_noise(smld_model, 0.13)  # 130nm PSF width
+# Example usage of apply_noise
 
-# Add noise to 3D emitters
-smld_noisy_3d = apply_noise(smld_model_3d, [0.13, 0.13, 0.39])  # [σx, σy, σz] in μm
+# First, you need smld_model from a previous step
+# For example, from the output of kinetic_model()
+
+# For 2D emitters - add noise with 130nm PSF width
+smld_noisy = apply_noise(smld_model, 0.13)  # 0.13 μm = 130nm PSF width
+
+# For 3D emitters - specify PSF width in each dimension
+smld_noisy_3d = apply_noise(smld_model_3d, [0.13, 0.13, 0.39])  # [x, y, z] widths in μm
 ```
 
 ### Image Generation
@@ -262,13 +283,24 @@ images = gen_images(
     psf::AbstractPSF;
     dataset::Int=1,                # Dataset number to use from SMLD
     frames=nothing,                # Specific frames to generate (default: all frames)
-    support=Inf,                   # PSF support region size in μm
+    support=Inf,                   # PSF support region size (see details below)
     sampling=2,                    # Supersampling factor for PSF integration
     threaded=true,                 # Enable multithreading
     bg=0.0,                        # Background signal level (photons per pixel)
     poisson_noise=false,           # Apply Poisson noise
     camera_noise=false             # Apply camera read noise
 )
+
+# The support parameter controls PSF computation region:
+# 1. Inf (default): Compute PSF over entire image (most accurate but slowest)
+support=Inf
+
+# 2. Real number: Use circular region with given radius around each emitter
+# Typically 3-5× the PSF width is sufficient for accuracy with better performance
+support=1.0  # 1.0 µm radius around each emitter
+
+# 3. Tuple (xmin, xmax, ymin, ymax): Explicit region in microns
+support=(4.0, 6.0, 4.0, 6.0)  # Only compute PSF within this region
 ```
 
 #### gen_image
@@ -276,11 +308,21 @@ images = gen_images(
 Generate a single frame camera image.
 
 ```julia
-image = gen_image(
-    smld::SMLD,
-    psf::AbstractPSF,
-    frame::Int;
-    # Same keyword arguments as gen_images
+# Example of generating a single frame image
+
+# First, define variables
+smld = ... # Your SMLD data
+psf = GaussianPSF(0.15)  # PSF model with 150nm width
+frame_number = 10  # The frame you want to generate
+
+# Generate image for a specific frame
+single_frame = gen_image(
+    smld,          # SMLD data 
+    psf,           # PSF model
+    frame_number;  # Frame to generate
+    support=1.0,   # Same keyword arguments as gen_images
+    bg=5.0,
+    poisson_noise=true
 )
 ```
 
@@ -289,6 +331,12 @@ image = gen_image(
 #### Diffusion Analysis
 
 ```julia
+# Example usage of diffusion analysis functions
+
+# First, run a diffusion simulation
+params = DiffusionSMLMParams()
+smld = simulate(params)
+
 # Extract dimers from diffusion simulation
 dimer_smld = get_dimers(smld)
 
@@ -308,31 +356,54 @@ state_history = track_state_changes(smld)
 #### Track Utilities
 
 ```julia
+# Example usage of track utilities
+
+# First, run a simulation
+params = StaticSMLMParams()
+smld_true, smld_model, smld_noisy = simulate(params)
+
+# Specify a track ID to extract
+track_id = 1  # ID of the track to extract
+
 # Get a specific track by ID
-track_smld = get_track(smld, track_id)
+track_smld = get_track(smld_noisy, track_id)
 
 # Get number of unique tracks
-n_tracks = get_num_tracks(smld)
+n_tracks = get_num_tracks(smld_noisy)
 
 # Get all tracks as separate SMLDs
-track_smlds = get_tracks(smld)
+track_smlds = get_tracks(smld_noisy)
 ```
 
 ### Pattern Manipulation
 
 ```julia
-# Rotate a 2D pattern
-rotate!(pattern2d, π/4)  # Rotate 45 degrees
+# Example usage of pattern manipulation
 
-# Rotate a 3D pattern with Euler angles
+# Create patterns
+pattern2d = Nmer2D(n=6, d=0.2)
+pattern3d = Nmer3D(n=8, d=0.15)
+
+# Rotate a 2D pattern by 45 degrees
+rotate!(pattern2d, π/4) 
+
+# Rotate a 3D pattern with Euler angles (ZYZ convention)
 rotate!(pattern3d, π/4, π/6, π/3)  # α, β, γ angles
 
 # Rotate a 3D pattern with a rotation matrix
+θ = π/2 # 90 degrees
 R = [cos(θ) -sin(θ) 0; sin(θ) cos(θ) 0; 0 0 1]  # Z-axis rotation
 rotate!(pattern3d, R)
 
-# Generate random pattern distribution
-x, y = uniform2D(density, pattern, field_x, field_y)
+# Generate random pattern distribution in a field
+field_x = 10.0 # μm
+field_y = 10.0 # μm
+density = 1.0  # patterns per μm²
+
+# Get coordinates for 2D distribution
+x, y = uniform2D(density, pattern2d, field_x, field_y)
+
+# Get coordinates for 3D distribution
 x, y, z = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
 ```
 
@@ -367,9 +438,12 @@ smld_true, smld_model, smld_noisy = simulate(
     molecule=fluor
 )
 
-# 5. Create microscope images
+# 5. Create microscope images with efficient PSF support
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld_model, psf; poisson_noise=true)
+images = gen_images(smld_model, psf; 
+    support=1.0,         # 1.0 μm radius around each emitter
+    poisson_noise=true   # Add realistic photon counting noise
+)
 ```
 
 ### Diffusion Simulation Workflow
@@ -397,9 +471,13 @@ smld = simulate(params)
 dimer_smld = get_dimers(smld)
 frames, fractions = analyze_dimer_fraction(smld)
 
-# 4. Generate microscope images
+# 4. Generate microscope images with finite PSF support
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld, psf; bg=5.0, poisson_noise=true)
+images = gen_images(smld, psf; 
+    support=1.0,         # 1.0 μm PSF support radius (faster)
+    bg=5.0,              # Background photons per pixel
+    poisson_noise=true   # Add realistic photon counting noise
+)
 ```
 
 ## Complete Examples
@@ -425,8 +503,9 @@ smld_true, smld_model, smld_noisy = simulate(
 # Create a PSF model
 psf = GaussianPSF(0.15)  # 150nm PSF width
 
-# Generate microscope images
+# Generate microscope images with finite PSF support
 images = gen_images(smld_model, psf;
+    support=1.0,         # 1.0 μm PSF support radius (faster than Inf)
     bg=5.0,              # 5 background photons per pixel
     poisson_noise=true   # Add realistic photon counting noise
 )
@@ -458,9 +537,13 @@ smld = simulate(params)
 frames, dimer_fraction = analyze_dimer_fraction(smld)
 avg_lifetime = analyze_dimer_lifetime(smld)
 
-# Generate microscope images
+# Generate microscope images with finite PSF support
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld, psf; bg=2.0, poisson_noise=true)
+images = gen_images(smld, psf; 
+    support=1.0,         # 1.0 μm PSF support radius (faster)
+    bg=2.0,              # Background photons per pixel
+    poisson_noise=true   # Add realistic photon counting noise
+)
 
 println("Simulation complete with $(length(smld.emitters)) emitters")
 println("Average dimer fraction: $(mean(dimer_fraction))")
@@ -530,9 +613,25 @@ smld_true, smld_model, smld_noisy = simulate(
     camera=camera
 )
 
-# Generate images with a 3D astigmatic PSF
-psf = AstigmaticPSF(σ_x=0.13, σ_y=0.13, γ_x=0.08, γ_y=-0.08, z_range=[-1.0, 1.0])
-images = gen_images(smld_model, psf; bg=5.0, poisson_noise=true)
+# Generate images with a 3D astigmatic PSF and finite support
+# Create a PSF with astigmatism using Zernike coefficients
+using MicroscopePSFs
+zc = ZernikeCoefficients(15)
+zc.phase[6] = 0.5  # Add vertical astigmatism
+psf_scalar = ScalarPSF(1.4, 0.532, 1.52; zernike_coeffs=zc)
+
+# Create SplinePSF for speed
+xy_sampling, z_sampling = 0.05, 0.1
+x_range = y_range = -1.0:xy_sampling:1.0
+z_range = -1.0:z_sampling:1.0
+psf_spline = SplinePSF(psf_scalar, x_range, y_range, z_range)
+
+# Generate images using the spline PSF with finite support
+images = gen_images(smld_model, psf_spline; 
+    support=0.5,         # 0.5 μm PSF support radius for performance
+    bg=5.0,              # Background photons per pixel
+    poisson_noise=true   # Add realistic photon counting noise
+)
 
 println("Generated $(length(smld_noisy.emitters)) localizations in 3D")
 ```
