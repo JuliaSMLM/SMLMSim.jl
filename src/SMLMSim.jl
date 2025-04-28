@@ -3,6 +3,15 @@
 
 Main module for the SMLMSim.jl package.
 
+# API Overview
+For a comprehensive overview of the API, use the help mode on `api_overview`:
+
+    ?api_overview
+
+Or access the complete API documentation programmatically:
+
+    docs = SMLMSim.api_overview()
+
 This package provides tools for simulating Single Molecule Localization Microscopy (SMLM) data.
 It includes modules for:
 
@@ -56,6 +65,9 @@ using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
 include("static/StaticSMLM.jl")
 include("diffusion/InteractionDiffusion.jl")
 include("camera_images/CameraImages.jl")
+
+# Include the API overview functionality
+include("api.jl")
 
 # Import specific functions from InteractionDiffusion
 using .InteractionDiffusion: DiffusionSMLMParams, get_dimers, 
@@ -147,6 +159,9 @@ export
 # Visualization and imaging
 export
     gen_images,
-    gen_image
+    gen_image,
+    
+# API overview
+    api_overview
 
 end
