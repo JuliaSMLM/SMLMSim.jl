@@ -141,9 +141,9 @@ function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer:
         e1.timestamp,            # Timestamp
         e1.frame,                # Frame
         e1.dataset,              # Dataset
-        e1.id,                   # ID
+        e1.track_id,              # ID
         :dimer,                  # State
-        e2.id                    # Partner ID
+        e2.track_id                    # Partner ID
     )
     
     d2 = DiffusingEmitter2D{T}(
@@ -152,9 +152,9 @@ function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer:
         e2.timestamp,            # Timestamp
         e2.frame,                # Frame
         e2.dataset,              # Dataset
-        e2.id,                   # ID
+        e2.track_id,              # ID
         :dimer,                  # State
-        e1.id                    # Partner ID
+        e1.track_id                    # Partner ID
     )
     
     return (d1, d2)
@@ -195,9 +195,9 @@ function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer:
         e1.timestamp,                        # Timestamp
         e1.frame,                            # Frame
         e1.dataset,                          # Dataset
-        e1.id,                               # ID
+        e1.track_id,                         # ID
         :dimer,                              # State
-        e2.id                                # Partner ID
+        e2.track_id                          # Partner ID
     )
     
     d2 = DiffusingEmitter3D{T}(
@@ -206,9 +206,9 @@ function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer:
         e2.timestamp,                        # Timestamp
         e2.frame,                            # Frame
         e2.dataset,                          # Dataset
-        e2.id,                               # ID
+        e2.track_id,                         # ID
         :dimer,                              # State
-        e1.id                                # Partner ID
+        e1.track_id                          # Partner ID
     )
     
     return (d1, d2)
@@ -249,7 +249,7 @@ function dissociate(e::DiffusingEmitter2D{T}, emitters::Vector{<:AbstractDiffusi
         error("Emitter is not part of a dimer")
     end
     
-    partner_idx = findfirst(em -> em.id == e.partner_id, emitters)
+    partner_idx = findfirst(em -> em.track_id == e.partner_id, emitters)
     if isnothing(partner_idx)
         error("Partner emitter not found")
     end
@@ -263,7 +263,7 @@ function dissociate(e::DiffusingEmitter2D{T}, emitters::Vector{<:AbstractDiffusi
         e.timestamp,        # Timestamp
         e.frame,            # Frame
         e.dataset,          # Dataset
-        e.id,               # ID
+        e.track_id,          # ID
         :monomer,           # State
         nothing             # Partner ID
     )
@@ -274,7 +274,7 @@ function dissociate(e::DiffusingEmitter2D{T}, emitters::Vector{<:AbstractDiffusi
         partner.timestamp,     # Timestamp
         partner.frame,         # Frame
         partner.dataset,       # Dataset
-        partner.id,            # ID
+        partner.track_id,       # ID
         :monomer,              # State
         nothing                # Partner ID
     )
@@ -300,7 +300,7 @@ function dissociate(e::DiffusingEmitter3D{T}, emitters::Vector{<:AbstractDiffusi
         error("Emitter is not part of a dimer")
     end
     
-    partner_idx = findfirst(em -> em.id == e.partner_id, emitters)
+    partner_idx = findfirst(em -> em.track_id == e.partner_id, emitters)
     if isnothing(partner_idx)
         error("Partner emitter not found")
     end
@@ -314,7 +314,7 @@ function dissociate(e::DiffusingEmitter3D{T}, emitters::Vector{<:AbstractDiffusi
         e.timestamp,        # Timestamp
         e.frame,            # Frame
         e.dataset,          # Dataset
-        e.id,               # ID
+        e.track_id,         # ID
         :monomer,           # State
         nothing             # Partner ID
     )
@@ -325,7 +325,7 @@ function dissociate(e::DiffusingEmitter3D{T}, emitters::Vector{<:AbstractDiffusi
         partner.timestamp,                # Timestamp
         partner.frame,                    # Frame
         partner.dataset,                  # Dataset
-        partner.id,                       # ID
+        partner.track_id,                 # ID
         :monomer,                         # State
         nothing                           # Partner ID
     )
@@ -361,7 +361,7 @@ function diffuse(e::DiffusingEmitter2D{T}, diff_coef::Float64, dt::Float64) wher
         e.timestamp + dt,   # Updated timestamp
         e.frame,            # Frame
         e.dataset,          # Dataset
-        e.id,               # ID
+        e.track_id,         # ID
         e.state,            # State
         e.partner_id        # Partner ID
     )
@@ -395,7 +395,7 @@ function diffuse(e::DiffusingEmitter3D{T}, diff_coef::Float64, dt::Float64) wher
         e.timestamp + dt,     # Updated timestamp
         e.frame,              # Frame
         e.dataset,            # Dataset
-        e.id,                 # ID
+        e.track_id,           # ID
         e.state,              # State
         e.partner_id          # Partner ID
     )
@@ -448,7 +448,7 @@ function diffuse_dimer(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, dif
         e1.timestamp + dt,       # Updated timestamp
         e1.frame,                # Frame
         e1.dataset,              # Dataset
-        e1.id,                   # ID
+        e1.track_id,             # ID
         e1.state,                # State
         e1.partner_id            # Partner ID
     )
@@ -459,7 +459,7 @@ function diffuse_dimer(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, dif
         e2.timestamp + dt,       # Updated timestamp
         e2.frame,                # Frame
         e2.dataset,              # Dataset
-        e2.id,                   # ID
+        e2.track_id,             # ID
         e2.state,                # State
         e2.partner_id            # Partner ID
     )
@@ -521,7 +521,7 @@ function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, dif
         e1.timestamp + dt,                   # Updated timestamp
         e1.frame,                            # Frame
         e1.dataset,                          # Dataset
-        e1.id,                               # ID
+        e1.track_id,                         # ID
         e1.state,                            # State
         e1.partner_id                        # Partner ID
     )
@@ -532,7 +532,7 @@ function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, dif
         e2.timestamp + dt,                   # Updated timestamp
         e2.frame,                            # Frame
         e2.dataset,                          # Dataset
-        e2.id,                               # ID
+        e2.track_id,                         # ID
         e2.state,                            # State
         e2.partner_id                        # Partner ID
     )
@@ -599,7 +599,7 @@ function apply_boundary(e::DiffusingEmitter2D{T}, box_size::Float64, boundary::S
             e.timestamp,       # Timestamp
             e.frame,           # Frame
             e.dataset,         # Dataset
-            e.id,              # ID
+            e.track_id,        # ID
             e.state,           # State
             e.partner_id       # Partner ID
         )
@@ -658,7 +658,7 @@ function apply_boundary(e::DiffusingEmitter3D{T}, box_size::Float64, boundary::S
             e.timestamp,          # Timestamp
             e.frame,              # Frame
             e.dataset,            # Dataset
-            e.id,                 # ID
+            e.track_id,           # ID
             e.state,              # State
             e.partner_id          # Partner ID
         )

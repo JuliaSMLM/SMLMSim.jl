@@ -117,7 +117,7 @@
             @test all(e -> e.state == :dimer, dimer_smld.emitters)
             
             # Check that all partners are included
-            dimer_ids = [e.id for e in dimer_smld.emitters]
+            dimer_ids = [e.track_id for e in dimer_smld.emitters]
             partner_ids = [e.partner_id for e in dimer_smld.emitters]
             @test all(id -> id in dimer_ids, partner_ids)
         end
@@ -235,10 +235,10 @@
                 for e in dimer_emitters
                     if !isnothing(e.partner_id)
                         # Find the partner emitter
-                        partner = findfirst(p -> p.id == e.partner_id, result.emitters)
+                        partner = findfirst(p -> p.track_id == e.partner_id, result.emitters)
                         if !isnothing(partner)
                             # Partner should have this emitter as its partner
-                            @test result.emitters[partner].partner_id == e.id
+                            @test result.emitters[partner].partner_id == e.track_id
                             # Partner should also be a dimer
                             @test result.emitters[partner].state == :dimer
                         end
