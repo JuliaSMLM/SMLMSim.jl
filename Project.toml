@@ -1,7 +1,7 @@
 name = "SMLMSim"
 uuid = "5a0a87e4-02d4-41f5-bf26-b8c94c784a04"
 authors = ["klidke@unm.edu"]
-version = "0.3.0"
+version = "0.3.1"
 
 [deps]
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
@@ -14,9 +14,7 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 [compat]
 Distributions = "0.25"
 MicroscopePSFs = "0.5"
-Printf = "1.11.0"
 SMLMData = "0.2"
-Statistics = "1.11.1"
 julia = "1.6"
 
 [extras]
