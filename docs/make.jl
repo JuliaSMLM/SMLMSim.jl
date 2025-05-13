@@ -15,7 +15,7 @@ makedocs(;
         canonical="https://JuliaSMLM.github.io/SMLMSim.jl",
         assets=String[],
     ),
-    doctest = true,
+    doctest = false,
     pages=[
         "Home" => "index.md",
         "Core Components" => [
