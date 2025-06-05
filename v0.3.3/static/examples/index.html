@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Examples · SMLMSim.jl</title><meta name="title" content="Examples · SMLMSim.jl"/><meta property="og:title" content="Examples · SMLMSim.jl"/><meta property="twitter:title" content="Examples · SMLMSim.jl"/><meta name="description" content="Documentation for SMLMSim.jl."/><meta property="og:description" content="Documentation for SMLMSim.jl."/><meta property="twitter:description" content="Documentation for SMLMSim.jl."/><meta property="og:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><meta property="twitter:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><link rel="canonical" href="https://JuliaSMLM.github.io/SMLMSim.jl/static/examples/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">SMLMSim.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Core Components</span><ul><li><a class="tocitem" href="../../core/patterns/">Patterns</a></li><li><a class="tocitem" href="../../core/photophysics/">Photophysics</a></li><li><a class="tocitem" href="../../core/noise/">Localization Uncertainty</a></li></ul></li><li><span class="tocitem">Static SMLM</span><ul><li><a class="tocitem" href="../overview/">Overview</a></li><li class="is-active"><a class="tocitem" href>Examples</a><ul class="internal"><li><a class="tocitem" href="#Basic-2D-Simulation"><span>Basic 2D Simulation</span></a></li><li><a class="tocitem" href="#3D-Simulation"><span>3D Simulation</span></a></li><li><a class="tocitem" href="#Generating-Microscope-Images"><span>Generating Microscope Images</span></a></li><li><a class="tocitem" href="#Advanced:-Custom-Pattern"><span>Advanced: Custom Pattern</span></a></li></ul></li></ul></li><li><span class="tocitem">Diffusion-Interaction</span><ul><li><a class="tocitem" href="../../diffusion/overview/">Overview</a></li><li><a class="tocitem" href="../../diffusion/examples/">Examples</a></li></ul></li><li><a class="tocitem" href="../../images/">Microscope Images</a></li><li><a class="tocitem" href="../../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Static SMLM</a></li><li class="is-active"><a href>Examples</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Examples</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl/blob/main/docs/src/static/examples.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Static-SMLM-Examples"><a class="docs-heading-anchor" href="#Static-SMLM-Examples">Static SMLM Examples</a><a id="Static-SMLM-Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Static-SMLM-Examples" title="Permalink"></a></h1><p>This page provides complete examples for using the static SMLM simulation capabilities of SMLMSim.</p><h2 id="Basic-2D-Simulation"><a class="docs-heading-anchor" href="#Basic-2D-Simulation">Basic 2D Simulation</a><a id="Basic-2D-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Basic-2D-Simulation" title="Permalink"></a></h2><p>This example demonstrates how to simulate and visualize a basic 2D SMLM dataset.</p><pre><code class="language-julia hljs">using SMLMSim
+using CairoMakie
+
+# Create camera with physical pixel size
+camera = IdealCamera(128, 64, 0.1)  # 128×64 pixels, 100nm pixels
+
+# Create simulation parameters
+params = StaticSMLMParams(
+    density = 1.0,        # patterns per μm²
+    σ_psf = 0.13,         # PSF width in μm
+)
+
+# Run simulation with specified pattern and camera
+smld_true, smld_model, smld_noisy = simulate(
+    params;
+    pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
+    camera=camera
+)
+
+# Extract coordinates and properties from emitters
+x_noisy = [e.x for e in smld_noisy.emitters]
+y_noisy = [e.y for e in smld_noisy.emitters]
+photons = [e.photons for e in smld_noisy.emitters]
+frame_nums = [e.frame for e in smld_noisy.emitters]
+
+# Create figure for visualization
+fig = Figure(size=(900, 600))
+
+# Super-resolution scatter plot
+ax1 = Axis(fig[1, 1],
+    title=&quot;Simulated SMLM Localizations&quot;,
+    xlabel=&quot;x (μm)&quot;,
+    ylabel=&quot;y (μm)&quot;,
+    aspect=DataAspect(),
+    yreversed=true  # Makes (0,0) at top-left
+)
+
+# Scatter plot with photon counts as color
+scatter!(ax1, x_noisy, y_noisy,
+    color=photons,
+    colormap=:viridis,
+    markersize=4,
+    alpha=0.6
+)
+
+# Return the figure
+fig</code></pre><img src="e0ca5d43.png" alt="Example block output"/><h2 id="3D-Simulation"><a class="docs-heading-anchor" href="#3D-Simulation">3D Simulation</a><a id="3D-Simulation-1"></a><a class="docs-heading-anchor-permalink" href="#3D-Simulation" title="Permalink"></a></h2><p>This example shows how to create and visualize 3D SMLM data.</p><pre><code class="language-julia hljs">using SMLMSim
+using CairoMakie
+
+# Create camera with physical pixel size
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
+
+# Create 3D simulation parameters
+params = StaticSMLMParams(
+    density = 0.5,        # emitters per μm²
+    σ_psf = 0.13,         # PSF width in μm
+    ndims = 3,            # 3D simulation
+    zrange = [-1.0, 1.0]  # 2μm axial range
+)
+
+# Run 3D simulation
+smld_true, smld_model, smld_noisy = simulate(
+    params;
+    pattern=Nmer3D(n=8, d=0.2),  # 3D pattern with 200nm diameter
+    camera=camera
+)
+
+# Extract 3D coordinates
+x = [e.x for e in smld_noisy.emitters]
+y = [e.y for e in smld_noisy.emitters]
+z = [e.z for e in smld_noisy.emitters]
+photons = [e.photons for e in smld_noisy.emitters]
+
+# Create 3D visualization
+fig = Figure(size=(900, 700))
+
+ax3d = Axis3(fig[1, 1],
+    xlabel=&quot;x (μm)&quot;,
+    ylabel=&quot;y (μm)&quot;,
+    zlabel=&quot;z (μm)&quot;,
+    title=&quot;3D SMLM Simulation&quot;,
+    aspect = :data
+)
+
+# Plot localizations with z-dependent color
+scatter!(ax3d, x, y, z,
+    color=z,
+    colormap=:viridis,
+    markersize=5,
+    alpha=0.6
+)
+
+fig</code></pre><img src="f453fea5.png" alt="Example block output"/><h2 id="Generating-Microscope-Images"><a class="docs-heading-anchor" href="#Generating-Microscope-Images">Generating Microscope Images</a><a id="Generating-Microscope-Images-1"></a><a class="docs-heading-anchor-permalink" href="#Generating-Microscope-Images" title="Permalink"></a></h2><p>This example shows how to generate synthetic microscope images from SMLM simulations:</p><pre><code class="language-julia hljs">using SMLMSim
+using MicroscopePSFs
+using CairoMakie
+
+# Create camera with physical pixel size
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
+
+# Create simulation parameters
+params = StaticSMLMParams(
+    density = 2.0,        # patterns per μm²
+    σ_psf = 0.13,         # 130nm PSF width
+    nframes = 100,        # 100 frames
+    framerate = 20.0      # 20 fps
+)
+
+# Run simulation
+smld_true, smld_model, smld_noisy = simulate(
+    params;
+    pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
+    camera=camera
+)
+
+# Create a PSF model (Gaussian with 150nm width)
+psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
+
+# Note: We use smld_model (not smld_noisy) to avoid double-counting uncertainty
+# smld_noisy already contains localization errors, and rendering camera images
+# naturally introduces noise, so using smld_noisy would apply noise twice
+# Generate image stack from emitter data with Poisson noise
+images = gen_images(smld_model, psf;
+    bg=5.0,            # background photons per pixel
+    poisson_noise=true  # add realistic shot noise
+)
+
+# Display a single frame
+fig = Figure(size=(800, 400))
+ax1 = Axis(fig[1, 1],
+    title=&quot;Simulated SMLM Image - Frame 20&quot;,
+    aspect=DataAspect(),
+    yreversed=true
+)
+
+# Show the 20th frame with inferno colormap
+heatmap!(ax1, transpose(images[:, :, 20]), colormap=:inferno)
+
+# Also display emitters for this frame
+ax2 = Axis(fig[1, 2],
+    title=&quot;Emitter Positions - Frame 20&quot;,
+    xlabel=&quot;x (μm)&quot;,
+    ylabel=&quot;y (μm)&quot;,
+    aspect=DataAspect()
+)
+
+# Extract emitters in frame 20
+frame20_emitters = filter(e -&gt; e.frame == 20, smld_model.emitters)
+x = [e.x for e in frame20_emitters]
+y = [e.y for e in frame20_emitters]
+photons = [e.photons for e in frame20_emitters]
+
+# Plot emitter positions
+scatter!(ax2, x, y,
+    color=photons,
+    colormap=:viridis,
+    markersize=10,
+    alpha=0.8
+)
+
+# Return the figure
+fig</code></pre><img src="fe82c199.png" alt="Example block output"/><p>The resulting <code>images</code> is a 3D array with dimensions <code>[height, width, frames]</code> that can be used for visualization, algorithm testing, or benchmarking localization software.</p><h2 id="Advanced:-Custom-Pattern"><a class="docs-heading-anchor" href="#Advanced:-Custom-Pattern">Advanced: Custom Pattern</a><a id="Advanced:-Custom-Pattern-1"></a><a class="docs-heading-anchor-permalink" href="#Advanced:-Custom-Pattern" title="Permalink"></a></h2><p>This example demonstrates creating a custom pattern type for simulation.</p><pre><code class="language-julia hljs">using SMLMSim
+using CairoMakie
+using Distributions
+
+# Define a custom pattern type: Grid with random jitter
+mutable struct JitteredGrid2D &lt;: Pattern2D
+    n::Int       # Total number of molecules
+    nx::Int      # Columns
+    ny::Int      # Rows
+    dx::Float64  # Column spacing
+    dy::Float64  # Row spacing
+    jitter::Float64  # Random position jitter
+    x::Vector{Float64}  # x positions
+    y::Vector{Float64}  # y positions
+end
+
+function JitteredGrid2D(; nx=5, ny=5, dx=0.05, dy=0.05, jitter=0.01)
+    n = nx * ny
+    x = zeros(n)
+    y = zeros(n)
+
+    idx = 1
+    for i in 1:nx, j in 1:ny
+        # Calculate regular grid position
+        grid_x = (i - (nx+1)/2) * dx
+        grid_y = (j - (ny+1)/2) * dy
+
+        # Add random jitter
+        jitter_x = rand(Normal(0, jitter))
+        jitter_y = rand(Normal(0, jitter))
+
+        # Store jittered position
+        x[idx] = grid_x + jitter_x
+        y[idx] = grid_y + jitter_y
+        idx += 1
+    end
+
+    return JitteredGrid2D(n, nx, ny, dx, dy, jitter, x, y)
+end
+
+# Create camera
+camera = IdealCamera(64, 64, 0.1)
+
+# Create custom pattern
+grid = JitteredGrid2D()
+
+# Create simulation parameters
+params = StaticSMLMParams(
+    density = 0.2,        # Patterns per μm²
+    nframes = 1000        # Number of frames
+)
+
+# Run simulation with custom pattern
+smld_true, smld_model, smld_noisy = simulate(
+    params;
+    pattern=grid,
+    camera=camera
+)
+
+# Visualization
+fig = Figure(size=(800, 600))
+
+# Plot ground truth vs. noisy localizations
+ax1 = Axis(fig[1, 1],
+    title=&quot;Ground Truth&quot;,
+    xlabel=&quot;x (μm)&quot;,
+    ylabel=&quot;y (μm)&quot;,
+    aspect=DataAspect()
+)
+
+ax2 = Axis(fig[1, 2],
+    title=&quot;Noisy Localizations&quot;,
+    xlabel=&quot;x (μm)&quot;,
+    ylabel=&quot;y (μm)&quot;,
+    aspect=DataAspect()
+)
+
+# Extract coordinates
+x_true = [e.x for e in smld_true.emitters]
+y_true = [e.y for e in smld_true.emitters]
+
+x_noisy = [e.x for e in smld_noisy.emitters]
+y_noisy = [e.y for e in smld_noisy.emitters]
+photons = [e.photons for e in smld_noisy.emitters]
+
+# Plot
+scatter!(ax1, x_true, y_true, color=:black, markersize=6)
+scatter!(ax2, x_noisy, y_noisy, color=photons, colormap=:viridis, markersize=3, alpha=0.5)
+
+# Return the figure
+fig</code></pre><img src="01f1c490.png" alt="Example block output"/></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../overview/">« Overview</a><a class="docs-footer-nextpage" href="../../diffusion/overview/">Overview »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Thursday 5 June 2025 20:07">Thursday 5 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
