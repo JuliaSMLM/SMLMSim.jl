@@ -179,11 +179,11 @@ line3d = Line3D(λ=8.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)])
 fluor = GenericFluor()
 
 # Create a fluorophore with custom parameters
-# γ=10,000 photons/s, k_off=10 Hz, k_on=0.1 Hz
-fluor = GenericFluor(1e4, [-10.0 10.0; 0.1 -0.1])
+# γ=100,000 photons/s, k_off=10 Hz, k_on=0.1 Hz
+fluor = GenericFluor(1e5, [-10.0 10.0; 0.1 -0.1])
 
 # Create a fluorophore using the 2-state keyword constructor
-fluor = GenericFluor(photons=1e4, k_off=5.0, k_on=0.5)
+fluor = GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2)
 ```
 
 ### Creating a Camera
@@ -238,7 +238,7 @@ Generate kinetic blinking model from existing localization data.
 # Example of how to call kinetic_model
 # First create or obtain the required inputs
 smld_true = ... # Some BasicSMLD with true positions
-fluor = GenericFluor(1e4, [-10.0 10.0; 0.5 -0.5])  # Fluorophore model
+fluor = GenericFluor(1e5, [-10.0 10.0; 0.5 -0.5])  # Fluorophore model
 nframes = 1000    # Number of frames
 framerate = 50.0  # Frames per second
 
@@ -429,7 +429,7 @@ params = StaticSMLMParams(
 pattern = Nmer2D(n=6, d=0.2)  # hexamer with 200nm diameter
 
 # 3. Define fluorophore model
-fluor = GenericFluor(photons=1e4, k_off=10.0, k_on=0.5)
+fluor = GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2)
 
 # 4. Run simulation
 smld_true, smld_model, smld_noisy = simulate(
@@ -496,7 +496,7 @@ params = StaticSMLMParams(density=1.0, σ_psf=0.13, nframes=1000)
 smld_true, smld_model, smld_noisy = simulate(
     params;
     pattern=Nmer2D(n=8, d=0.1),  # 100nm diameter ring
-    molecule=GenericFluor(1e4, [-10.0 10.0; 0.5 -0.5]),  # γ=10,000, k_off=10, k_on=0.5
+    molecule=GenericFluor(1e5, [-10.0 10.0; 0.5 -0.5]),  # γ=100,000, k_off=10, k_on=0.5
     camera=camera
 )
 
