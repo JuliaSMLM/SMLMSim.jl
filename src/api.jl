@@ -9,28 +9,28 @@ function _package_root()
 end
 
 # Path to the api_overview.md file
-const _API_OVERVIEW_PATH = joinpath(_package_root(), "api_overview.md")
+const _API_PATH = joinpath(_package_root(), "api_overview.md")
 
 # Load the content of the api_overview.md file if it exists
-const _API_OVERVIEW = if isfile(_API_OVERVIEW_PATH)
-    read(_API_OVERVIEW_PATH, String)
+const _API_CONTENT = if isfile(_API_PATH)
+    read(_API_PATH, String)
 else
     """
-    API overview documentation not found.
-    
-    Expected file: $(basename(_API_OVERVIEW_PATH))
-    Expected location: $(dirname(_API_OVERVIEW_PATH))
+    API documentation not found.
+
+    Expected file: $(basename(_API_PATH))
+    Expected location: $(dirname(_API_PATH))
     """
 end
 
 """
-$(_API_OVERVIEW)
+$(_API_CONTENT)
 
 ---
-`api_overview()` returns this documentation as a plain `String`.
+`api()` returns this documentation as a plain `String`.
 """
-function api_overview()
-    return _API_OVERVIEW
+function api()
+    return _API_CONTENT
 end
 
 # Note: No export statement - this function remains internal to the package

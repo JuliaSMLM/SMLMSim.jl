@@ -4,13 +4,13 @@
 Main module for the SMLMSim.jl package.
 
 # API Overview
-For a comprehensive overview of the API, use the help mode on `api_overview`:
+For a comprehensive overview of the API, use the help mode on `api`:
 
-    ?api_overview
+    ?api
 
 Or access the complete API documentation programmatically:
 
-    docs = SMLMSim.api_overview()
+    docs = SMLMSim.api()
 
 This package provides tools for simulating Single Molecule Localization Microscopy (SMLM) data.
 It includes modules for:
@@ -163,6 +163,6 @@ export
     gen_image,
     
 # API overview
-    api_overview
+    api
 
 end
