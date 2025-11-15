@@ -19,8 +19,10 @@ Generate camera images from SMLD data using the specified PSF model.
 - `sampling::Int=2`: Supersampling factor for PSF integration
 - `threaded::Bool=true`: Enable multithreading for faster computation
 - `bg::Float64=0.0`: Background signal level (photons per pixel)
-- `poisson_noise::Bool=false`: Apply Poisson noise
-- `camera_noise::Bool=false`: Apply camera read noise (Note: This feature is not yet implemented)
+- `poisson_noise::Bool=false`: Apply Poisson noise only (for simple shot noise)
+- `camera_noise::Bool=false`: Apply full camera noise model (requires SCMOSCamera)
+  - For SCMOSCamera: applies QE, Poisson, read noise, gain, and offset
+  - For IdealCamera: ignored (use poisson_noise instead)
 
 # Returns
 - 3D array of camera images with dimensions [height, width, num_frames]
@@ -105,10 +107,19 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
             end
         end
     end
-    
-    # TODO: Apply camera noise if requested
+
+    # Apply camera noise if requested
     if camera_noise
-        @warn "Camera noise model not yet implemented"
+        if camera isa SCMOSCamera
+            # Apply full sCMOS noise model (QE, Poisson, read noise, gain, offset) to each frame
+            for frame_idx in 1:size(images, 3)
+                frame = @view images[:, :, frame_idx]
+                scmos_noise!(frame, camera)
+            end
+        else
+            # For IdealCamera, camera_noise flag is ignored (IdealCamera is Poisson-only)
+            @warn "Camera noise only supported for SCMOSCamera. Use poisson_noise=true for IdealCamera." maxlog=1
+        end
     end
     
     return images

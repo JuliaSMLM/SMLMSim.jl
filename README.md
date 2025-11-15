@@ -116,6 +116,42 @@ images = gen_images(smld, psf;
 println("Generated $(size(images,3)) camera images.")
 ```
 
+### sCMOS Camera with Realistic Noise
+
+SMLMSim.jl 0.4+ supports realistic sCMOS camera noise modeling through SMLMData 0.4.
+
+```julia
+using SMLMSim
+using MicroscopePSFs
+
+# Create an sCMOS camera (128×128 pixels, 100nm pixels, 1.6 e⁻ read noise)
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
+
+# Run static simulation with sCMOS camera
+params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+smld_true, smld_model, smld_noisy = simulate(
+    params,
+    pattern=Nmer2D(n=8, d=0.1),
+    camera=camera_scmos
+)
+
+# Generate images with full sCMOS noise model
+# (quantum efficiency, Poisson, read noise, gain, offset)
+psf = GaussianPSF(0.15)
+images_scmos = gen_images(smld_noisy, psf, bg=10.0, camera_noise=true)
+
+# For diffusion simulations
+diff_params = DiffusionSMLMParams(density=0.5, box_size=10.0)
+smld_diff = simulate(diff_params; camera=camera_scmos, override_count=10)
+```
+
+The sCMOS noise model applies:
+1. **Quantum efficiency**: Photon → photoelectron conversion
+2. **Poisson noise**: Shot noise on photoelectrons
+3. **Read noise**: Gaussian noise per pixel
+4. **Gain**: Electron → ADU conversion
+5. **Offset**: Dark level addition
+
 ## Example Workflow: Static Simulation & Visualization
 
 ```julia

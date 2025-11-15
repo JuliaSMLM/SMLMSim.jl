@@ -27,6 +27,6 @@ include("noise.jl")
 export gen_images, gen_image
 
 # Export noise functions
-export poisson_noise, poisson_noise!
+export poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
 
 end # module

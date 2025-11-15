@@ -47,7 +47,7 @@ using Distributions
 using LinearAlgebra
 
 # Re-export critical types from SMLMData to make them available to users
-export AbstractCamera, IdealCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
+export AbstractCamera, IdealCamera, SCMOSCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
 
 # Core module (includes molecules.jl and patterns.jl internally)
 include("core/Core.jl")
