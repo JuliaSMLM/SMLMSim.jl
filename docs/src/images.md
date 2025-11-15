@@ -88,8 +88,8 @@ images = gen_images(smld_model, psf;
     sampling=2,                    # Supersampling factor for PSF integration
     threaded=true,                 # Enable multithreading for faster computation
     bg=0.0,                        # Background signal level (photons per pixel)
-    poisson_noise=false,           # Apply Poisson noise
-    camera_noise=false             # Apply camera read noise (not yet implemented)
+    poisson_noise=false,           # Apply Poisson noise only (simple shot noise)
+    camera_noise=false             # Apply full camera noise model (requires SCMOSCamera)
 )
 ```
 
@@ -118,6 +118,77 @@ images = gen_images(smld_model, psf, bg=10.0)
 ```
 
 When combined with Poisson noise, the background is included in the Poisson sampling process for a realistic noise model.
+
+### sCMOS Camera Noise
+
+!!! info "SMLMData 0.4+ Required"
+    sCMOS camera support requires SMLMData version 0.4 or higher.
+
+For realistic camera noise modeling, SMLMSim supports sCMOS cameras with per-pixel calibration parameters. This applies the full detection chain from photons to ADU (analog-to-digital units):
+
+```julia
+using SMLMSim
+using MicroscopePSFs
+
+# Create an sCMOS camera with realistic parameters
+# Parameters: width, height, pixel_size (μm), readnoise (e⁻ RMS)
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
+
+# Run simulation with sCMOS camera
+params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+smld_true, smld_model, smld_noisy = simulate(
+    params,
+    pattern=Nmer2D(n=8, d=0.1),
+    camera=camera_scmos
+)
+
+# Generate images with full sCMOS noise model
+psf = GaussianPSF(0.15)
+images = gen_images(smld_model, psf, bg=10.0, camera_noise=true)
+```
+
+The sCMOS noise model applies these transformations in order:
+
+1. **Quantum Efficiency (QE)**: Converts photons to photoelectrons (typically 70-95%)
+2. **Poisson Noise**: Shot noise on the photoelectron count
+3. **Read Noise**: Gaussian noise per pixel (amplifier/ADC noise)
+4. **Gain**: Converts electrons to ADU (e.g., 0.5 e⁻/ADU)
+5. **Offset**: Adds dark level baseline (e.g., 100 ADU)
+
+#### Advanced sCMOS Configuration
+
+You can specify all calibration parameters explicitly:
+
+```julia
+camera_scmos = SCMOSCamera(
+    128, 128, 0.1;
+    offset=100.0,      # 100 ADU dark level
+    gain=0.5,          # 0.5 e⁻/ADU conversion
+    readnoise=1.6,     # 1.6 e⁻ RMS read noise
+    qe=0.95            # 95% quantum efficiency
+)
+```
+
+Each parameter can be either:
+- A scalar value (uniform across all pixels)
+- A matrix (spatially varying, per-pixel calibration)
+
+#### IdealCamera vs SCMOSCamera
+
+```julia
+# IdealCamera: Use with poisson_noise for simple shot noise
+camera_ideal = IdealCamera(128, 128, 0.1)
+smld = BasicSMLD(emitters, camera_ideal, n_frames, n_datasets)
+images_ideal = gen_images(smld, psf, bg=10.0, poisson_noise=true)
+
+# SCMOSCamera: Use with camera_noise for realistic noise
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
+smld = BasicSMLD(emitters, camera_scmos, n_frames, n_datasets)
+images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
+```
+
+!!! warning "Camera Type Compatibility"
+    The `camera_noise=true` parameter only works with `SCMOSCamera`. Using it with `IdealCamera` will show a warning and be ignored. For `IdealCamera`, use `poisson_noise=true` instead.
 
 ### PSF Support Region
 
