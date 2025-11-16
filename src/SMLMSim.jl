@@ -78,7 +78,7 @@ using .InteractionDiffusion: DiffusionSMLMParams, get_dimers,
 using .StaticSMLM: StaticSMLMParams, apply_noise
 
 # Import from CameraImages
-using .CameraImages: gen_images, gen_image
+using .CameraImages: gen_images, gen_image, poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
 
 # Add this line to import the simulate methods
 using .InteractionDiffusion: simulate
@@ -161,7 +161,11 @@ export
 export
     gen_images,
     gen_image,
-    
+    poisson_noise,
+    poisson_noise!,
+    scmos_noise,
+    scmos_noise!,
+
 # API overview
     api
 

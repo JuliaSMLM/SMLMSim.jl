@@ -16,6 +16,7 @@ module CameraImages
 
 # All module imports should be at the top
 using SMLMData
+using SMLMData: AbstractCamera, IdealCamera, SCMOSCamera, SMLD, AbstractEmitter
 using MicroscopePSFs
 using Distributions  # Required for Poisson noise functions
 
