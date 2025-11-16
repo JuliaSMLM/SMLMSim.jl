@@ -186,9 +186,62 @@ display(fig)
 # save("smlm_hexamer.png", fig)
 ```
 
+## Example Workflow: Diffusion with Realistic sCMOS Noise
+
+This example demonstrates a complete workflow for single-particle tracking with realistic camera noise:
+
+```julia
+using SMLMSim
+using MicroscopePSFs
+using Statistics
+
+# Create sCMOS camera with realistic noise parameters
+camera_scmos = SCMOSCamera(64, 64, 0.1, 1.6)  # 64×64 pixels, 100nm/px, 1.6 e⁻ read noise
+
+# Run diffusion simulation
+params = DiffusionSMLMParams(
+    density = 1.0,           # 1 molecule/μm²
+    box_size = 6.4,          # 6.4×6.4 μm field
+    diff_monomer = 0.1,      # 0.1 μm²/s diffusion
+    t_max = 0.5,             # 0.5 second total
+    camera_framerate = 100.0 # 100 fps
+)
+smld = simulate(params; camera=camera_scmos, photons=200.0)
+
+# Generate images with full sCMOS noise model
+# (quantum efficiency, Poisson, read noise, gain, offset)
+psf = GaussianPSF(0.13)  # 130nm PSF
+images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
+
+# For comparison: same data with ideal camera (Poisson noise only)
+camera_ideal = IdealCamera(64, 64, 0.1)
+smld_ideal = BasicSMLD(smld.emitters, camera_ideal, smld.n_frames, smld.n_datasets)
+images_ideal = gen_images(smld_ideal, psf, bg=10.0, poisson_noise=true)
+
+# Compare statistics
+println("sCMOS: mean=$(round(mean(images_scmos), digits=1)) ADU, std=$(round(std(images_scmos), digits=1))")
+println("Ideal: mean=$(round(mean(images_ideal), digits=1)) photons, std=$(round(std(images_ideal), digits=1))")
+# sCMOS includes offset (~100 ADU) and spatially-varying gain/readnoise
+```
+
 ## Further Information
 
 For more detailed examples, API documentation, and explanations of the underlying models, please see the [Full Documentation](https://JuliaSMLM.github.io/SMLMSim.jl/dev).
+
+### Demo Scripts
+
+The `dev/` folder contains demonstration scripts showing sCMOS camera functionality:
+
+- **`dev/scmos_quick_demo.jl`** - Fast verification that sCMOS works (~5 seconds)
+- **`dev/scmos_video.jl`** - Generate MP4 showing sCMOS vs Ideal side-by-side
+- **`dev/scmos_demo.jl`** - Full diffusion simulation with extreme sCMOS artifacts
+
+Run from repository root:
+```bash
+julia --project dev/scmos_quick_demo.jl
+```
+
+Outputs are saved to `dev/outputs/` (gitignored).
 
 ## Contributors
 

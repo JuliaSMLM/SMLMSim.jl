@@ -190,6 +190,55 @@ images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
 !!! warning "Camera Type Compatibility"
     The `camera_noise=true` parameter only works with `SCMOSCamera`. Using it with `IdealCamera` will show a warning and be ignored. For `IdealCamera`, use `poisson_noise=true` instead.
 
+#### Spatially-Varying Calibration Maps
+
+Real sCMOS sensors have per-pixel variation in offset, gain, and readnoise. You can model this with calibration maps:
+
+```julia
+using SMLMSim
+using MicroscopePSFs
+
+# Create per-pixel calibration maps (128×128 sensor)
+n_pixels = 128
+
+# Readnoise: mean 1.6 e⁻ with ±0.3 e⁻ variation
+readnoise_map = 1.6 .+ 0.3 .* randn(n_pixels, n_pixels)
+readnoise_map = max.(readnoise_map, 0.5)  # Ensure positive values
+
+# Offset: mean 100 ADU with ±5 ADU variation plus gradient
+offset_map = zeros(n_pixels, n_pixels)
+for i in 1:n_pixels, j in 1:n_pixels
+    gradient = 10.0 * (i / n_pixels)  # Vertical gradient
+    noise = 5.0 * randn()
+    offset_map[i, j] = 100.0 + gradient + noise
+end
+
+# Gain: mostly uniform with slight pattern
+gain_map = 0.5 .+ 0.05 .* sin.(2π .* (1:n_pixels) ./ 20) * cos.(2π .* (1:n_pixels)' ./ 20)
+
+# Create sCMOS camera with spatially-varying calibration
+pixel_size = 0.1  # 100 nm
+camera_scmos = SCMOSCamera(
+    collect(0:pixel_size:(n_pixels*pixel_size)),
+    collect(0:pixel_size:(n_pixels*pixel_size)),
+    offset_map,
+    gain_map,
+    readnoise_map,
+    0.95  # Uniform quantum efficiency (could also be a matrix)
+)
+
+# Generate images with realistic spatial artifacts
+# (offset gradient, readnoise stripes, etc.)
+images = gen_images(smld, psf, bg=10.0, camera_noise=true)
+```
+
+This creates realistic spatial artifacts visible in the images, including:
+- **Offset gradients**: Fixed pattern across sensor
+- **Readnoise variation**: Some pixels noisier than others
+- **Gain non-uniformity**: Affects signal scaling
+
+For demonstration of extreme artifacts, see `dev/scmos_quick_demo.jl` in the repository.
+
 ### PSF Support Region
 
 The PSF support region controls how much of the PSF is calculated for each emitter, affecting both accuracy and performance. This parameter is specified in microns (μm):

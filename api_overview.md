@@ -498,12 +498,17 @@ smld = simulate(params)
 dimer_smld = get_dimers(smld)
 frames, fractions = analyze_dimer_fraction(smld)
 
-# 4. Generate microscope images with finite PSF support
+# 4. Generate microscope images with realistic sCMOS noise
+# Create sCMOS camera matching simulation box
+n_pixels = Int(ceil(params.box_size / 0.1))  # 0.1 μm pixels
+camera_scmos = SCMOSCamera(n_pixels, n_pixels, 0.1, 1.6)
+smld_cam = BasicSMLD(smld.emitters, camera_scmos, smld.n_frames, 1)
+
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld, psf; 
+images = gen_images(smld_cam, psf;
     support=1.0,         # 1.0 μm PSF support radius (faster)
     bg=5.0,              # Background photons per pixel
-    poisson_noise=true   # Add realistic photon counting noise
+    camera_noise=true    # Full sCMOS noise model (QE, Poisson, read noise, gain, offset)
 )
 ```
 
