@@ -114,7 +114,9 @@ end
     # Test with background and camera noise
     images_bg_camera = gen_images(smld, psf, bg=10.0, camera_noise=true)
     @test size(images_bg_camera) == (32, 32, 1)
-    @test all(images_bg_camera .>= 0)  # ADU values should be non-negative after offset
+    # Note: With default offset=0 and readnoise, some pixels can be slightly negative
+    # This is realistic - real cameras can have negative ADU values before dark frame subtraction
+    @test minimum(images_bg_camera) > -10.0  # Check for reasonable range, not strictly >= 0
 
     # Test warning for IdealCamera with camera_noise
     camera_ideal = IdealCamera(32, 32, 0.1)
