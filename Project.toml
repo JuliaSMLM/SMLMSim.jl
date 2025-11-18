@@ -4,23 +4,17 @@ version = "0.3.3"
 authors = ["klidke@unm.edu"]
 
 [deps]
-ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
-FixedPointNumbers = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MicroscopePSFs = "de9ac726-48a4-48ab-84b0-1c03c7c18929"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SMLMData = "5488f106-40b8-4660-84c5-84a168990d1b"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 
 [compat]
-ColorTypes = "0.12.1"
 Distributions = "0.25"
-FixedPointNumbers = "0.8.5"
 MicroscopePSFs = "0.5"
 SMLMData = "0.4, 0.5"
-VideoIO = "1.4.0"
 julia = "1.6"
 
 [extras]
