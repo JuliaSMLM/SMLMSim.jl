@@ -121,9 +121,6 @@ When combined with Poisson noise, the background is included in the Poisson samp
 
 ### sCMOS Camera Noise
 
-!!! info "SMLMData 0.4+ Required"
-    sCMOS camera support requires SMLMData version 0.4 or higher.
-
 For realistic camera noise modeling, SMLMSim supports sCMOS cameras with per-pixel calibration parameters. This applies the full detection chain from photons to ADU (analog-to-digital units):
 
 ```julia

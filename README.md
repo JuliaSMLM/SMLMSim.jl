@@ -118,7 +118,7 @@ println("Generated $(size(images,3)) camera images.")
 
 ### sCMOS Camera with Realistic Noise
 
-SMLMSim.jl 0.4+ supports realistic sCMOS camera noise modeling through SMLMData 0.4.
+SMLMSim supports realistic sCMOS camera noise modeling with per-pixel calibration.
 
 ```julia
 using SMLMSim
