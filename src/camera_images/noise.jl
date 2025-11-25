@@ -121,11 +121,11 @@ function scmos_noise(image::AbstractMatrix{T}, camera::SCMOSCamera) where T<:Rea
     # Apply sCMOS noise model to each pixel
     for j in 1:width
         for i in 1:height
-            # Get pixel-specific calibration parameters
-            qe = SMLMData.get_qe(camera, i, j)
-            gain = SMLMData.get_gain(camera, i, j)
-            offset = SMLMData.get_offset(camera, i, j)
-            readnoise = SMLMData.get_readnoise(camera, i, j)
+            # Get pixel-specific parameters (scalar or indexed)
+            qe = camera.qe isa Number ? camera.qe : camera.qe[i, j]
+            gain = camera.gain isa Number ? camera.gain : camera.gain[i, j]
+            offset = camera.offset isa Number ? camera.offset : camera.offset[i, j]
+            readnoise = camera.readnoise isa Number ? camera.readnoise : camera.readnoise[i, j]
 
             # 1. Apply quantum efficiency: photons -> photoelectrons
             photons = max(image[i, j], 0.0)
@@ -182,11 +182,11 @@ function scmos_noise!(image::AbstractMatrix{T}, camera::SCMOSCamera) where T<:Re
     # Apply sCMOS noise model to each pixel in-place
     for j in 1:width
         for i in 1:height
-            # Get pixel-specific calibration parameters
-            qe = SMLMData.get_qe(camera, i, j)
-            gain = SMLMData.get_gain(camera, i, j)
-            offset = SMLMData.get_offset(camera, i, j)
-            readnoise = SMLMData.get_readnoise(camera, i, j)
+            # Get pixel-specific parameters (scalar or indexed)
+            qe = camera.qe isa Number ? camera.qe : camera.qe[i, j]
+            gain = camera.gain isa Number ? camera.gain : camera.gain[i, j]
+            offset = camera.offset isa Number ? camera.offset : camera.offset[i, j]
+            readnoise = camera.readnoise isa Number ? camera.readnoise : camera.readnoise[i, j]
 
             # 1. Apply quantum efficiency: photons -> photoelectrons
             photons = max(image[i, j], 0.0)
