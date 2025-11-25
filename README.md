@@ -58,12 +58,14 @@ using SMLMSim
 
 # Set diffusion simulation parameters
 params = DiffusionSMLMParams(
-    density = 0.5,        # molecules per μm²
-    box_size = 10.0,      # μm
-    diff_monomer = 0.1,   # μm²/s
-    k_off = 0.2,          # s⁻¹ dimer dissociation rate
-    dt = 0.01,            # s simulation timestep
-    t_max = 10.0          # s total simulation time
+    density = 0.5,           # molecules per μm²
+    box_size = 10.0,         # μm
+    diff_monomer = 0.1,      # μm²/s
+    k_off = 0.2,             # s⁻¹ dimer dissociation rate
+    dt = 0.01,               # s simulation timestep
+    t_max = 10.0,            # s total simulation time
+    camera_framerate = 10.0, # 10 fps (100ms per frame)
+    camera_exposure = 0.1    # 100ms exposure integrates 10 timesteps per frame
 )
 
 # Run diffusion simulation
@@ -106,12 +108,13 @@ Create camera images from simulation results.
 using MicroscopePSFs # Needed for PSF types
 
 # Generate images from diffusion simulation output
+# Note: Frame timing is controlled by DiffusionSMLMParams (camera_framerate, camera_exposure)
+# Multiple simulation timesteps are automatically integrated during simulate()
 psf = GaussianPSF(0.15) # 150nm PSF width
-# Use smld_model to avoid double-counting localization errors
-images = gen_images(smld, psf; 
-    frame_integration=10, # 10 simulation time steps for each camera frame
-    support=1.0 # PSF support range
-    ) 
+images = gen_images(smld, psf;
+    support=1.0,        # PSF support radius in μm (faster than default Inf)
+    poisson_noise=true  # Add shot noise
+)
 
 println("Generated $(size(images,3)) camera images.")
 ```
