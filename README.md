@@ -58,12 +58,14 @@ using SMLMSim
 
 # Set diffusion simulation parameters
 params = DiffusionSMLMParams(
-    density = 0.5,        # molecules per μm²
-    box_size = 10.0,      # μm
-    diff_monomer = 0.1,   # μm²/s
-    k_off = 0.2,          # s⁻¹ dimer dissociation rate
-    dt = 0.01,            # s simulation timestep
-    t_max = 10.0          # s total simulation time
+    density = 0.5,           # molecules per μm²
+    box_size = 10.0,         # μm
+    diff_monomer = 0.1,      # μm²/s
+    k_off = 0.2,             # s⁻¹ dimer dissociation rate
+    dt = 0.01,               # s simulation timestep
+    t_max = 10.0,            # s total simulation time
+    camera_framerate = 10.0, # 10 fps (100ms per frame)
+    camera_exposure = 0.1    # 100ms exposure integrates 10 timesteps per frame
 )
 
 # Run diffusion simulation
@@ -106,15 +108,52 @@ Create camera images from simulation results.
 using MicroscopePSFs # Needed for PSF types
 
 # Generate images from diffusion simulation output
+# Note: Frame timing is controlled by DiffusionSMLMParams (camera_framerate, camera_exposure)
+# Multiple simulation timesteps are automatically integrated during simulate()
 psf = GaussianPSF(0.15) # 150nm PSF width
-# Use smld_model to avoid double-counting localization errors
-images = gen_images(smld, psf; 
-    frame_integration=10, # 10 simulation time steps for each camera frame
-    support=1.0 # PSF support range
-    ) 
+images = gen_images(smld, psf;
+    support=1.0,        # PSF support radius in μm (faster than default Inf)
+    poisson_noise=true  # Add shot noise
+)
 
 println("Generated $(size(images,3)) camera images.")
 ```
+
+### sCMOS Camera with Realistic Noise
+
+SMLMSim supports realistic sCMOS camera noise modeling with per-pixel calibration.
+
+```julia
+using SMLMSim
+using MicroscopePSFs
+
+# Create an sCMOS camera (128×128 pixels, 100nm pixels, 1.6 e⁻ read noise)
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
+
+# Run static simulation with sCMOS camera
+params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+smld_true, smld_model, smld_noisy = simulate(
+    params,
+    pattern=Nmer2D(n=8, d=0.1),
+    camera=camera_scmos
+)
+
+# Generate images with full sCMOS noise model
+# (quantum efficiency, Poisson, read noise, gain, offset)
+psf = GaussianPSF(0.15)
+images_scmos = gen_images(smld_noisy, psf, bg=10.0, camera_noise=true)
+
+# For diffusion simulations
+diff_params = DiffusionSMLMParams(density=0.5, box_size=10.0)
+smld_diff = simulate(diff_params; camera=camera_scmos, override_count=10)
+```
+
+The sCMOS noise model applies:
+1. **Quantum efficiency**: Photon → photoelectron conversion
+2. **Poisson noise**: Shot noise on photoelectrons
+3. **Read noise**: Gaussian noise per pixel
+4. **Gain**: Electron → ADU conversion
+5. **Offset**: Dark level addition
 
 ## Example Workflow: Static Simulation & Visualization
 
@@ -150,9 +189,62 @@ display(fig)
 # save("smlm_hexamer.png", fig)
 ```
 
+## Example Workflow: Diffusion with Realistic sCMOS Noise
+
+This example demonstrates a complete workflow for single-particle tracking with realistic camera noise:
+
+```julia
+using SMLMSim
+using MicroscopePSFs
+using Statistics
+
+# Create sCMOS camera with realistic noise parameters
+camera_scmos = SCMOSCamera(64, 64, 0.1, 1.6)  # 64×64 pixels, 100nm/px, 1.6 e⁻ read noise
+
+# Run diffusion simulation
+params = DiffusionSMLMParams(
+    density = 1.0,           # 1 molecule/μm²
+    box_size = 6.4,          # 6.4×6.4 μm field
+    diff_monomer = 0.1,      # 0.1 μm²/s diffusion
+    t_max = 0.5,             # 0.5 second total
+    camera_framerate = 100.0 # 100 fps
+)
+smld = simulate(params; camera=camera_scmos, photons=200.0)
+
+# Generate images with full sCMOS noise model
+# (quantum efficiency, Poisson, read noise, gain, offset)
+psf = GaussianPSF(0.13)  # 130nm PSF
+images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
+
+# For comparison: same data with ideal camera (Poisson noise only)
+camera_ideal = IdealCamera(64, 64, 0.1)
+smld_ideal = BasicSMLD(smld.emitters, camera_ideal, smld.n_frames, smld.n_datasets)
+images_ideal = gen_images(smld_ideal, psf, bg=10.0, poisson_noise=true)
+
+# Compare statistics
+println("sCMOS: mean=$(round(mean(images_scmos), digits=1)) ADU, std=$(round(std(images_scmos), digits=1))")
+println("Ideal: mean=$(round(mean(images_ideal), digits=1)) photons, std=$(round(std(images_ideal), digits=1))")
+# sCMOS includes offset (~100 ADU) and spatially-varying gain/readnoise
+```
+
 ## Further Information
 
 For more detailed examples, API documentation, and explanations of the underlying models, please see the [Full Documentation](https://JuliaSMLM.github.io/SMLMSim.jl/dev).
+
+### Demo Scripts
+
+The `dev/` folder contains demonstration scripts showing sCMOS camera functionality:
+
+- **`dev/scmos_quick_demo.jl`** - Fast verification that sCMOS works (~5 seconds)
+- **`dev/scmos_video.jl`** - Generate MP4 showing sCMOS vs Ideal side-by-side
+- **`dev/scmos_demo.jl`** - Full diffusion simulation with extreme sCMOS artifacts
+
+Run from repository root:
+```bash
+julia --project dev/scmos_quick_demo.jl
+```
+
+Outputs are saved to `dev/outputs/` (gitignored).
 
 ## Contributors
 

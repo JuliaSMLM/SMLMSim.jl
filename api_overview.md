@@ -189,13 +189,27 @@ fluor = GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2)
 ### Creating a Camera
 
 ```julia
-# Create a camera with 100nm pixels (128x128 pixels)
+# IdealCamera: Poisson noise only
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # Specify field of view with an array of pixel edges
 pixel_edges_x = 0.0:0.1:12.8  # 0 to 12.8μm in 0.1μm steps
 pixel_edges_y = 0.0:0.1:12.8
 camera = IdealCamera(pixel_edges_x, pixel_edges_y)
+
+# SCMOSCamera: Realistic noise model with per-pixel calibration (SMLMData 0.4+)
+# Parameters: width, height, pixel_size, readnoise
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
+
+# Advanced: Specify all calibration parameters
+# offset (ADU), gain (e⁻/ADU), readnoise (e⁻ RMS), quantum efficiency (0-1)
+camera_scmos = SCMOSCamera(
+    128, 128, 0.1;
+    offset=100.0,      # 100 ADU dark level
+    gain=0.5,          # 0.5 e⁻/ADU
+    readnoise=1.6,     # 1.6 e⁻ RMS
+    qe=0.95            # 95% quantum efficiency
+)
 ```
 
 ## Core Functions
@@ -287,8 +301,10 @@ images = gen_images(
     sampling=2,                    # Supersampling factor for PSF integration
     threaded=true,                 # Enable multithreading
     bg=0.0,                        # Background signal level (photons per pixel)
-    poisson_noise=false,           # Apply Poisson noise
-    camera_noise=false             # Apply camera read noise
+    poisson_noise=false,           # Apply Poisson noise only (simple shot noise)
+    camera_noise=false             # Apply full camera noise model (requires SCMOSCamera)
+                                   # - For SCMOSCamera: QE, Poisson, read noise, gain, offset
+                                   # - For IdealCamera: ignored (use poisson_noise instead)
 )
 
 # The support parameter controls PSF computation region:
@@ -301,6 +317,17 @@ support=1.0  # 1.0 µm radius around each emitter
 
 # 3. Tuple (xmin, xmax, ymin, ymax): Explicit region in microns
 support=(4.0, 6.0, 4.0, 6.0)  # Only compute PSF within this region
+
+# Example: sCMOS camera with realistic noise
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
+smld = BasicSMLD(emitters, camera_scmos, n_frames, n_datasets)
+images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
+# Applies: QE → Poisson → read noise → gain → offset
+
+# Example: IdealCamera with Poisson noise only
+camera_ideal = IdealCamera(128, 128, 0.1)
+smld = BasicSMLD(emitters, camera_ideal, n_frames, n_datasets)
+images_poisson = gen_images(smld, psf, bg=10.0, poisson_noise=true)
 ```
 
 #### gen_image
@@ -471,12 +498,17 @@ smld = simulate(params)
 dimer_smld = get_dimers(smld)
 frames, fractions = analyze_dimer_fraction(smld)
 
-# 4. Generate microscope images with finite PSF support
+# 4. Generate microscope images with realistic sCMOS noise
+# Create sCMOS camera matching simulation box
+n_pixels = Int(ceil(params.box_size / 0.1))  # 0.1 μm pixels
+camera_scmos = SCMOSCamera(n_pixels, n_pixels, 0.1, 1.6)
+smld_cam = BasicSMLD(smld.emitters, camera_scmos, smld.n_frames, 1)
+
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld, psf; 
+images = gen_images(smld_cam, psf;
     support=1.0,         # 1.0 μm PSF support radius (faster)
     bg=5.0,              # Background photons per pixel
-    poisson_noise=true   # Add realistic photon counting noise
+    camera_noise=true    # Full sCMOS noise model (QE, Poisson, read noise, gain, offset)
 )
 ```
 

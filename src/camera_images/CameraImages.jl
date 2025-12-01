@@ -16,6 +16,7 @@ module CameraImages
 
 # All module imports should be at the top
 using SMLMData
+using SMLMData: AbstractCamera, IdealCamera, SCMOSCamera, SMLD, AbstractEmitter
 using MicroscopePSFs
 using Distributions  # Required for Poisson noise functions
 
@@ -27,6 +28,6 @@ include("noise.jl")
 export gen_images, gen_image
 
 # Export noise functions
-export poisson_noise, poisson_noise!
+export poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
 
 end # module

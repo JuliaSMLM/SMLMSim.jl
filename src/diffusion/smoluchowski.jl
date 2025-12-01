@@ -349,11 +349,14 @@ with emitters that have both frame number and timestamp information.
 
 # Arguments
 - `params::DiffusionSMLMParams`: Simulation parameters
-- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}`: Optional starting emitters
-- `photons::Float64=1000.0`: Number of photons per emitter
-- `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 
 # Keyword Arguments
+- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing`: Optional starting emitters
+- `photons::Float64=1000.0`: Number of photons per emitter
+- `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
+- `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model (default: IdealCamera with 100nm pixels)
+  - If `nothing`, creates IdealCamera with dimensions matching box_size
+  - Can specify SCMOSCamera for realistic noise modeling
 - Any additional parameters are ignored (allows unified interface with other simulate methods)
 
 # Returns
@@ -381,18 +384,21 @@ final_state_emitters = filter(e -> e.frame == final_frame, smld.emitters)
 smld_continued = simulate(params; starting_conditions=final_state_emitters)
 ```
 """
-function simulate(params::DiffusionSMLMParams; 
+function simulate(params::DiffusionSMLMParams;
                  starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
-                 photons::Float64=1000.0, 
+                 photons::Float64=1000.0,
                  override_count::Union{Nothing, Int}=nothing,
+                 camera::Union{Nothing, AbstractCamera}=nothing,
                  kwargs...)
     # Initialize
     n_steps = round(Int, params.t_max / params.dt)
-    
-    # Create camera
-    pixel_size = 0.1  # 100nm pixels
-    n_pixels = ceil(Int, params.box_size / pixel_size)
-    camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
+
+    # Create camera if not provided
+    if camera === nothing
+        pixel_size = 0.1  # 100nm pixels
+        n_pixels = ceil(Int, params.box_size / pixel_size)
+        camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
+    end
     
     # Initialize emitters
     if starting_conditions !== nothing

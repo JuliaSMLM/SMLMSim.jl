@@ -47,7 +47,7 @@ using Distributions
 using LinearAlgebra
 
 # Re-export critical types from SMLMData to make them available to users
-export AbstractCamera, IdealCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
+export AbstractCamera, IdealCamera, SCMOSCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
 
 # Core module (includes molecules.jl and patterns.jl internally)
 include("core/Core.jl")
@@ -78,7 +78,7 @@ using .InteractionDiffusion: DiffusionSMLMParams, get_dimers,
 using .StaticSMLM: StaticSMLMParams, apply_noise
 
 # Import from CameraImages
-using .CameraImages: gen_images, gen_image
+using .CameraImages: gen_images, gen_image, poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
 
 # Add this line to import the simulate methods
 using .InteractionDiffusion: simulate
@@ -161,7 +161,11 @@ export
 export
     gen_images,
     gen_image,
-    
+    poisson_noise,
+    poisson_noise!,
+    scmos_noise,
+    scmos_noise!,
+
 # API overview
     api
 

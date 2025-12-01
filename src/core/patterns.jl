@@ -332,7 +332,15 @@ nmer = Nmer2D(; n=6, d=0.2)
 x, y = uniform2D(1.0, nmer, 10.0, 10.0)
 ```
 """
-function uniform2D(ρ::T, p::Pattern2D, field_x::T, field_y::T) where T <: AbstractFloat
+function uniform2D(ρ::T1, p::Pattern2D, field_x::T2, field_y::T3) where {T1<:AbstractFloat, T2<:AbstractFloat, T3<:AbstractFloat}
+    # Promote all types to common type for type-stable computation
+    T = promote_type(T1, T2, T3)
+    ρ_T, field_x_T, field_y_T = T(ρ), T(field_x), T(field_y)
+    return _uniform2D_impl(ρ_T, p, field_x_T, field_y_T)
+end
+
+# Internal implementation with homogeneous types
+function _uniform2D_impl(ρ::T, p::Pattern2D, field_x::T, field_y::T) where T <: AbstractFloat
     # Generate random number of patterns
     npatterns = rand(Poisson(field_x * field_y * ρ))
     ntotal = npatterns * p.n
@@ -381,7 +389,17 @@ nmer = Nmer3D(; n=6, d=0.2)
 x, y, z = uniform3D(1.0, nmer, 10.0, 10.0; zrange=[-2.0, 2.0])
 ```
 """
-function uniform3D(ρ::T, p::Pattern3D, field_x::T, field_y::T;
+function uniform3D(ρ::T1, p::Pattern3D, field_x::T2, field_y::T3;
+                  zrange::Vector{<:AbstractFloat}=[-1.0, 1.0]) where {T1<:AbstractFloat, T2<:AbstractFloat, T3<:AbstractFloat}
+    # Promote all types to common type for type-stable computation
+    T = promote_type(T1, T2, T3, eltype(zrange))
+    ρ_T, field_x_T, field_y_T = T(ρ), T(field_x), T(field_y)
+    zrange_T = T.(zrange)
+    return _uniform3D_impl(ρ_T, p, field_x_T, field_y_T; zrange=zrange_T)
+end
+
+# Internal implementation with homogeneous types
+function _uniform3D_impl(ρ::T, p::Pattern3D, field_x::T, field_y::T;
                   zrange::Vector{T}=T[-1.0, 1.0]) where T <: AbstractFloat
     # Input validation
     if length(zrange) != 2 || zrange[1] >= zrange[2]

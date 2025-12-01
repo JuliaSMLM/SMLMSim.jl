@@ -8,3 +8,6 @@ examples/Manifest.toml
 *.mp4
 *.png
 *.tif
+
+# Dev outputs folder for examples and demos
+dev/outputs/
