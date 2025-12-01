@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Microscope Images · SMLMSim.jl</title><meta name="title" content="Microscope Images · SMLMSim.jl"/><meta property="og:title" content="Microscope Images · SMLMSim.jl"/><meta property="twitter:title" content="Microscope Images · SMLMSim.jl"/><meta name="description" content="Documentation for SMLMSim.jl."/><meta property="og:description" content="Documentation for SMLMSim.jl."/><meta property="twitter:description" content="Documentation for SMLMSim.jl."/><meta property="og:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/images/"/><meta property="twitter:url" content="https://JuliaSMLM.github.io/SMLMSim.jl/images/"/><link rel="canonical" href="https://JuliaSMLM.github.io/SMLMSim.jl/images/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">SMLMSim.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li><span class="tocitem">Core Components</span><ul><li><a class="tocitem" href="../core/patterns/">Patterns</a></li><li><a class="tocitem" href="../core/photophysics/">Photophysics</a></li><li><a class="tocitem" href="../core/noise/">Localization Uncertainty</a></li></ul></li><li><span class="tocitem">Static SMLM</span><ul><li><a class="tocitem" href="../static/overview/">Overview</a></li><li><a class="tocitem" href="../static/examples/">Examples</a></li></ul></li><li><span class="tocitem">Diffusion-Interaction</span><ul><li><a class="tocitem" href="../diffusion/overview/">Overview</a></li><li><a class="tocitem" href="../diffusion/examples/">Examples</a></li></ul></li><li class="is-active"><a class="tocitem" href>Microscope Images</a><ul class="internal"><li><a class="tocitem" href="#Overview"><span>Overview</span></a></li><li><a class="tocitem" href="#Basic-Image-Generation"><span>Basic Image Generation</span></a></li><li><a class="tocitem" href="#Function-Parameters"><span>Function Parameters</span></a></li><li><a class="tocitem" href="#Noise-Options"><span>Noise Options</span></a></li><li><a class="tocitem" href="#Working-with-Image-Stacks"><span>Working with Image Stacks</span></a></li></ul></li><li><a class="tocitem" href="../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Microscope Images</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Microscope Images</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaSMLM/SMLMSim.jl/blob/main/docs/src/images.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Microscope-Image-Generation"><a class="docs-heading-anchor" href="#Microscope-Image-Generation">Microscope Image Generation</a><a id="Microscope-Image-Generation-1"></a><a class="docs-heading-anchor-permalink" href="#Microscope-Image-Generation" title="Permalink"></a></h1><p>This page explains how to generate realistic microscope images from simulated SMLM data and the available noise options.</p><h2 id="Overview"><a class="docs-heading-anchor" href="#Overview">Overview</a><a id="Overview-1"></a><a class="docs-heading-anchor-permalink" href="#Overview" title="Permalink"></a></h2><p>SMLMSim can convert SMLD objects containing emitter coordinates into realistic microscope image stacks using point spread function (PSF) models. This functionality enables:</p><ul><li>Creating synthetic microscope data for algorithm testing</li><li>Visualizing simulated molecules</li><li>Generating training data for deep learning models</li><li>Testing localization algorithms with realistic inputs</li></ul><h2 id="Basic-Image-Generation"><a class="docs-heading-anchor" href="#Basic-Image-Generation">Basic Image Generation</a><a id="Basic-Image-Generation-1"></a><a class="docs-heading-anchor-permalink" href="#Basic-Image-Generation" title="Permalink"></a></h2><p>The primary functions for creating images are:</p><ul><li><code>gen_images</code>: Generate multiple frames (3D stack)</li><li><code>gen_image</code>: Generate a single frame (2D image)</li></ul><h3 id="Creating-a-Full-Image-Stack"><a class="docs-heading-anchor" href="#Creating-a-Full-Image-Stack">Creating a Full Image Stack</a><a id="Creating-a-Full-Image-Stack-1"></a><a class="docs-heading-anchor-permalink" href="#Creating-a-Full-Image-Stack" title="Permalink"></a></h3><p>To generate a complete image stack from an SMLD object:</p><pre><code class="language-julia hljs">using SMLMSim
+using MicroscopePSFs
+
+# Create or load an SMLD object
+# (This could be from either static or diffusion simulation)
+params = StaticSMLMParams(density=1.0, σ_psf=0.13, nframes=1000)
+camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
+pattern = Nmer2D(n=6, d=0.2)  # Hexamer with 200nm diameter
+molecule = GenericFluor(1e4, [-50.0 50.0; 1e-2 -1e-2])  # Blinking model
+
+# Run simulation
+smld_true, smld_model, smld_noisy = simulate(params, pattern=pattern, molecule=molecule, camera=camera)
+
+# Create a PSF model (Gaussian with 150nm width)
+psf = GaussianPSF(0.15)  # 150nm PSF width
+
+# Generate image stack from emitter data
+images = gen_images(smld_model, psf; 
+    bg=5.0,             # background photons per pixel
+    poisson_noise=true  # add realistic photon counting noise
+)</code></pre><p>The resulting <code>images</code> is a 3D array with dimensions <code>[height, width, frames]</code> that can be used for visualization or algorithm development.</p><h3 id="Creating-a-Single-Frame"><a class="docs-heading-anchor" href="#Creating-a-Single-Frame">Creating a Single Frame</a><a id="Creating-a-Single-Frame-1"></a><a class="docs-heading-anchor-permalink" href="#Creating-a-Single-Frame" title="Permalink"></a></h3><p>To generate an image for a specific frame:</p><pre><code class="language-julia hljs"># Generate image for frame 10
+frame_image = gen_image(smld_model, psf, 10;
+    bg=5.0,
+    poisson_noise=true
+)</code></pre><h2 id="Function-Parameters"><a class="docs-heading-anchor" href="#Function-Parameters">Function Parameters</a><a id="Function-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Function-Parameters" title="Permalink"></a></h2><p>The <code>gen_images</code> function has the following signature:</p><pre><code class="language-julia hljs">gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -&gt; Array{T, 3} where T&lt;:Real</code></pre><h3 id="Required-Parameters"><a class="docs-heading-anchor" href="#Required-Parameters">Required Parameters</a><a id="Required-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Required-Parameters" title="Permalink"></a></h3><ul><li><code>smld::SMLD</code>: Single molecule localization data container</li><li><code>psf::AbstractPSF</code>: Point spread function model from MicroscopePSFs.jl</li></ul><h3 id="Optional-Keyword-Arguments"><a class="docs-heading-anchor" href="#Optional-Keyword-Arguments">Optional Keyword Arguments</a><a id="Optional-Keyword-Arguments-1"></a><a class="docs-heading-anchor-permalink" href="#Optional-Keyword-Arguments" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Complete example with all available options
+images = gen_images(smld_model, psf;
+    dataset::Int=1,                # Dataset number to use from SMLD
+    frames=nothing,                # Specific frames to generate (default: all frames)
+    support=Inf,                   # PSF support region size in μm (Inf, scalar, or tuple)
+    sampling=2,                    # Supersampling factor for PSF integration
+    threaded=true,                 # Enable multithreading for faster computation
+    bg=0.0,                        # Background signal level (photons per pixel)
+    poisson_noise=false,           # Apply Poisson noise only (simple shot noise)
+    camera_noise=false             # Apply full camera noise model (requires SCMOSCamera)
+)</code></pre><h2 id="Noise-Options"><a class="docs-heading-anchor" href="#Noise-Options">Noise Options</a><a id="Noise-Options-1"></a><a class="docs-heading-anchor-permalink" href="#Noise-Options" title="Permalink"></a></h2><p>Realistic microscope images include various noise sources. SMLMSim supports the following options:</p><h3 id="Photon-Shot-Noise"><a class="docs-heading-anchor" href="#Photon-Shot-Noise">Photon Shot Noise</a><a id="Photon-Shot-Noise-1"></a><a class="docs-heading-anchor-permalink" href="#Photon-Shot-Noise" title="Permalink"></a></h3><p>Photon shot noise follows a Poisson distribution and is the most fundamental noise source in fluorescence microscopy:</p><pre><code class="language-julia hljs"># Enable Poisson noise (default: false)
+images = gen_images(smld_model, psf, poisson_noise=true)</code></pre><p>When enabled, each pixel&#39;s intensity is drawn from a Poisson distribution with λ equal to the expected photon count.</p><h3 id="Background-Signal"><a class="docs-heading-anchor" href="#Background-Signal">Background Signal</a><a id="Background-Signal-1"></a><a class="docs-heading-anchor-permalink" href="#Background-Signal" title="Permalink"></a></h3><p>Background noise can be added as a constant offset to all pixels:</p><pre><code class="language-julia hljs"># Add background signal (photons per pixel)
+images = gen_images(smld_model, psf, bg=10.0)</code></pre><p>When combined with Poisson noise, the background is included in the Poisson sampling process for a realistic noise model.</p><h3 id="sCMOS-Camera-Noise"><a class="docs-heading-anchor" href="#sCMOS-Camera-Noise">sCMOS Camera Noise</a><a id="sCMOS-Camera-Noise-1"></a><a class="docs-heading-anchor-permalink" href="#sCMOS-Camera-Noise" title="Permalink"></a></h3><p>For realistic camera noise modeling, SMLMSim supports sCMOS cameras with per-pixel calibration parameters. This applies the full detection chain from photons to ADU (analog-to-digital units):</p><pre><code class="language-julia hljs">using SMLMSim
+using MicroscopePSFs
+
+# Create an sCMOS camera with realistic parameters
+# Parameters: width, height, pixel_size (μm), readnoise (e⁻ RMS)
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
+
+# Run simulation with sCMOS camera
+params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+smld_true, smld_model, smld_noisy = simulate(
+    params,
+    pattern=Nmer2D(n=8, d=0.1),
+    camera=camera_scmos
+)
+
+# Generate images with full sCMOS noise model
+psf = GaussianPSF(0.15)
+images = gen_images(smld_model, psf, bg=10.0, camera_noise=true)</code></pre><p>The sCMOS noise model applies these transformations in order:</p><ol><li><strong>Quantum Efficiency (QE)</strong>: Converts photons to photoelectrons (typically 70-95%)</li><li><strong>Poisson Noise</strong>: Shot noise on the photoelectron count</li><li><strong>Read Noise</strong>: Gaussian noise per pixel (amplifier/ADC noise)</li><li><strong>Gain</strong>: Converts electrons to ADU (e.g., 0.5 e⁻/ADU)</li><li><strong>Offset</strong>: Adds dark level baseline (e.g., 100 ADU)</li></ol><h4 id="Advanced-sCMOS-Configuration"><a class="docs-heading-anchor" href="#Advanced-sCMOS-Configuration">Advanced sCMOS Configuration</a><a id="Advanced-sCMOS-Configuration-1"></a><a class="docs-heading-anchor-permalink" href="#Advanced-sCMOS-Configuration" title="Permalink"></a></h4><p>You can specify all calibration parameters explicitly:</p><pre><code class="language-julia hljs">camera_scmos = SCMOSCamera(
+    128, 128, 0.1;
+    offset=100.0,      # 100 ADU dark level
+    gain=0.5,          # 0.5 e⁻/ADU conversion
+    readnoise=1.6,     # 1.6 e⁻ RMS read noise
+    qe=0.95            # 95% quantum efficiency
+)</code></pre><p>Each parameter can be either:</p><ul><li>A scalar value (uniform across all pixels)</li><li>A matrix (spatially varying, per-pixel calibration)</li></ul><h4 id="IdealCamera-vs-SCMOSCamera"><a class="docs-heading-anchor" href="#IdealCamera-vs-SCMOSCamera">IdealCamera vs SCMOSCamera</a><a id="IdealCamera-vs-SCMOSCamera-1"></a><a class="docs-heading-anchor-permalink" href="#IdealCamera-vs-SCMOSCamera" title="Permalink"></a></h4><pre><code class="language-julia hljs"># IdealCamera: Use with poisson_noise for simple shot noise
+camera_ideal = IdealCamera(128, 128, 0.1)
+smld = BasicSMLD(emitters, camera_ideal, n_frames, n_datasets)
+images_ideal = gen_images(smld, psf, bg=10.0, poisson_noise=true)
+
+# SCMOSCamera: Use with camera_noise for realistic noise
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
+smld = BasicSMLD(emitters, camera_scmos, n_frames, n_datasets)
+images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)</code></pre><div class="admonition is-warning" id="Camera-Type-Compatibility-d2622ca936c13f74"><header class="admonition-header">Camera Type Compatibility<a class="admonition-anchor" href="#Camera-Type-Compatibility-d2622ca936c13f74" title="Permalink"></a></header><div class="admonition-body"><p>The <code>camera_noise=true</code> parameter only works with <code>SCMOSCamera</code>. Using it with <code>IdealCamera</code> will show a warning and be ignored. For <code>IdealCamera</code>, use <code>poisson_noise=true</code> instead.</p></div></div><h4 id="Spatially-Varying-Calibration-Maps"><a class="docs-heading-anchor" href="#Spatially-Varying-Calibration-Maps">Spatially-Varying Calibration Maps</a><a id="Spatially-Varying-Calibration-Maps-1"></a><a class="docs-heading-anchor-permalink" href="#Spatially-Varying-Calibration-Maps" title="Permalink"></a></h4><p>Real sCMOS sensors have per-pixel variation in offset, gain, and readnoise. You can model this with calibration maps:</p><pre><code class="language-julia hljs">using SMLMSim
+using MicroscopePSFs
+
+# Create per-pixel calibration maps (128×128 sensor)
+n_pixels = 128
+
+# Readnoise: mean 1.6 e⁻ with ±0.3 e⁻ variation
+readnoise_map = 1.6 .+ 0.3 .* randn(n_pixels, n_pixels)
+readnoise_map = max.(readnoise_map, 0.5)  # Ensure positive values
+
+# Offset: mean 100 ADU with ±5 ADU variation plus gradient
+offset_map = zeros(n_pixels, n_pixels)
+for i in 1:n_pixels, j in 1:n_pixels
+    gradient = 10.0 * (i / n_pixels)  # Vertical gradient
+    noise = 5.0 * randn()
+    offset_map[i, j] = 100.0 + gradient + noise
+end
+
+# Gain: mostly uniform with slight pattern
+gain_map = 0.5 .+ 0.05 .* sin.(2π .* (1:n_pixels) ./ 20) * cos.(2π .* (1:n_pixels)&#39; ./ 20)
+
+# Create sCMOS camera with spatially-varying calibration
+pixel_size = 0.1  # 100 nm
+camera_scmos = SCMOSCamera(
+    collect(0:pixel_size:(n_pixels*pixel_size)),
+    collect(0:pixel_size:(n_pixels*pixel_size)),
+    offset_map,
+    gain_map,
+    readnoise_map,
+    0.95  # Uniform quantum efficiency (could also be a matrix)
+)
+
+# Generate images with realistic spatial artifacts
+# (offset gradient, readnoise stripes, etc.)
+images = gen_images(smld, psf, bg=10.0, camera_noise=true)</code></pre><p>This creates realistic spatial artifacts visible in the images, including:</p><ul><li><strong>Offset gradients</strong>: Fixed pattern across sensor</li><li><strong>Readnoise variation</strong>: Some pixels noisier than others</li><li><strong>Gain non-uniformity</strong>: Affects signal scaling</li></ul><p>For demonstration of extreme artifacts, see <code>dev/scmos_quick_demo.jl</code> in the repository.</p><h3 id="PSF-Support-Region"><a class="docs-heading-anchor" href="#PSF-Support-Region">PSF Support Region</a><a id="PSF-Support-Region-1"></a><a class="docs-heading-anchor-permalink" href="#PSF-Support-Region" title="Permalink"></a></h3><p>The PSF support region controls how much of the PSF is calculated for each emitter, affecting both accuracy and performance. This parameter is specified in microns (μm):</p><pre><code class="language-julia hljs"># Define a small support region (faster but may truncate PSF wings)
+images = gen_images(smld_model, psf, support=3.0)  # 3.0 μm radius around each emitter
+
+# Define a rectangular support region
+images = gen_images(smld_model, psf, support=(3.0, 3.0, 1.0, 1.0))  # (left, right, bottom, top) in μm
+
+# Use infinite support (most accurate but slowest)
+images = gen_images(smld_model, psf, support=Inf)</code></pre><p>Reducing the support region can significantly improve performance for large datasets at the cost of some accuracy. For most PSFs, a support radius of 3-5 times the PSF width (σ) is sufficient (typically 0.5-1.0 μm for a standard SMLM PSF).</p><h2 id="Working-with-Image-Stacks"><a class="docs-heading-anchor" href="#Working-with-Image-Stacks">Working with Image Stacks</a><a id="Working-with-Image-Stacks-1"></a><a class="docs-heading-anchor-permalink" href="#Working-with-Image-Stacks" title="Permalink"></a></h2><p>The generated images can be visualized using various Julia plotting libraries:</p><pre><code class="language-julia hljs">using CairoMakie  # or GLMakie, etc.
+
+# Display a single frame
+fig = Figure()
+ax = Axis(fig[1, 1], yreversed=true)
+heatmap!(ax, images[:, :, 10]&#39;, colormap = :inferno)
+display(fig)
+
+# Create and save a movie from all frames
+fig = Figure()
+ax = Axis(fig[1, 1], yreversed=true)
+
+# record will clear and redraw each frame for you
+record(fig, &quot;smlm_simulation.mp4&quot;, 1:size(images, 3); framerate = 10) do i
+    heatmap!(ax, images[:, :, i]&#39;, colormap = :inferno)
+end</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../diffusion/examples/">« Examples</a><a class="docs-footer-nextpage" href="../api/">API Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Monday 1 December 2025 22:12">Monday 1 December 2025</span>. Using Julia version 1.12.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
