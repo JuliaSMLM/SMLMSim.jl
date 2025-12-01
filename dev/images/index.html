@@ -31,11 +31,76 @@ images = gen_images(smld_model, psf;
     sampling=2,                    # Supersampling factor for PSF integration
     threaded=true,                 # Enable multithreading for faster computation
     bg=0.0,                        # Background signal level (photons per pixel)
-    poisson_noise=false,           # Apply Poisson noise
-    camera_noise=false             # Apply camera read noise (not yet implemented)
+    poisson_noise=false,           # Apply Poisson noise only (simple shot noise)
+    camera_noise=false             # Apply full camera noise model (requires SCMOSCamera)
 )</code></pre><h2 id="Noise-Options"><a class="docs-heading-anchor" href="#Noise-Options">Noise Options</a><a id="Noise-Options-1"></a><a class="docs-heading-anchor-permalink" href="#Noise-Options" title="Permalink"></a></h2><p>Realistic microscope images include various noise sources. SMLMSim supports the following options:</p><h3 id="Photon-Shot-Noise"><a class="docs-heading-anchor" href="#Photon-Shot-Noise">Photon Shot Noise</a><a id="Photon-Shot-Noise-1"></a><a class="docs-heading-anchor-permalink" href="#Photon-Shot-Noise" title="Permalink"></a></h3><p>Photon shot noise follows a Poisson distribution and is the most fundamental noise source in fluorescence microscopy:</p><pre><code class="language-julia hljs"># Enable Poisson noise (default: false)
 images = gen_images(smld_model, psf, poisson_noise=true)</code></pre><p>When enabled, each pixel&#39;s intensity is drawn from a Poisson distribution with λ equal to the expected photon count.</p><h3 id="Background-Signal"><a class="docs-heading-anchor" href="#Background-Signal">Background Signal</a><a id="Background-Signal-1"></a><a class="docs-heading-anchor-permalink" href="#Background-Signal" title="Permalink"></a></h3><p>Background noise can be added as a constant offset to all pixels:</p><pre><code class="language-julia hljs"># Add background signal (photons per pixel)
-images = gen_images(smld_model, psf, bg=10.0)</code></pre><p>When combined with Poisson noise, the background is included in the Poisson sampling process for a realistic noise model.</p><h3 id="PSF-Support-Region"><a class="docs-heading-anchor" href="#PSF-Support-Region">PSF Support Region</a><a id="PSF-Support-Region-1"></a><a class="docs-heading-anchor-permalink" href="#PSF-Support-Region" title="Permalink"></a></h3><p>The PSF support region controls how much of the PSF is calculated for each emitter, affecting both accuracy and performance. This parameter is specified in microns (μm):</p><pre><code class="language-julia hljs"># Define a small support region (faster but may truncate PSF wings)
+images = gen_images(smld_model, psf, bg=10.0)</code></pre><p>When combined with Poisson noise, the background is included in the Poisson sampling process for a realistic noise model.</p><h3 id="sCMOS-Camera-Noise"><a class="docs-heading-anchor" href="#sCMOS-Camera-Noise">sCMOS Camera Noise</a><a id="sCMOS-Camera-Noise-1"></a><a class="docs-heading-anchor-permalink" href="#sCMOS-Camera-Noise" title="Permalink"></a></h3><p>For realistic camera noise modeling, SMLMSim supports sCMOS cameras with per-pixel calibration parameters. This applies the full detection chain from photons to ADU (analog-to-digital units):</p><pre><code class="language-julia hljs">using SMLMSim
+using MicroscopePSFs
+
+# Create an sCMOS camera with realistic parameters
+# Parameters: width, height, pixel_size (μm), readnoise (e⁻ RMS)
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
+
+# Run simulation with sCMOS camera
+params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+smld_true, smld_model, smld_noisy = simulate(
+    params,
+    pattern=Nmer2D(n=8, d=0.1),
+    camera=camera_scmos
+)
+
+# Generate images with full sCMOS noise model
+psf = GaussianPSF(0.15)
+images = gen_images(smld_model, psf, bg=10.0, camera_noise=true)</code></pre><p>The sCMOS noise model applies these transformations in order:</p><ol><li><strong>Quantum Efficiency (QE)</strong>: Converts photons to photoelectrons (typically 70-95%)</li><li><strong>Poisson Noise</strong>: Shot noise on the photoelectron count</li><li><strong>Read Noise</strong>: Gaussian noise per pixel (amplifier/ADC noise)</li><li><strong>Gain</strong>: Converts electrons to ADU (e.g., 0.5 e⁻/ADU)</li><li><strong>Offset</strong>: Adds dark level baseline (e.g., 100 ADU)</li></ol><h4 id="Advanced-sCMOS-Configuration"><a class="docs-heading-anchor" href="#Advanced-sCMOS-Configuration">Advanced sCMOS Configuration</a><a id="Advanced-sCMOS-Configuration-1"></a><a class="docs-heading-anchor-permalink" href="#Advanced-sCMOS-Configuration" title="Permalink"></a></h4><p>You can specify all calibration parameters explicitly:</p><pre><code class="language-julia hljs">camera_scmos = SCMOSCamera(
+    128, 128, 0.1;
+    offset=100.0,      # 100 ADU dark level
+    gain=0.5,          # 0.5 e⁻/ADU conversion
+    readnoise=1.6,     # 1.6 e⁻ RMS read noise
+    qe=0.95            # 95% quantum efficiency
+)</code></pre><p>Each parameter can be either:</p><ul><li>A scalar value (uniform across all pixels)</li><li>A matrix (spatially varying, per-pixel calibration)</li></ul><h4 id="IdealCamera-vs-SCMOSCamera"><a class="docs-heading-anchor" href="#IdealCamera-vs-SCMOSCamera">IdealCamera vs SCMOSCamera</a><a id="IdealCamera-vs-SCMOSCamera-1"></a><a class="docs-heading-anchor-permalink" href="#IdealCamera-vs-SCMOSCamera" title="Permalink"></a></h4><pre><code class="language-julia hljs"># IdealCamera: Use with poisson_noise for simple shot noise
+camera_ideal = IdealCamera(128, 128, 0.1)
+smld = BasicSMLD(emitters, camera_ideal, n_frames, n_datasets)
+images_ideal = gen_images(smld, psf, bg=10.0, poisson_noise=true)
+
+# SCMOSCamera: Use with camera_noise for realistic noise
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
+smld = BasicSMLD(emitters, camera_scmos, n_frames, n_datasets)
+images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)</code></pre><div class="admonition is-warning" id="Camera-Type-Compatibility-d2622ca936c13f74"><header class="admonition-header">Camera Type Compatibility<a class="admonition-anchor" href="#Camera-Type-Compatibility-d2622ca936c13f74" title="Permalink"></a></header><div class="admonition-body"><p>The <code>camera_noise=true</code> parameter only works with <code>SCMOSCamera</code>. Using it with <code>IdealCamera</code> will show a warning and be ignored. For <code>IdealCamera</code>, use <code>poisson_noise=true</code> instead.</p></div></div><h4 id="Spatially-Varying-Calibration-Maps"><a class="docs-heading-anchor" href="#Spatially-Varying-Calibration-Maps">Spatially-Varying Calibration Maps</a><a id="Spatially-Varying-Calibration-Maps-1"></a><a class="docs-heading-anchor-permalink" href="#Spatially-Varying-Calibration-Maps" title="Permalink"></a></h4><p>Real sCMOS sensors have per-pixel variation in offset, gain, and readnoise. You can model this with calibration maps:</p><pre><code class="language-julia hljs">using SMLMSim
+using MicroscopePSFs
+
+# Create per-pixel calibration maps (128×128 sensor)
+n_pixels = 128
+
+# Readnoise: mean 1.6 e⁻ with ±0.3 e⁻ variation
+readnoise_map = 1.6 .+ 0.3 .* randn(n_pixels, n_pixels)
+readnoise_map = max.(readnoise_map, 0.5)  # Ensure positive values
+
+# Offset: mean 100 ADU with ±5 ADU variation plus gradient
+offset_map = zeros(n_pixels, n_pixels)
+for i in 1:n_pixels, j in 1:n_pixels
+    gradient = 10.0 * (i / n_pixels)  # Vertical gradient
+    noise = 5.0 * randn()
+    offset_map[i, j] = 100.0 + gradient + noise
+end
+
+# Gain: mostly uniform with slight pattern
+gain_map = 0.5 .+ 0.05 .* sin.(2π .* (1:n_pixels) ./ 20) * cos.(2π .* (1:n_pixels)&#39; ./ 20)
+
+# Create sCMOS camera with spatially-varying calibration
+pixel_size = 0.1  # 100 nm
+camera_scmos = SCMOSCamera(
+    collect(0:pixel_size:(n_pixels*pixel_size)),
+    collect(0:pixel_size:(n_pixels*pixel_size)),
+    offset_map,
+    gain_map,
+    readnoise_map,
+    0.95  # Uniform quantum efficiency (could also be a matrix)
+)
+
+# Generate images with realistic spatial artifacts
+# (offset gradient, readnoise stripes, etc.)
+images = gen_images(smld, psf, bg=10.0, camera_noise=true)</code></pre><p>This creates realistic spatial artifacts visible in the images, including:</p><ul><li><strong>Offset gradients</strong>: Fixed pattern across sensor</li><li><strong>Readnoise variation</strong>: Some pixels noisier than others</li><li><strong>Gain non-uniformity</strong>: Affects signal scaling</li></ul><p>For demonstration of extreme artifacts, see <code>dev/scmos_quick_demo.jl</code> in the repository.</p><h3 id="PSF-Support-Region"><a class="docs-heading-anchor" href="#PSF-Support-Region">PSF Support Region</a><a id="PSF-Support-Region-1"></a><a class="docs-heading-anchor-permalink" href="#PSF-Support-Region" title="Permalink"></a></h3><p>The PSF support region controls how much of the PSF is calculated for each emitter, affecting both accuracy and performance. This parameter is specified in microns (μm):</p><pre><code class="language-julia hljs"># Define a small support region (faster but may truncate PSF wings)
 images = gen_images(smld_model, psf, support=3.0)  # 3.0 μm radius around each emitter
 
 # Define a rectangular support region
@@ -57,4 +122,4 @@ ax = Axis(fig[1, 1], yreversed=true)
 # record will clear and redraw each frame for you
 record(fig, &quot;smlm_simulation.mp4&quot;, 1:size(images, 3); framerate = 10) do i
     heatmap!(ax, images[:, :, i]&#39;, colormap = :inferno)
-end</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../diffusion/examples/">« Examples</a><a class="docs-footer-nextpage" href="../api/">API Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Thursday 5 June 2025 19:45">Thursday 5 June 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../diffusion/examples/">« Examples</a><a class="docs-footer-nextpage" href="../api/">API Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Monday 1 December 2025 21:33">Monday 1 December 2025</span>. Using Julia version 1.12.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
