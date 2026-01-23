@@ -3,9 +3,10 @@
 """
 
 """
-    simulate(params::StaticSMLMParams; 
+    simulate(params::StaticSMLMParams;
              starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}=nothing,
              pattern::Pattern=nothing,
+             labeling::AbstractLabeling=FixedLabeling(),
              molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
              camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
 
@@ -16,12 +17,13 @@ and localization uncertainty.
 - `params::StaticSMLMParams`: Simulation parameters
 - `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}`: Optional starting conditions instead of generating patterns
 - `pattern::Pattern`: Pattern to use (default depends on params.ndims)
+- `labeling::AbstractLabeling`: Labeling strategy for fluorophore attachment (default: FixedLabeling() = 1 per site)
 - `molecule::Molecule`: Fluorophore model for blinking simulation
 - `camera::AbstractCamera`: Camera model for detection simulation
 
 # Returns
 - `Tuple{BasicSMLD, BasicSMLD, BasicSMLD}`: (true_positions, model_kinetics, noisy_data)
-    - true_positions: Ground truth emitter positions
+    - true_positions: Ground truth emitter positions (after labeling)
     - model_kinetics: Positions with simulated blinking
     - noisy_data: Positions with blinking and localization uncertainty
 
@@ -41,7 +43,19 @@ params = StaticSMLMParams(
 pattern = Nmer3D(n=6, d=0.2)
 smld_true, smld_model, smld_noisy = simulate(params; pattern=pattern)
 
-# Run with custom starting conditions
+# Run with Poisson labeling (average 1.5 fluorophores per binding site)
+smld_true, smld_model, smld_noisy = simulate(params;
+    pattern=pattern,
+    labeling=PoissonLabeling(1.5)
+)
+
+# Run with partial labeling efficiency (80% of sites labeled)
+smld_true, smld_model, smld_noisy = simulate(params;
+    pattern=pattern,
+    labeling=PoissonLabeling(1.0; efficiency=0.8)
+)
+
+# Run with custom starting conditions (labeling not applied)
 custom_emitters = [
     Emitter2DFit{Float64}(x, y, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0; track_id=i)
     for (i, (x, y)) in enumerate(zip(rand(10), rand(10)))
@@ -51,11 +65,14 @@ smld_true, smld_model, smld_noisy = simulate(params; starting_conditions=custom_
 # Note
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
 - For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
-- If `starting_conditions` is provided, it will be used instead of generating patterns.
+- If `starting_conditions` is provided, it will be used instead of generating patterns, and labeling is not applied.
+- Labeling and molecule are separate concepts: labeling controls how many fluorophores per binding site,
+  molecule controls the photophysics (blinking) of each fluorophore.
 """
-function simulate(params::StaticSMLMParams; 
+function simulate(params::StaticSMLMParams;
                  starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}=nothing,
                  pattern::Union{Pattern,Nothing}=nothing,
+                 labeling::AbstractLabeling=FixedLabeling(),
                  molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
                  camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
     
@@ -100,12 +117,15 @@ function simulate(params::StaticSMLMParams;
         field_x = maximum(centers_x) - minimum(centers_x)
         field_y = maximum(centers_y) - minimum(centers_y)
 
-        # Generate coordinates based on pattern type
+        # Generate binding site coordinates based on pattern type
         coords = if pattern isa Pattern2D
             uniform2D(params.density, pattern, field_x, field_y)
         else
             uniform3D(params.density, pattern, field_x, field_y; zrange=params.zrange)
         end
+
+        # Apply labeling to expand binding sites to fluorophore positions
+        coords = apply_labeling(coords, labeling)
 
         # Create emitters for true positions
         emitters = if pattern isa Pattern2D
@@ -139,9 +159,14 @@ function simulate(params::StaticSMLMParams;
         metadata["density"] = params.density
         metadata["pattern_type"] = string(typeof(pattern))
         metadata["pattern_params"] = Dict(
-            fn => getfield(pattern, fn) 
-            for fn in fieldnames(typeof(pattern)) 
+            fn => getfield(pattern, fn)
+            for fn in fieldnames(typeof(pattern))
             if fn ∉ [:x, :y, :z]
+        )
+        metadata["labeling_type"] = string(typeof(labeling))
+        metadata["labeling_params"] = Dict(
+            fn => getfield(labeling, fn)
+            for fn in fieldnames(typeof(labeling))
         )
         
         # Create SMLD with true positions

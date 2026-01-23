@@ -27,6 +27,7 @@ using Printf
 
 include("abstract_types.jl")
 include("molecules.jl")
+include("labeling.jl")
 include("patterns.jl")
 include("ctmc.jl")
 include("photophysics.jl")
@@ -41,9 +42,23 @@ export
 export
     # Abstract molecule types
     Molecule,
-    
+
     # Concrete molecule types
-    GenericFluor
+    GenericFluor,
+
+# Export labeling types and functions
+export
+    # Abstract labeling type
+    AbstractLabeling,
+
+    # Concrete labeling types
+    FixedLabeling,
+    PoissonLabeling,
+    BinomialLabeling,
+
+    # Labeling functions
+    n_fluorophores,
+    apply_labeling
 
 # Export pattern types and functions
 export

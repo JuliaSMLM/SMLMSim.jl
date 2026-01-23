@@ -60,6 +60,8 @@ using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
 using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
 using .Core: AbstractSim, SMLMSimParams # Add abstract types import
 using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
+using .Core: AbstractLabeling, FixedLabeling, PoissonLabeling, BinomialLabeling
+using .Core: n_fluorophores, apply_labeling
 
 # Include submodules after the Core imports are available
 include("static/StaticSMLM.jl")
@@ -143,13 +145,27 @@ export
 export
     # Abstract molecule types
     Molecule,
-    
+
     # Concrete molecule types
     GenericFluor,
-    
+
     # Static SMLM types
     StaticSMLMParams,
     apply_noise
+
+# Export labeling types and functions
+export
+    # Abstract labeling type
+    AbstractLabeling,
+
+    # Concrete labeling types
+    FixedLabeling,
+    PoissonLabeling,
+    BinomialLabeling,
+
+    # Labeling functions
+    n_fluorophores,
+    apply_labeling
 
 # Track utility functions
 export
