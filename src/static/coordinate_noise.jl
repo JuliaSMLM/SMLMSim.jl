@@ -49,6 +49,11 @@ Add localization uncertainty to 2D emitter positions based on photon counts.
 # Returns
 - `BasicSMLD`: New SMLD with noisy positions and updated uncertainties
 
+# Note
+For symmetric (axis-aligned) PSFs, σ_xy covariance is set to 0.0. This is the
+physically correct value, not a placeholder. Rotated/tilted PSFs would require
+additional parameters to compute non-zero covariance.
+
 # Example
 ```julia
 # Then add localization noise with specific PSF width
@@ -61,35 +66,37 @@ function apply_noise(smld::BasicSMLD, σ_psf::AbstractFloat)
     if !(emitter_type <: Emitter2DFit)
         error("Cannot apply scalar σ_psf to non-2D emitter type: $(emitter_type)")
     end
-    
+
     new_emitters = similar(smld.emitters)
-    
+
     for (i, emitter) in enumerate(smld.emitters)
         if emitter.photons <= 0
             error("Emitter photon count must be positive")
         end
-        
+
         # Add noise to coordinates and get uncertainty values
         coords, uncertainty = add_coordinate_noise(emitter, σ_psf)
-        
+
         # Create new emitter with noisy positions
+        # σ_xy=0.0 is correct for symmetric/axis-aligned PSFs
         new_emitters[i] = typeof(emitter)(
             coords...,                     # Noisy positions
             emitter.photons,               # Photons
             emitter.bg,                    # Background
-            uncertainty...,                # Uncertainty estimates
+            uncertainty...,                # Uncertainty estimates (σ_x, σ_y)
             emitter.σ_photons, emitter.σ_bg;  # Original uncertainties
+            σ_xy=zero(eltype(coords)),     # No x-y covariance for symmetric PSF
             frame=emitter.frame,
             dataset=emitter.dataset,
             track_id=emitter.track_id,
             id=emitter.id
         )
     end
-    
+
     metadata = copy(smld.metadata)
     metadata["simulation_type"] = "noisy_model"
     metadata["psf_width"] = σ_psf
-    
+
     return BasicSMLD(
         new_emitters,
         smld.camera,
@@ -111,6 +118,11 @@ Add localization uncertainty to 3D emitter positions based on photon counts.
 # Returns
 - `BasicSMLD`: New SMLD with noisy positions and updated uncertainties
 
+# Note
+For symmetric (axis-aligned) PSFs, σ_xy covariance is set to 0.0. This is the
+physically correct value, not a placeholder. Rotated/tilted PSFs would require
+additional parameters to compute non-zero covariance.
+
 # Example
 ```julia
 # Then add localization noise with specific PSF widths
@@ -124,39 +136,41 @@ function apply_noise(smld::BasicSMLD, σ_psf::Vector{<:AbstractFloat})
     if !(emitter_type <: Emitter3DFit)
         error("Cannot apply vector σ_psf to non-3D emitter type: $(emitter_type)")
     end
-    
+
     if length(σ_psf) != 3
         error("3D emitter type requires vector of 3 σ_psf values [σx, σy, σz]")
     end
-    
+
     new_emitters = similar(smld.emitters)
-    
+
     for (i, emitter) in enumerate(smld.emitters)
         if emitter.photons <= 0
             error("Emitter photon count must be positive")
         end
-        
+
         # Add noise to coordinates and get uncertainty values
         coords, uncertainty = add_coordinate_noise(emitter, σ_psf)
-        
+
         # Create new emitter with noisy positions
+        # σ_xy=0.0 is correct for symmetric/axis-aligned PSFs
         new_emitters[i] = typeof(emitter)(
             coords...,                     # Noisy positions
             emitter.photons,               # Photons
             emitter.bg,                    # Background
-            uncertainty...,                # Uncertainty estimates
+            uncertainty...,                # Uncertainty estimates (σ_x, σ_y, σ_z)
             emitter.σ_photons, emitter.σ_bg;  # Original uncertainties
+            σ_xy=zero(eltype(coords)),     # No x-y covariance for symmetric PSF
             frame=emitter.frame,
             dataset=emitter.dataset,
             track_id=emitter.track_id,
             id=emitter.id
         )
     end
-    
+
     metadata = copy(smld.metadata)
     metadata["simulation_type"] = "noisy_model"
     metadata["psf_width"] = σ_psf
-    
+
     return BasicSMLD(
         new_emitters,
         smld.camera,

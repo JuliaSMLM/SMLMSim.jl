@@ -76,7 +76,7 @@ smld_true, smld_model, smld_noisy = simulate(params;
 
 # Run with custom starting conditions (labeling not applied)
 custom_emitters = [
-    Emitter2DFit{Float64}(x, y, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0; track_id=i)
+    Emitter2DFit{Float64}(x, y, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, track_id=i)
     for (i, (x, y)) in enumerate(zip(rand(10), rand(10)))
 ]
 smld_true, smld_model, smld_noisy = simulate(params; starting_conditions=custom_emitters)
@@ -157,6 +157,7 @@ function simulate(params::StaticSMLMParams;
                 0.0,                 # background
                 0.0, 0.0,            # σ_x, σ_y
                 0.0, 0.0;            # σ_photons, σ_bg
+                σ_xy=0.0,            # x-y covariance (0 for symmetric PSF)
                 frame=1,
                 dataset=1,
                 track_id=i
@@ -169,6 +170,7 @@ function simulate(params::StaticSMLMParams;
                 0.0,                 # background
                 0.0, 0.0, 0.0,       # σ_x, σ_y, σ_z
                 0.0, 0.0;            # σ_photons, σ_bg
+                σ_xy=0.0,            # x-y covariance (0 for symmetric PSF)
                 frame=1,
                 dataset=1,
                 track_id=i

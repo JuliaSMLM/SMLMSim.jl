@@ -218,6 +218,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     0.0,                 # background
                     0.0, 0.0,            # σ_x, σ_y
                     0.0, 0.0;            # σ_photons, σ_bg
+                    σ_xy=0.0,            # x-y covariance (0 for symmetric PSF)
                     frame=frame,
                     dataset=dd,
                     track_id=pos.track_id
@@ -229,6 +230,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     0.0,                  # background
                     0.0, 0.0, 0.0,        # σ_x, σ_y, σ_z
                     0.0, 0.0;             # σ_photons, σ_bg
+                    σ_xy=0.0,             # x-y covariance (0 for symmetric PSF)
                     frame=frame,
                     dataset=dd,
                     track_id=pos.track_id
