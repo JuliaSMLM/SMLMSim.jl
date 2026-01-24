@@ -10,7 +10,7 @@ including blinking kinetics, intensity traces, and sampling from equilibrium dis
 
 
 """
-    intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1)
+    intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1, burn_in=0.0)
 
 Calculate a fluorescence intensity trace by integrating emission during fluorescent state occupancy.
 
@@ -19,13 +19,16 @@ Calculate a fluorescence intensity trace by integrating emission during fluoresc
 - `nframes::Int`: Number of frames to simulate
 - `framerate::Real`: Frame rate in Hz
 - `state1::Int=1`: Initial state (default: 1 for fluorescent state)
+- `burn_in::Real=0.0`: Pre-illumination time in seconds before recording starts.
+  The CTMC runs for this duration first, allowing the system to reach a pseudo-equilibrium
+  (e.g., some molecules bleach before data collection begins).
 
 # Returns
 - `Vector{Float64}`: Integrated photon counts for each frame
 
 # Details
 For each frame:
-1. Determines state occupancy using CTMC
+1. Determines state occupancy using CTMC (which starts at time 0, but recording starts at burn_in)
 2. Integrates emission (rate f.γ) during fluorescent state periods
 3. Accumulates photons within frame exposure time (1/framerate)
 
@@ -33,14 +36,18 @@ For each frame:
 ```julia
 fluor = GenericFluor(; γ=10000.0, q=[-10.0 10.0; 1e-1 -1e-1])
 photons = intensity_trace(fluor, 1000, 10.0)
+
+# With 5 second burn-in (pre-illumination before recording)
+photons = intensity_trace(fluor, 1000, 10.0; burn_in=5.0)
 ```
 
 # Note
 - State 1 is assumed to be the fluorescent state
 - Emission only occurs in state 1 with rate f.γ
 - Frame exposure is assumed to be 1/framerate (100% duty cycle)
+- burn_in is useful for models with photobleaching to simulate pre-illumination
 """
-function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1)
+function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1, burn_in::Real=0.0)
     # Input validation
     if nframes <= 0
         throw(ArgumentError("Number of frames must be positive"))
@@ -48,23 +55,28 @@ function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=
     if framerate <= 0
         throw(ArgumentError("Frame rate must be positive"))
     end
-    
-    simulation_time = nframes / framerate
+    if burn_in < 0
+        throw(ArgumentError("burn_in must be non-negative"))
+    end
 
-    # generate CTMC
+    # Total simulation time includes burn-in period
+    recording_time = nframes / framerate
+    simulation_time = burn_in + recording_time
+
+    # generate CTMC for full duration (burn_in + recording)
     ctmc = CTMC(f.q, simulation_time, state1)
 
-    # generate integrated photons 
+    # generate integrated photons (recording starts after burn_in)
     exptime = 1 / framerate
     photons = zeros(nframes)
     for nn = 1:nframes
-        t = (nn - 1) * exptime
-        frameend = nn * exptime
+        t = burn_in + (nn - 1) * exptime  # offset by burn_in
+        frameend = burn_in + nn * exptime
         while t < frameend
             currentstate = get_state(ctmc, t)
             (_, nexttime) = get_next(ctmc, t)
             tend = min(frameend, nexttime)
-            if currentstate == 1  # the fluorescent state 
+            if currentstate == 1  # the fluorescent state
                 photons[nn] += f.γ * (tend - t)
             end
             t = tend
@@ -75,7 +87,8 @@ end
 
 """
     kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Real;
-                 ndatasets::Int=1, minphotons=50.0, state1::Int=2)
+                 ndatasets::Int=1, minphotons=50.0, state1::Union{Int, Symbol}=:equilibrium,
+                 burn_in::Real=0.0)
 
 Generate kinetic blinking model from existing localization data.
 
@@ -89,6 +102,10 @@ Generate kinetic blinking model from existing localization data.
 - `state1::Union{Int, Symbol}=:equilibrium`: Initial state specification:
   - `::Int`: Specific state to start in (1=on, 2=off typically)
   - `:equilibrium`: Sample from equilibrium distribution (default)
+- `burn_in::Real=0.0`: Pre-illumination time in seconds before recording starts.
+  Simulates the common experimental protocol where high laser power is applied
+  for several seconds before data collection begins, allowing some molecules
+  to bleach and others to reach a pseudo-equilibrium blinking state.
 
 # Returns
 - `BasicSMLD`: New SMLD with simulated blinking kinetics
@@ -109,15 +126,21 @@ smld_true, _, _ = simulate(pattern=pattern, camera=camera)
 # Add blinking kinetics
 fluor = GenericFluor(; γ=10000.0, q=[-10.0 10.0; 1e-1 -1e-1])
 smld_model = kinetic_model(smld_true, fluor, 1000, 10.0)
+
+# With 5 second burn-in to simulate pre-illumination
+smld_model = kinetic_model(smld_true, fluor, 1000, 10.0; burn_in=5.0)
 ```
 
 # Note
 The emitter type (2D/3D) is automatically determined from the input SMLD.
 Position uncertainties are initialized to 0 and can be set using the
-apply_noise() function.
+apply_noise() function. For models with photobleaching (absorbing states),
+use `state1=1` instead of `:equilibrium` since absorbing states have no
+true equilibrium.
 """
 function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Real;
-                      ndatasets::Int=1, minphotons=50.0, state1::Union{Int, Symbol}=:equilibrium)
+                      ndatasets::Int=1, minphotons=50.0, state1::Union{Int, Symbol}=:equilibrium,
+                      burn_in::Real=0.0)
     # Input validation
     if nframes <= 0
         throw(ArgumentError("Number of frames must be positive"))
@@ -131,7 +154,10 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
     if minphotons < 0
         throw(ArgumentError("Minimum photons must be non-negative"))
     end
-    
+    if burn_in < 0
+        throw(ArgumentError("burn_in must be non-negative"))
+    end
+
     emitter_type = eltype(smld.emitters)
     emitters = Vector{emitter_type}()
 
@@ -180,7 +206,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
             state1
         end
         
-        photons = intensity_trace(f, nframes, framerate; state1=initial_state)
+        photons = intensity_trace(f, nframes, framerate; state1=initial_state, burn_in=burn_in)
         framenum = findall(photons .> minphotons)
 
         # Create emitter for each frame where photons > threshold
@@ -219,6 +245,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
     metadata["simulation_type"] = "kinetic_model"
     metadata["framerate"] = framerate
     metadata["initial_state"] = string(state1)
+    metadata["burn_in"] = burn_in
 
     return BasicSMLD(emitters, smld.camera, nframes, ndatasets, metadata)
 end
@@ -242,10 +269,11 @@ This function solves the linear system directly to find the equilibrium distribu
 function compute_equilibrium_distribution(q::Matrix{<:AbstractFloat})
     n_states = size(q, 1)
     
-    # Check for proper rate matrix structure (negative diagonals, rows sum to zero)
+    # Check for proper rate matrix structure (negative diagonals or zero for absorbing, rows sum to zero)
     row_sums = sum(q, dims=2)
-    if any(diag(q) .>= 0)
-        @warn "Some diagonal elements of rate matrix are non-negative"
+    diag_vals = diag(q)
+    if any(diag_vals .> 0)
+        @warn "Some diagonal elements of rate matrix are positive (should be negative or zero)"
     end
     if !all(abs.(row_sums) .< 1e-10)
         @warn "Rate matrix rows do not sum to zero (maximum deviation: $(maximum(abs.(row_sums))))"

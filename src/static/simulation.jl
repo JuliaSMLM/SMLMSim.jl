@@ -8,7 +8,9 @@
              pattern::Pattern=nothing,
              labeling::AbstractLabeling=FixedLabeling(),
              molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
-             camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
+             camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1),
+             state1::Union{Int, Symbol}=:equilibrium,
+             burn_in::Real=0.0)
 
 Generate simulated static SMLM data with realistic blinking kinetics
 and localization uncertainty.
@@ -20,6 +22,13 @@ and localization uncertainty.
 - `labeling::AbstractLabeling`: Labeling strategy for fluorophore attachment (default: FixedLabeling() = 1 per site)
 - `molecule::Molecule`: Fluorophore model for blinking simulation
 - `camera::AbstractCamera`: Camera model for detection simulation
+- `state1::Union{Int, Symbol}=:equilibrium`: Initial fluorophore state:
+  - `::Int`: Specific state (1=on, 2=off typically)
+  - `:equilibrium`: Sample from equilibrium distribution (default)
+  For models with photobleaching (absorbing states), use `state1=1`.
+- `burn_in::Real=0.0`: Pre-illumination time in seconds before recording starts.
+  Simulates experimental protocol where laser is on before data collection,
+  allowing some molecules to bleach and reach pseudo-equilibrium.
 
 # Returns
 - `Tuple{BasicSMLD, BasicSMLD, BasicSMLD}`: (true_positions, model_kinetics, noisy_data)
@@ -55,6 +64,16 @@ smld_true, smld_model, smld_noisy = simulate(params;
     labeling=PoissonLabeling(1.0; efficiency=0.8)
 )
 
+# Run with photobleaching model and 5s burn-in
+k_off, k_on, k_bleach = 10.0, 1.0, 0.1
+Q = [-(k_off+k_bleach) k_off k_bleach; k_on -k_on 0.0; 0.0 0.0 0.0]
+fluor = GenericFluor(1e4, Q)
+smld_true, smld_model, smld_noisy = simulate(params;
+    molecule=fluor,
+    state1=1,        # Start in ON state (required for absorbing states)
+    burn_in=5.0      # 5 seconds pre-illumination
+)
+
 # Run with custom starting conditions (labeling not applied)
 custom_emitters = [
     Emitter2DFit{Float64}(x, y, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0; track_id=i)
@@ -74,7 +93,9 @@ function simulate(params::StaticSMLMParams;
                  pattern::Union{Pattern,Nothing}=nothing,
                  labeling::AbstractLabeling=FixedLabeling(),
                  molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
-                 camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
+                 camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1),
+                 state1::Union{Int, Symbol}=:equilibrium,
+                 burn_in::Real=0.0)
     
     # Initialize metadata
     metadata = Dict{String,Any}(
@@ -175,7 +196,8 @@ function simulate(params::StaticSMLMParams;
 
     # Apply kinetic model
     smld_model = kinetic_model(smld_true, molecule, params.nframes, params.framerate;
-                             ndatasets=params.ndatasets, minphotons=params.minphotons)
+                             ndatasets=params.ndatasets, minphotons=params.minphotons,
+                             state1=state1, burn_in=burn_in)
 
     # Determine PSF scaling based on emitter dimensionality
     emitter_type = eltype(smld_true.emitters)
