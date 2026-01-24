@@ -172,9 +172,9 @@
     emitters = Vector{Emitter2DFit{Float64}}()
     
     # Create emitters with explicit frame numbers, IDs, and datasets
-    push!(emitters, Emitter2DFit(0.1, 0.2, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 1, 1))
-    push!(emitters, Emitter2DFit(0.5, 0.6, 1500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2, 1, 2, 2))
-    push!(emitters, Emitter2DFit(1.0, 1.2, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3, 1, 3, 3))
+    push!(emitters, Emitter2DFit{Float64}(0.1, 0.2, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=1, id=1))
+    push!(emitters, Emitter2DFit{Float64}(0.5, 0.6, 1500.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=2, dataset=1, track_id=2, id=2))
+    push!(emitters, Emitter2DFit{Float64}(1.0, 1.2, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=3, dataset=1, track_id=3, id=3))
     
     # Create a camera
     camera = IdealCamera(32, 32, 0.1)  # 32x32 pixels, 100 nm pixel size

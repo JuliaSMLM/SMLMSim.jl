@@ -3,9 +3,9 @@
     emitters = Vector{Emitter2DFit{Float64}}()
     
     # Create emitters with explicit frame numbers, IDs, and datasets
-    push!(emitters, Emitter2DFit(5.0, 5.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 1, 1))
-    push!(emitters, Emitter2DFit(15.0, 15.0, 2000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 2, 2))
-    push!(emitters, Emitter2DFit(5.0, 5.0, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2, 1, 3, 3))
+    push!(emitters, Emitter2DFit{Float64}(5.0, 5.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=1, id=1))
+    push!(emitters, Emitter2DFit{Float64}(15.0, 15.0, 2000.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=2, id=2))
+    push!(emitters, Emitter2DFit{Float64}(5.0, 5.0, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=2, dataset=1, track_id=3, id=3))
     
     # Create a camera for testing
     camera = IdealCamera(32, 32, 0.1)  # 32x32 pixels, 100 nm pixel size
@@ -68,8 +68,8 @@ end
 @testset "SCMOSCamera Integration" begin
     # Create emitters for testing
     emitters = Vector{Emitter2DFit{Float64}}()
-    push!(emitters, Emitter2DFit(5.0, 5.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 1, 1))
-    push!(emitters, Emitter2DFit(15.0, 15.0, 2000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 2, 2))
+    push!(emitters, Emitter2DFit{Float64}(5.0, 5.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=1, id=1))
+    push!(emitters, Emitter2DFit{Float64}(15.0, 15.0, 2000.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=2, id=2))
 
     # Create an sCMOS camera (32x32 pixels, 100 nm pixel size, 1.6 e⁻ read noise)
     camera_scmos = SCMOSCamera(32, 32, 0.1, 1.6)
