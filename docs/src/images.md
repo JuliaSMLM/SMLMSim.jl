@@ -37,17 +37,21 @@ camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 pattern = Nmer2D(n=6, d=0.2)  # Hexamer with 200nm diameter
 molecule = GenericFluor(1e4, [-50.0 50.0; 1e-2 -1e-2])  # Blinking model
 
-# Run simulation
-smld_true, smld_model, smld_noisy = simulate(params, pattern=pattern, molecule=molecule, camera=camera)
+# Run simulation - returns (smld_noisy, SimInfo) tuple
+smld_noisy, info = simulate(params; pattern=pattern, molecule=molecule, camera=camera)
+smld_model = info.smld_model
 
 # Create a PSF model (Gaussian with 150nm width)
 psf = GaussianPSF(0.15)  # 150nm PSF width
 
-# Generate image stack from emitter data
-images = gen_images(smld_model, psf; 
+# Generate image stack from emitter data - returns (images, ImageInfo) tuple
+images, img_info = gen_images(smld_model, psf;
     bg=5.0,             # background photons per pixel
     poisson_noise=true  # add realistic photon counting noise
 )
+
+# img_info contains timing, frame count, photon statistics
+println("Generated $(img_info.frames_generated) frames in $(img_info.elapsed_ns / 1e6) ms")
 ```
 
 The resulting `images` is a 3D array with dimensions `[height, width, frames]` that can be used for visualization or algorithm development.
@@ -57,8 +61,8 @@ The resulting `images` is a 3D array with dimensions `[height, width, frames]` t
 To generate an image for a specific frame:
 
 ```julia
-# Generate image for frame 10
-frame_image = gen_image(smld_model, psf, 10;
+# Generate image for frame 10 - returns (image, ImageInfo) tuple
+frame_image, img_info = gen_image(smld_model, psf, 10;
     bg=5.0,
     poisson_noise=true
 )
@@ -69,8 +73,10 @@ frame_image = gen_image(smld_model, psf, 10;
 The `gen_images` function has the following signature:
 
 ```julia
-gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> Array{T, 3} where T<:Real
+gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> Tuple{Array{T, 3}, ImageInfo} where T<:Real
 ```
+
+It returns a tuple of `(images, info)` where `images` is the 3D array of frames and `info` is an `ImageInfo` struct containing timing and statistics.
 
 ### Required Parameters
 
@@ -131,17 +137,18 @@ using MicroscopePSFs
 # Parameters: width, height, pixel_size (μm), readnoise (e⁻ RMS)
 camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
 
-# Run simulation with sCMOS camera
+# Run simulation with sCMOS camera - returns (smld_noisy, SimInfo) tuple
 params = StaticSMLMParams(density=1.0, σ_psf=0.13)
-smld_true, smld_model, smld_noisy = simulate(
-    params,
+smld_noisy, info = simulate(
+    params;
     pattern=Nmer2D(n=8, d=0.1),
     camera=camera_scmos
 )
+smld_model = info.smld_model
 
-# Generate images with full sCMOS noise model
+# Generate images with full sCMOS noise model - returns (images, ImageInfo) tuple
 psf = GaussianPSF(0.15)
-images = gen_images(smld_model, psf, bg=10.0, camera_noise=true)
+images, img_info = gen_images(smld_model, psf; bg=10.0, camera_noise=true)
 ```
 
 The sCMOS noise model applies these transformations in order:

@@ -43,7 +43,7 @@ All simulation parameters use consistent physical units:
 
 ### Running a Basic Simulation
 
-The main interface for running diffusion simulations is the `simulate` function with `DiffusionSMLMParams`:
+The main interface for running diffusion simulations is the `simulate` function with `DiffusionSMLMParams`. It returns a `(smld, SimInfo)` tuple:
 
 ```julia
 using SMLMSim
@@ -61,8 +61,11 @@ params = DiffusionSMLMParams(
     t_max = 10.0          # s
 )
 
-# Run the simulation
-smld = simulate(params)
+# Run the simulation - returns (smld, SimInfo) tuple
+smld, sim_info = simulate(params)
+
+# sim_info contains: elapsed_ns, backend, device_id, n_frames
+println("Simulation completed in $(sim_info.elapsed_ns / 1e6) ms")
 ```
 
 The `smld` output is a `BasicSMLD` structure containing all emitters across all time points, with each emitter having frame information corresponding to the camera settings.
@@ -109,12 +112,14 @@ camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 using MicroscopePSFs
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
-# Generate images
-image_stack = gen_images(smld, psf;
-    photons=1000.0,
+# Generate images - returns (images, ImageInfo) tuple
+image_stack, img_info = gen_images(smld, psf;
     bg=5.0,
     poisson_noise=true
 )
+
+# img_info contains: elapsed_ns, frames_generated, n_photons_total, output_size
+println("Generated $(img_info.frames_generated) frames with $(img_info.n_photons_total) total photons")
 ```
 
 ## Analyzing Results

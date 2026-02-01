@@ -23,8 +23,8 @@ params = StaticSMLMParams(
     σ_psf = 0.13,         # PSF width in μm
 )
 
-# Run simulation with specified pattern and camera
-smld_true, smld_model, smld_noisy = simulate(
+# Run simulation with specified pattern and camera - returns (smld_noisy, SimInfo) tuple
+smld_noisy, info = simulate(
     params;
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     camera=camera
@@ -80,8 +80,8 @@ params = StaticSMLMParams(
     zrange = [-1.0, 1.0]  # 2μm axial range
 )
 
-# Run 3D simulation
-smld_true, smld_model, smld_noisy = simulate(
+# Run 3D simulation - returns (smld_noisy, SimInfo) tuple
+smld_noisy, info = simulate(
     params;
     pattern=Nmer3D(n=8, d=0.2),  # 3D pattern with 200nm diameter
     camera=camera
@@ -136,12 +136,13 @@ params = StaticSMLMParams(
     framerate = 20.0      # 20 fps
 )
 
-# Run simulation
-smld_true, smld_model, smld_noisy = simulate(
+# Run simulation - returns (smld_noisy, SimInfo) tuple
+smld_noisy, info = simulate(
     params;
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     camera=camera
 )
+smld_model = info.smld_model  # Access kinetic model from info
 
 # Create a PSF model (Gaussian with 150nm width)
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
@@ -149,8 +150,8 @@ psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 # Note: We use smld_model (not smld_noisy) to avoid double-counting uncertainty
 # smld_noisy already contains localization errors, and rendering camera images
 # naturally introduces noise, so using smld_noisy would apply noise twice
-# Generate image stack from emitter data with Poisson noise
-images = gen_images(smld_model, psf;
+# Generate image stack from emitter data with Poisson noise - returns (images, ImageInfo) tuple
+images, img_info = gen_images(smld_model, psf;
     bg=5.0,            # background photons per pixel
     poisson_noise=true  # add realistic shot noise
 )
@@ -252,25 +253,26 @@ params = StaticSMLMParams(
     nframes = 1000        # Number of frames
 )
 
-# Run simulation with custom pattern
-smld_true, smld_model, smld_noisy = simulate(
+# Run simulation with custom pattern - returns (smld_noisy, SimInfo) tuple
+smld_noisy, info = simulate(
     params;
     pattern=grid,
     camera=camera
 )
+smld_true = info.smld_true  # Access ground truth from info
 
 # Visualization
 fig = Figure(size=(800, 600))
 
 # Plot ground truth vs. noisy localizations
-ax1 = Axis(fig[1, 1], 
+ax1 = Axis(fig[1, 1],
     title="Ground Truth",
     xlabel="x (μm)",
     ylabel="y (μm)",
     aspect=DataAspect()
 )
 
-ax2 = Axis(fig[1, 2], 
+ax2 = Axis(fig[1, 2],
     title="Noisy Localizations",
     xlabel="x (μm)",
     ylabel="y (μm)",

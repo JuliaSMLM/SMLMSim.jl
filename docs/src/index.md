@@ -59,13 +59,16 @@ using SMLMSim
 # Define a camera with 100nm pixel size
 camera = IdealCamera(128, 128, 0.1)
 
-# Run a basic static simulation
-smld_true, smld_model, smld_noisy = simulate(
-    density=1.0,                # 1 pattern per μm²
-    σ_psf=0.13,           # 130nm PSF width
+# Run a basic static simulation - returns (smld_noisy, SimInfo) tuple
+smld_noisy, info = simulate(
+    StaticSMLMParams(density=1.0, σ_psf=0.13);
     pattern=Nmer2D(n=8, d=0.1),  # 8-molecule circular pattern (100nm diameter)
     camera=camera
 )
+
+# Access ground truth and kinetic model from info
+smld_true = info.smld_true    # Ground truth positions
+smld_model = info.smld_model  # Positions with blinking kinetics
 ```
 
 ### Diffusion-Interaction Simulation
@@ -82,8 +85,8 @@ params = DiffusionSMLMParams(
     t_max = 10.0          # s
 )
 
-# Run diffusion simulation
-smld_diffusion = simulate(params)
+# Run diffusion simulation - returns (smld, SimInfo) tuple
+smld_diffusion, sim_info = simulate(params)
 ```
 
 ## Package Structure

@@ -39,8 +39,8 @@ params = DiffusionSMLMParams(
     camera_framerate = 10.0  # fps
 )
 
-# Run simulation
-smld = simulate(params; photons=1000.0)
+# Run simulation - returns (smld, SimInfo) tuple
+smld, sim_info = simulate(params; photons=1000.0)
 
 # Extract coordinates based on monomer/dimer state for a specific frame
 function extract_frame_by_state(smld, frame_num)
@@ -125,8 +125,8 @@ params = DiffusionSMLMParams(
     camera_exposure = 0.1    # s (100ms exposure time)
 )
 
-# Run simulation
-smld = simulate(params)
+# Run simulation - returns (smld, SimInfo) tuple
+smld, sim_info = simulate(params)
 
 # Setup camera and PSF
 pixelsize = 0.1  # 100nm pixels
@@ -136,11 +136,11 @@ camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 # Create PSF model
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
-# Generate microscope images from simulation
+# Generate microscope images from simulation - returns (images, ImageInfo) tuple
 # For diffusion simulations, the camera integration time (exposure) has already been
 # modeled in the simulation process, so each frame already includes the positions
 # from all emitters that appeared during the exposure window
-images = gen_images(smld, psf;
+images, img_info = gen_images(smld, psf;
     bg=5.0,               # background photons per pixel
     poisson_noise=true     # add photon counting noise
 )
@@ -192,9 +192,9 @@ params_unstable = DiffusionSMLMParams(
     t_max = 20.0          # s
 )
 
-# Run simulations
-smld_stable = simulate(params_stable)
-smld_unstable = simulate(params_unstable)
+# Run simulations - returns (smld, SimInfo) tuples
+smld_stable, _ = simulate(params_stable)
+smld_unstable, _ = simulate(params_unstable)
 
 # Analyze dimer formation
 frames_stable, frac_stable = analyze_dimer_fraction(smld_stable)
@@ -248,8 +248,8 @@ params = DiffusionSMLMParams(
     camera_exposure = 0.1     # s
 )
 
-# Run simulation
-smld = simulate(params)
+# Run simulation - returns (smld, SimInfo) tuple
+smld, sim_info = simulate(params)
 
 # Set up camera and PSF
 pixelsize = 0.1  # 100nm pixels
@@ -259,8 +259,8 @@ camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 # Set up PSF (Gaussian with 150nm width)
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
-# Generate images for all molecules
-images_all = gen_images(smld, psf;
+# Generate images for all molecules - returns (images, ImageInfo) tuple
+images_all, _ = gen_images(smld, psf;
     bg=5.0,
     poisson_noise=true
 )
@@ -268,8 +268,8 @@ images_all = gen_images(smld, psf;
 # Extract only dimers
 dimer_smld = get_dimers(smld)
 
-# Generate images showing only dimers
-images_dimers = gen_images(dimer_smld, psf;
+# Generate images showing only dimers - returns (images, ImageInfo) tuple
+images_dimers, _ = gen_images(dimer_smld, psf;
     bg=5.0,
     poisson_noise=true
 )
@@ -353,8 +353,8 @@ particle2 = DiffusingEmitter2D{Float64}(
     nothing         # No partner initially
 )
 
-# Run simulation with custom starting positions
-smld = simulate(params; starting_conditions=[particle1, particle2])
+# Run simulation with custom starting positions - returns (smld, SimInfo) tuple
+smld, sim_info = simulate(params; starting_conditions=[particle1, particle2])
 
 track_smlds = get_tracks(smld)
 
