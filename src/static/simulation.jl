@@ -139,14 +139,18 @@ function simulate(params::StaticSMLMParams;
         field_y = maximum(centers_y) - minimum(centers_y)
 
         # Generate binding site coordinates based on pattern type
-        coords = if pattern isa Pattern2D
-            uniform2D(params.density, pattern, field_x, field_y)
+        # uniform2D/uniform3D now return pattern_ids as well
+        coords_with_ids = if pattern isa Pattern2D
+            x, y, pattern_ids = uniform2D(params.density, pattern, field_x, field_y)
+            ((x, y), pattern_ids)
         else
-            uniform3D(params.density, pattern, field_x, field_y; zrange=params.zrange)
+            x, y, z, pattern_ids = uniform3D(params.density, pattern, field_x, field_y; zrange=params.zrange)
+            ((x, y, z), pattern_ids)
         end
+        coords, pattern_ids = coords_with_ids
 
         # Apply labeling to expand binding sites to fluorophore positions
-        coords = apply_labeling(coords, labeling)
+        coords, pattern_ids = apply_labeling(coords, pattern_ids, labeling)
 
         # Create emitters for true positions
         emitters = if pattern isa Pattern2D
@@ -160,7 +164,8 @@ function simulate(params::StaticSMLMParams;
                 σ_xy=0.0,            # x-y covariance (0 for symmetric PSF)
                 frame=1,
                 dataset=1,
-                track_id=i
+                track_id=i,
+                id=pattern_ids[i]
             ) for i in 1:length(x)]
         else
             x, y, z = coords
@@ -173,7 +178,8 @@ function simulate(params::StaticSMLMParams;
                 σ_xy=0.0,            # x-y covariance (0 for symmetric PSF)
                 frame=1,
                 dataset=1,
-                track_id=i
+                track_id=i,
+                id=pattern_ids[i]
             ) for i in 1:length(x)]
         end
 

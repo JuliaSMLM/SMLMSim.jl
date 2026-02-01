@@ -173,10 +173,77 @@ Apply Labeling to Coordinates
 ==========================================================================#
 
 """
-    apply_labeling(coords, labeling::AbstractLabeling)
+    apply_labeling(coords, pattern_ids, labeling::AbstractLabeling)
 
 Apply labeling strategy to binding site coordinates, expanding each site
-to the appropriate number of fluorophore positions.
+to the appropriate number of fluorophore positions while preserving pattern IDs.
+
+# Arguments
+- `coords`: Tuple of coordinate vectors `(x, y)` for 2D or `(x, y, z)` for 3D
+- `pattern_ids::Vector{Int}`: Pattern instance ID for each binding site
+- `labeling::AbstractLabeling`: Labeling strategy to apply
+
+# Returns
+- `Tuple`: (coords, new_pattern_ids) where coords is a tuple of coordinate vectors
+  and new_pattern_ids preserves pattern membership for each fluorophore
+
+# Example
+```julia
+# Original: binding sites with pattern IDs
+x, y, pattern_ids = uniform2D(1.0, Nmer2D(), 10.0, 10.0)
+
+# After Poisson labeling: variable number of fluorophores, pattern IDs preserved
+(x_labeled, y_labeled), new_ids = apply_labeling((x, y), pattern_ids, PoissonLabeling(1.5))
+```
+"""
+function apply_labeling(coords::Tuple{Vector{T}, Vector{T}}, pattern_ids::Vector{Int},
+                       labeling::AbstractLabeling) where T
+    x, y = coords
+    new_x = T[]
+    new_y = T[]
+    new_ids = Int[]
+
+    for i in eachindex(x)
+        n = n_fluorophores(labeling)
+        for _ in 1:n
+            push!(new_x, x[i])
+            push!(new_y, y[i])
+            push!(new_ids, pattern_ids[i])
+        end
+    end
+
+    return (new_x, new_y), new_ids
+end
+
+function apply_labeling(coords::Tuple{Vector{T}, Vector{T}, Vector{T}}, pattern_ids::Vector{Int},
+                       labeling::AbstractLabeling) where T
+    x, y, z = coords
+    new_x = T[]
+    new_y = T[]
+    new_z = T[]
+    new_ids = Int[]
+
+    for i in eachindex(x)
+        n = n_fluorophores(labeling)
+        for _ in 1:n
+            push!(new_x, x[i])
+            push!(new_y, y[i])
+            push!(new_z, z[i])
+            push!(new_ids, pattern_ids[i])
+        end
+    end
+
+    return (new_x, new_y, new_z), new_ids
+end
+
+# Backward-compatible overloads without pattern_ids (returns only coords)
+"""
+    apply_labeling(coords, labeling::AbstractLabeling)
+
+Apply labeling strategy to binding site coordinates without pattern tracking.
+
+This is a convenience method that returns only the expanded coordinates
+(for backward compatibility).
 
 # Arguments
 - `coords`: Tuple of coordinate vectors `(x, y)` for 2D or `(x, y, z)` for 3D
@@ -187,43 +254,21 @@ to the appropriate number of fluorophore positions.
 
 # Example
 ```julia
-# Original: 100 binding sites
-x, y = uniform2D(1.0, Nmer2D(), 10.0, 10.0)
-
-# After Poisson labeling: variable number of fluorophores
-x_labeled, y_labeled = apply_labeling((x, y), PoissonLabeling(1.5))
+# Apply labeling without pattern tracking
+x, y = [1.0, 2.0], [3.0, 4.0]
+new_x, new_y = apply_labeling((x, y), FixedLabeling(2))
 ```
 """
 function apply_labeling(coords::Tuple{Vector{T}, Vector{T}}, labeling::AbstractLabeling) where T
-    x, y = coords
-    new_x = T[]
-    new_y = T[]
-
-    for i in eachindex(x)
-        n = n_fluorophores(labeling)
-        for _ in 1:n
-            push!(new_x, x[i])
-            push!(new_y, y[i])
-        end
-    end
-
-    return (new_x, new_y)
+    # Generate sequential IDs for backward compatibility
+    pattern_ids = collect(1:length(coords[1]))
+    result, _ = apply_labeling(coords, pattern_ids, labeling)
+    return result
 end
 
 function apply_labeling(coords::Tuple{Vector{T}, Vector{T}, Vector{T}}, labeling::AbstractLabeling) where T
-    x, y, z = coords
-    new_x = T[]
-    new_y = T[]
-    new_z = T[]
-
-    for i in eachindex(x)
-        n = n_fluorophores(labeling)
-        for _ in 1:n
-            push!(new_x, x[i])
-            push!(new_y, y[i])
-            push!(new_z, z[i])
-        end
-    end
-
-    return (new_x, new_y, new_z)
+    # Generate sequential IDs for backward compatibility
+    pattern_ids = collect(1:length(coords[1]))
+    result, _ = apply_labeling(coords, pattern_ids, labeling)
+    return result
 end

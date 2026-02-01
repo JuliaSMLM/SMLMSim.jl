@@ -105,12 +105,15 @@ field_y = 10.0  # μm
 pattern = Nmer2D(n=6, d=0.2)
 density = 1.5   # patterns/μm²
 
-x, y = uniform2D(density, pattern, field_x, field_y)
+x, y, pattern_ids = uniform2D(density, pattern, field_x, field_y)
+# pattern_ids[i] indicates which pattern instance point i belongs to
 
 # Create custom distribution of 3D patterns
 pattern3d = Nmer3D(n=6, d=0.2)
-x, y, z = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
+x, y, z, pattern_ids = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
 ```
+
+The `pattern_ids` array tracks which pattern instance each point belongs to. This is useful for analysis, visualization (coloring by pattern), or grouping emitters by their originating structure. The `id` field on emitters in the simulation output contains this pattern ID.
 
 ## Pattern Manipulation
 

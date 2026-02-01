@@ -512,21 +512,21 @@ rotate!(pattern3d, R)
 #### apply_labeling
 
 Apply labeling strategy to binding site coordinates, expanding each site to the
-appropriate number of fluorophore positions.
+appropriate number of fluorophore positions while preserving pattern IDs.
 
 ```julia
-# Generate binding site coordinates from pattern distribution
-x, y = uniform2D(1.0, Nmer2D(), 10.0, 10.0)  # ~100 binding sites
+# Generate binding site coordinates with pattern IDs from pattern distribution
+x, y, pattern_ids = uniform2D(1.0, Nmer2D(), 10.0, 10.0)
 
-# Apply Poisson labeling (average 1.5 fluorophores per site)
-x_labeled, y_labeled = apply_labeling((x, y), PoissonLabeling(1.5))
+# Apply labeling with pattern ID tracking (returns coords tuple and new IDs)
+(x_labeled, y_labeled), new_ids = apply_labeling((x, y), pattern_ids, PoissonLabeling(1.5))
 
-# Apply fixed labeling with efficiency
+# Backward-compatible: without pattern IDs (returns only coords)
 x_labeled, y_labeled = apply_labeling((x, y), FixedLabeling(1; efficiency=0.8))
 
 # Works with 3D coordinates too
-x, y, z = uniform3D(1.0, Nmer3D(), 10.0, 10.0)
-x_labeled, y_labeled, z_labeled = apply_labeling((x, y, z), BinomialLabeling(4, 0.8))
+x, y, z, pattern_ids = uniform3D(1.0, Nmer3D(), 10.0, 10.0)
+(x_labeled, y_labeled, z_labeled), new_ids = apply_labeling((x, y, z), pattern_ids, BinomialLabeling(4, 0.8))
 ```
 
 #### n_fluorophores
@@ -543,7 +543,8 @@ n = n_fluorophores(labeling)  # Returns Int (can be 0)
 
 ### Pattern Distribution
 
-Generate random pattern distributions in a field.
+Generate random pattern distributions in a field. Each function returns coordinates
+plus pattern instance IDs for tracking which emitters belong to the same pattern.
 
 ```julia
 # Create patterns
@@ -555,11 +556,12 @@ field_x = 10.0 # μm
 field_y = 10.0 # μm
 density = 1.0  # patterns per μm²
 
-# Get coordinates for 2D distribution
-x, y = uniform2D(density, pattern2d, field_x, field_y)
+# Get coordinates for 2D distribution (returns pattern IDs)
+x, y, pattern_ids = uniform2D(density, pattern2d, field_x, field_y)
+# pattern_ids[i] indicates which pattern instance point i belongs to
 
-# Get coordinates for 3D distribution
-x, y, z = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
+# Get coordinates for 3D distribution (returns pattern IDs)
+x, y, z, pattern_ids = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
 ```
 
 ## Common Workflows

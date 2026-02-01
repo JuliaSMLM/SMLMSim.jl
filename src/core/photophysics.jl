@@ -221,7 +221,8 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     σ_xy=0.0,            # x-y covariance (0 for symmetric PSF)
                     frame=frame,
                     dataset=dd,
-                    track_id=pos.track_id
+                    track_id=pos.track_id,
+                    id=pos.id
                 )
             elseif emitter_type <: Emitter3DFit
                 emitter = Emitter3DFit{Float64}(
@@ -233,7 +234,8 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     σ_xy=0.0,             # x-y covariance (0 for symmetric PSF)
                     frame=frame,
                     dataset=dd,
-                    track_id=pos.track_id
+                    track_id=pos.track_id,
+                    id=pos.id
                 )
             else
                 error("Unsupported emitter type: $emitter_type")
