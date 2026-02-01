@@ -31,6 +31,7 @@ include("patterns.jl")
 include("ctmc.jl")
 include("photophysics.jl")
 include("track_utils.jl")
+include("info_types.jl")
 
 # Export abstract types
 export
@@ -81,5 +82,10 @@ export
     get_track,
     get_num_tracks,
     get_tracks
+
+# Export info types for (result, info) return convention
+export
+    SimInfo,
+    ImageInfo
 
 end # module

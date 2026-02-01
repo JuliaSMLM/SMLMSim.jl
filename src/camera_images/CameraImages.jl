@@ -20,6 +20,8 @@ using SMLMData: AbstractCamera, IdealCamera, SCMOSCamera, SMLD, AbstractEmitter
 using MicroscopePSFs
 using Distributions  # Required for Poisson noise functions
 
+import ..Core: ImageInfo
+
 # Include all source files
 include("gen_images.jl")
 include("noise.jl")

@@ -2,8 +2,10 @@
     Main implementation for static SMLM simulations
 """
 
+using ..Core: SimInfo
+
 """
-    simulate(params::StaticSMLMParams; 
+    simulate(params::StaticSMLMParams;
              starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}=nothing,
              pattern::Pattern=nothing,
              molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
@@ -20,10 +22,10 @@ and localization uncertainty.
 - `camera::AbstractCamera`: Camera model for detection simulation
 
 # Returns
-- `Tuple{BasicSMLD, BasicSMLD, BasicSMLD}`: (true_positions, model_kinetics, noisy_data)
-    - true_positions: Ground truth emitter positions
-    - model_kinetics: Positions with simulated blinking
-    - noisy_data: Positions with blinking and localization uncertainty
+- `Tuple{BasicSMLD, SimInfo}`: (smld_noisy, info)
+    - smld_noisy: Localization data with blinking and localization uncertainty
+    - info: SimInfo containing smld_true (ground truth), smld_model (kinetic model),
+            timing, and counts
 
 # Example
 ```julia
@@ -39,31 +41,40 @@ params = StaticSMLMParams(
 
 # Run simulation with Nmer pattern
 pattern = Nmer3D(n=6, d=0.2)
-smld_true, smld_model, smld_noisy = simulate(params; pattern=pattern)
+smld_noisy, info = simulate(params; pattern=pattern)
+
+# Access ground truth and model from info
+smld_true = info.smld_true
+smld_model = info.smld_model
 
 # Run with custom starting conditions
 custom_emitters = [
     Emitter2DFit{Float64}(x, y, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0; track_id=i)
     for (i, (x, y)) in enumerate(zip(rand(10), rand(10)))
 ]
-smld_true, smld_model, smld_noisy = simulate(params; starting_conditions=custom_emitters)
+smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 ```
 # Note
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
 - For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 - If `starting_conditions` is provided, it will be used instead of generating patterns.
 """
-function simulate(params::StaticSMLMParams; 
+function simulate(params::StaticSMLMParams;
                  starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}=nothing,
                  pattern::Union{Pattern,Nothing}=nothing,
                  molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
                  camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1))
-    
+
+    t_start = time_ns()
+
     # Initialize metadata
     metadata = Dict{String,Any}(
         "simulation_parameters" => params
     )
-    
+
+    # Track number of patterns
+    n_patterns = 0
+
     # Process starting conditions if provided
     if starting_conditions !== nothing
         # Extract emitters from starting_conditions
@@ -74,27 +85,28 @@ function simulate(params::StaticSMLMParams;
             # Already a vector of emitters
             deepcopy.(starting_conditions)
         end
-        
+
         # Validate that emitters have appropriate type
         emitter_type = eltype(emitters)
         if !(emitter_type <: AbstractEmitter)
             error("Starting conditions must contain valid emitters")
         end
-        
+
         # Set up metadata for ground truth with starting conditions
         metadata["simulation_type"] = "ground_truth_from_starting_conditions"
         metadata["source"] = "user_provided"
-        
+
         # Create SMLD with true positions from starting conditions
         smld_true = BasicSMLD(emitters, camera, 1, 1, metadata)
+        n_patterns = length(emitters)  # Each emitter from starting conditions counts as a pattern
     else
         # Use pattern-based generation (original code path)
-        
+
         # Use appropriate default pattern if none provided
         if pattern === nothing
             pattern = params.ndims == 3 ? Nmer3D() : Nmer2D()
         end
-        
+
         # Get field size in microns from camera
         centers_x, centers_y = get_pixel_centers(camera)
         field_x = maximum(centers_x) - minimum(centers_x)
@@ -139,13 +151,20 @@ function simulate(params::StaticSMLMParams;
         metadata["density"] = params.density
         metadata["pattern_type"] = string(typeof(pattern))
         metadata["pattern_params"] = Dict(
-            fn => getfield(pattern, fn) 
-            for fn in fieldnames(typeof(pattern)) 
+            fn => getfield(pattern, fn)
+            for fn in fieldnames(typeof(pattern))
             if fn ∉ [:x, :y, :z]
         )
-        
+
         # Create SMLD with true positions
         smld_true = BasicSMLD(emitters, camera, 1, 1, metadata)
+
+        # Count patterns (number of pattern instances, not emitters per pattern)
+        n_patterns = if pattern isa Pattern2D
+            length(coords[1]) ÷ max(1, pattern isa Nmer2D ? pattern.n : 1)
+        else
+            length(coords[1]) ÷ max(1, pattern isa Nmer3D ? pattern.n : 1)
+        end
     end
 
     # Apply kinetic model
@@ -159,9 +178,25 @@ function simulate(params::StaticSMLMParams;
     else
         [params.σ_psf, params.σ_psf, 3.0*params.σ_psf]  # typical 3D PSF scaling
     end
-    
+
     # Add localization noise with appropriate PSF scaling
     smld_noisy = apply_noise(smld_model, σ_scaled)
 
-    return smld_true, smld_model, smld_noisy
+    elapsed_ns = time_ns() - t_start
+
+    # Build SimInfo
+    info = SimInfo(
+        elapsed_ns,
+        :cpu,
+        -1,
+        nothing,  # seed not tracked currently
+        smld_true,
+        smld_model,
+        n_patterns,
+        length(smld_true.emitters),
+        length(smld_model.emitters),
+        params.nframes
+    )
+
+    return smld_noisy, info
 end

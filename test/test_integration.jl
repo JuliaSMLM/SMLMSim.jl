@@ -4,41 +4,42 @@
         params = StaticSMLMParams(
             density = 0.5,        # particles per μm²
             σ_psf = 0.13,         # μm
-            minphotons = 100,     
-            ndatasets = 1,        
+            minphotons = 100,
+            ndatasets = 1,
             nframes = 5,          # small number for testing
             framerate = 10.0,     # frames per second
-            ndims = 2             
+            ndims = 2
         )
-        
+
         # Create some emitters for testing (using Emitter2DFit)
         emitters = Vector{Emitter2DFit{Float64}}()
-        
+
         # Create emitters with explicit frame numbers
-        push!(emitters, Emitter2DFit(0.5, 0.5, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 1, 1))
-        push!(emitters, Emitter2DFit(1.5, 1.5, 2000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 2, 2))
-        push!(emitters, Emitter2DFit(0.5, 0.5, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2, 1, 3, 3))
-        
+        push!(emitters, Emitter2DFit{Float64}(0.5, 0.5, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0; frame=1, dataset=1, track_id=1, id=1))
+        push!(emitters, Emitter2DFit{Float64}(1.5, 1.5, 2000.0, 0.0, 0.0, 0.0, 0.0, 0.0; frame=1, dataset=1, track_id=2, id=2))
+        push!(emitters, Emitter2DFit{Float64}(0.5, 0.5, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0; frame=2, dataset=1, track_id=3, id=3))
+
         # Create a camera for testing
         camera = IdealCamera(32, 32, 0.1)  # 32x32 pixels, 100 nm pixel size
-        
+
         # Create SMLD container
         smld = BasicSMLD(emitters, camera, 2, 1)  # 2 frames, 1 dataset
-        
+
         # Add localization uncertainty with standard deviation of 0.02
         noisy_smld = apply_noise(smld, 0.02)
-        
+
         # Create a PSF model
         psf = GaussianPSF(0.13)  # 130 nm PSF width
-        
-        # Generate camera images
-        images = gen_images(noisy_smld, psf; bg=10.0)
-        
+
+        # Generate camera images - now returns (images, info) tuple
+        images, img_info = gen_images(noisy_smld, psf; bg=10.0)
+
         # Verify workflow outputs
         @test length(noisy_smld.emitters) > 0
         @test size(images, 3) == 2  # Should have 2 frames
+        @test isa(img_info, ImageInfo)
     end
-    
+
     @testset "Diffusion SMLM Workflow" begin
         # Create diffusion simulation parameters (small system for quick tests)
         params = DiffusionSMLMParams(
@@ -57,27 +58,60 @@
             camera_framerate = 100.0,  # frames per second
             camera_exposure = 0.01     # s
         )
-        
-        # Run simulation
-        smld = simulate(params)
-        
-        # Test that we have emitters
+
+        # Run simulation - now returns (smld, info) tuple
+        smld, sim_info = simulate(params)
+
+        # Test that we have emitters and info
         @test !isempty(smld.emitters)
-        
+        @test isa(sim_info, SimInfo)
+
         # Create a PSF model if we have emitters and a camera
         if !isempty(smld.emitters) && smld.camera !== nothing
             # Create a PSF model
             psf = GaussianPSF(0.13)  # 130 nm PSF width
-            
-            # Generate camera images
-            images = gen_images(smld, psf; bg=10.0)
-            
+
+            # Generate camera images - now returns (images, info) tuple
+            images, img_info = gen_images(smld, psf; bg=10.0)
+
             # Verify we have images
             @test size(images, 3) > 0
+            @test isa(img_info, ImageInfo)
         end
-        
+
         # Verify outputs
         @test smld.n_frames > 0
         @test haskey(smld.metadata, "simulation_type")
+    end
+
+    @testset "Full Pipeline Integration" begin
+        # Test the complete pipeline with new tuple returns
+        camera = IdealCamera(64, 64, 0.1)
+
+        # Static simulation
+        static_params = StaticSMLMParams(
+            density = 2.0,
+            nframes = 10,
+            ndatasets = 1,
+            minphotons = 50
+        )
+
+        smld_noisy, sim_info = simulate(static_params; camera=camera)
+
+        # Verify SimInfo
+        @test isa(sim_info, SimInfo)
+        @test sim_info.smld_true !== nothing
+        @test sim_info.smld_model !== nothing
+        @test sim_info.n_frames == 10
+        @test sim_info.elapsed_ns > 0
+
+        # Generate images
+        psf = GaussianPSF(0.15)
+        images, img_info = gen_images(smld_noisy, psf)
+
+        # Verify ImageInfo
+        @test isa(img_info, ImageInfo)
+        @test img_info.frames_generated == 10
+        @test img_info.elapsed_ns > 0
     end
 end

@@ -23,21 +23,28 @@ It includes modules for:
 The main `SMLMSim` module re-exports key types and functions from these submodules
 to provide a unified user interface.
 
+# Return Convention
+All main functions return `(result, info)` tuples:
+- `simulate()` returns `(smld, SimInfo)` - primary data plus metadata
+- `gen_images()` returns `(images, ImageInfo)` - images plus metadata
+
 # Usage
 ```julia
 using SMLMSim
 
-# Example: Static simulation
+# Example: Static simulation - returns (smld_noisy, info)
 params_static = StaticSMLMParams(density=1.0, σ_psf=0.13)
-_, _, smld_noisy = simulate(params_static)
+smld_noisy, info = simulate(params_static)
+smld_true = info.smld_true    # Ground truth from info
+smld_model = info.smld_model  # Kinetic model from info
 
-# Example: Diffusion simulation
+# Example: Diffusion simulation - returns (smld, info)
 params_diff = DiffusionSMLMParams(density=0.5, diff_monomer=0.1)
-smld_diff = simulate(params_diff)
+smld_diff, info = simulate(params_diff)
 
-# Example: Generate images
+# Example: Generate images - returns (images, info)
 psf = GaussianPSF(0.15)
-images = gen_images(smld_noisy, psf)
+images, img_info = gen_images(smld_noisy, psf)
 ```
 """
 module SMLMSim
@@ -60,6 +67,7 @@ using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
 using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
 using .Core: AbstractSim, SMLMSimParams # Add abstract types import
 using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
+using .Core: SimInfo, ImageInfo # Info types for (result, info) return convention
 
 # Include submodules after the Core imports are available
 include("static/StaticSMLM.jl")
@@ -165,6 +173,10 @@ export
     poisson_noise!,
     scmos_noise,
     scmos_noise!,
+
+# Info types for (result, info) return convention
+    SimInfo,
+    ImageInfo,
 
 # API overview
     api
