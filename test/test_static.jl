@@ -33,7 +33,7 @@
             @test isa(smld_model, BasicSMLD)
 
             # Check info fields
-            @test info.elapsed_ns > 0
+            @test info.elapsed_s > 0
             @test info.backend == :cpu
             @test info.n_frames == 20
 

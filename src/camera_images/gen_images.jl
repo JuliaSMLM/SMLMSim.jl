@@ -131,11 +131,11 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
         end
     end
 
-    elapsed_ns = time_ns() - start_time
+    elapsed_s = (time_ns() - start_time) / 1e9
 
     # Build ImageInfo
     info = ImageInfo(
-        elapsed_ns=elapsed_ns,
+        elapsed_s=elapsed_s,
         backend=:cpu,
         device_id=-1,
         frames_generated=length(frames),

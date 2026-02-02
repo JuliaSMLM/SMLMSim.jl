@@ -24,7 +24,7 @@
 
     # Check ImageInfo
     @test isa(info, ImageInfo)
-    @test info.elapsed_ns > 0
+    @test info.elapsed_s > 0
     @test info.backend == :cpu
     @test info.frames_generated == 2
     @test info.n_photons_total == 3800.0  # 1000 + 2000 + 800
@@ -160,7 +160,7 @@ end
     @test smld_scmos.camera isa SCMOSCamera
     @test !isempty(smld_scmos.emitters)
     @test isa(info_scmos, SimInfo)
-    @test info_scmos.elapsed_ns > 0
+    @test info_scmos.elapsed_s > 0
 
     # Test default behavior (should create IdealCamera)
     smld_default, info_default = simulate(params; override_count=5)

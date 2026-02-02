@@ -11,7 +11,7 @@ following the tuple-pattern convention: (primary_output, info).
 Metadata and intermediate results from simulation functions.
 
 # Fields
-- `elapsed_ns::UInt64`: Wall-clock time for simulation in nanoseconds
+- `elapsed_s::Float64`: Wall-clock time for simulation in seconds
 - `backend::Symbol`: Computation backend (`:cpu`)
 - `device_id::Int`: Device identifier (-1 for CPU)
 - `seed::Union{UInt64, Nothing}`: RNG seed for reproducibility (if applicable)
@@ -25,7 +25,7 @@ Metadata and intermediate results from simulation functions.
 # Example
 ```julia
 smld_noisy, info = simulate(params)
-println("Simulation took \$(info.elapsed_ns / 1e9) seconds")
+println("Simulation took \$(info.elapsed_s) seconds")
 println("Generated \$(info.n_localizations) localizations from \$(info.n_emitters) emitters")
 
 # Access intermediate results for analysis
@@ -36,7 +36,7 @@ end
 """
 struct SimInfo
     # Common fields (ecosystem convention)
-    elapsed_ns::UInt64
+    elapsed_s::Float64
     backend::Symbol
     device_id::Int
 
@@ -56,7 +56,7 @@ end
 
 # Convenience constructor with defaults
 function SimInfo(;
-    elapsed_ns::UInt64=UInt64(0),
+    elapsed_s::Float64=0.0,
     backend::Symbol=:cpu,
     device_id::Int=-1,
     seed::Union{UInt64, Nothing}=nothing,
@@ -67,7 +67,7 @@ function SimInfo(;
     n_localizations::Int=0,
     n_frames::Int=0
 )
-    SimInfo(elapsed_ns, backend, device_id, seed, smld_true, smld_model,
+    SimInfo(elapsed_s, backend, device_id, seed, smld_true, smld_model,
             n_patterns, n_emitters, n_localizations, n_frames)
 end
 
@@ -77,7 +77,7 @@ end
 Metadata from image generation functions.
 
 # Fields
-- `elapsed_ns::UInt64`: Wall-clock time for image generation in nanoseconds
+- `elapsed_s::Float64`: Wall-clock time for image generation in seconds
 - `backend::Symbol`: Computation backend (`:cpu`)
 - `device_id::Int`: Device identifier (-1 for CPU)
 - `frames_generated::Int`: Number of frames generated
@@ -87,13 +87,13 @@ Metadata from image generation functions.
 # Example
 ```julia
 images, info = gen_images(smld, psf)
-println("Generated \$(info.frames_generated) frames in \$(info.elapsed_ns / 1e9) seconds")
+println("Generated \$(info.frames_generated) frames in \$(info.elapsed_s) seconds")
 println("Total photons: \$(info.n_photons_total)")
 ```
 """
 struct ImageInfo
     # Common fields
-    elapsed_ns::UInt64
+    elapsed_s::Float64
     backend::Symbol
     device_id::Int
 
@@ -105,12 +105,12 @@ end
 
 # Convenience constructor with defaults
 function ImageInfo(;
-    elapsed_ns::UInt64=UInt64(0),
+    elapsed_s::Float64=0.0,
     backend::Symbol=:cpu,
     device_id::Int=-1,
     frames_generated::Int=0,
     n_photons_total::Float64=0.0,
     output_size::Tuple{Int,Int,Int}=(0,0,0)
 )
-    ImageInfo(elapsed_ns, backend, device_id, frames_generated, n_photons_total, output_size)
+    ImageInfo(elapsed_s, backend, device_id, frames_generated, n_photons_total, output_size)
 end

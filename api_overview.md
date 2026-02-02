@@ -127,7 +127,7 @@ Metadata and intermediate results from simulation functions. Returned as the sec
 
 ```julia
 struct SimInfo
-    elapsed_ns::UInt64              # Wall-clock time in nanoseconds
+    elapsed_s::Float64              # Wall-clock time in nanoseconds
     backend::Symbol                 # Computation backend (:cpu)
     device_id::Int                  # Device identifier (-1 for CPU)
     seed::Union{UInt64, Nothing}    # RNG seed for reproducibility
@@ -146,7 +146,7 @@ Metadata from image generation functions. Returned as the second element of the 
 
 ```julia
 struct ImageInfo
-    elapsed_ns::UInt64              # Wall-clock time in nanoseconds
+    elapsed_s::Float64              # Wall-clock time in nanoseconds
     backend::Symbol                 # Computation backend (:cpu)
     device_id::Int                  # Device identifier (-1 for CPU)
     frames_generated::Int           # Number of frames generated
@@ -372,7 +372,7 @@ smld, info = simulate(
 )
 
 # Check timing
-println("Simulation took $(info.elapsed_ns / 1e9) seconds")
+println("Simulation took $(info.elapsed_s) seconds")
 ```
 
 #### kinetic_model
@@ -440,7 +440,7 @@ images, info = gen_images(
 )
 
 # Access image metadata
-println("Generated $(info.frames_generated) frames in $(info.elapsed_ns / 1e9) seconds")
+println("Generated $(info.frames_generated) frames in $(info.elapsed_s) seconds")
 println("Total photons: $(info.n_photons_total)")
 
 # The support parameter controls PSF computation region:
@@ -738,7 +738,7 @@ images, img_info = gen_images(smld_model, psf;
 )
 
 println("Generated $(length(smld_noisy.emitters)) localizations and $(img_info.frames_generated) images.")
-println("Simulation took $(info.elapsed_ns / 1e9) seconds")
+println("Simulation took $(info.elapsed_s) seconds")
 ```
 
 ### Diffusion with Dimer Analysis

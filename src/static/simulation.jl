@@ -228,11 +228,11 @@ function simulate(params::StaticSMLMParams;
     # Add localization noise with appropriate PSF scaling
     smld_noisy = apply_noise(smld_model, σ_scaled)
 
-    elapsed_ns = time_ns() - start_time
+    elapsed_s = (time_ns() - start_time) / 1e9
 
     # Build SimInfo
     info = SimInfo(
-        elapsed_ns=elapsed_ns,
+        elapsed_s=elapsed_s,
         backend=:cpu,
         device_id=-1,
         seed=nothing,

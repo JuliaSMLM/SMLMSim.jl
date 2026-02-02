@@ -488,14 +488,14 @@ function simulate(params::DiffusionSMLMParams;
     # Convert to SMLD
     smld = create_smld(camera_emitters, camera, params)
 
-    elapsed_ns = time_ns() - start_time
+    elapsed_s = (time_ns() - start_time) / 1e9
 
     # Calculate number of frames
     n_frames = isempty(smld.emitters) ? 0 : maximum(e.frame for e in smld.emitters)
 
     # Build SimInfo (diffusion doesn't have smld_true/smld_model)
     info = SimInfo(
-        elapsed_ns=elapsed_ns,
+        elapsed_s=elapsed_s,
         backend=:cpu,
         device_id=-1,
         seed=nothing,

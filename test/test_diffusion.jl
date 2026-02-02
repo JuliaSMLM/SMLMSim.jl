@@ -59,7 +59,7 @@
 
     # Check SimInfo
     @test isa(info, SimInfo)
-    @test info.elapsed_ns > 0
+    @test info.elapsed_s > 0
     @test info.backend == :cpu
     @test info.n_emitters > 0
 
