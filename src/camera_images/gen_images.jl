@@ -1,7 +1,7 @@
 # Generate camera images from SMLD and PSF
 
 """
-    gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> Array{T, 3} where T<:Real
+    gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> Tuple{Array{T, 3}, ImageInfo} where T<:Real
 
 Generate camera images from SMLD data using the specified PSF model.
 
@@ -25,15 +25,16 @@ Generate camera images from SMLD data using the specified PSF model.
   - For IdealCamera: ignored (use poisson_noise instead)
 
 # Returns
-- 3D array of camera images with dimensions [height, width, num_frames]
-- The element type T matches the type of emitter.photons (typically Float64)
+- `Tuple{Array{T,3}, ImageInfo}`: (images, info)
+    - images: 3D array of camera images with dimensions [height, width, num_frames]
+    - info: ImageInfo containing timing and image statistics
 
 # Performance Note
-For the `support` parameter, using a finite radius (typically 3-5× the PSF width) 
+For the `support` parameter, using a finite radius (typically 3-5× the PSF width)
 provides a good balance between accuracy and performance. For example, with a PSF
 width of 0.15μm, a support radius of 0.5-1.0μm is usually sufficient.
 """
-function gen_images(smld::SMLD, psf::AbstractPSF; 
+function gen_images(smld::SMLD, psf::AbstractPSF;
           dataset::Int=1,
           frames=nothing,
           support::Union{Real,Tuple{<:Real,<:Real,<:Real,<:Real}}=Inf,
@@ -42,58 +43,66 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
           bg::Float64=0.0,
           poisson_noise::Bool=false,
           camera_noise::Bool=false)
-    
+
+    start_time = time_ns()
+
     # Filter for the specified dataset
     dataset_smld = @filter(smld, dataset == dataset)
-    
+
     # Determine frames to process
     if frames === nothing
         # Use all frames from 1 to n_frames
         frames = 1:smld.n_frames
     end
-    
+
     # Get camera dimensions from SMLD
     camera = smld.camera
     width = length(camera.pixel_edges_x) - 1
     height = length(camera.pixel_edges_y) - 1
-    
+
     # Determine the element type from emitters (if any)
     if isempty(dataset_smld.emitters)
         T = Float64 # default if no emitters
     else
         T = typeof(dataset_smld.emitters[1].photons)
     end
-    
+
     # Pre-allocate output array
     images = zeros(T, height, width, length(frames))
-    
+
+    # Track total photons
+    n_photons_total = 0.0
+
     # Process each frame individually
     for (i, frame_num) in enumerate(frames)
         # Filter emitters for this frame
         frame_emitters = filter(e -> e.frame == frame_num, dataset_smld.emitters)
-        
+
         # Add background to all images
         images[:,:,i] .+= bg
-        
+
         # Skip image generation if no emitters in this frame
         if isempty(frame_emitters)
             continue
         end
-        
+
+        # Accumulate photon count
+        n_photons_total += sum(e.photons for e in frame_emitters)
+
         # Generate image with all emitters at once
         img = integrate_pixels(
-            psf, 
-            smld.camera, 
-            frame_emitters; 
+            psf,
+            smld.camera,
+            frame_emitters;
             support=support,
             sampling=sampling,
             threaded=threaded
         )
-        
+
         # Add image to background
         images[:,:,i] .+= img
     end
-    
+
     # Apply Poisson noise if requested
     if poisson_noise
         # Loop through each pixel and apply Poisson noise
@@ -121,21 +130,35 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
             @warn "Camera noise only supported for SCMOSCamera. Use poisson_noise=true for IdealCamera." maxlog=1
         end
     end
-    
-    return images
+
+    elapsed_ns = time_ns() - start_time
+
+    # Build ImageInfo
+    info = ImageInfo(
+        elapsed_ns=elapsed_ns,
+        backend=:cpu,
+        device_id=-1,
+        frames_generated=length(frames),
+        n_photons_total=n_photons_total,
+        output_size=(height, width, length(frames))
+    )
+
+    return images, info
 end
 
 """
-    gen_image(smld::SMLD, psf::AbstractPSF, frame::Int; kwargs...) -> Matrix{T} where T<:Real
+    gen_image(smld::SMLD, psf::AbstractPSF, frame::Int; kwargs...) -> Tuple{Matrix{T}, ImageInfo} where T<:Real
 
 Generate a single camera image for a specific frame from SMLD data.
 See `gen_images` for full documentation of parameters.
 
 # Returns
-- A 2D camera image as Matrix{T} where T matches the type of emitter.photons
+- `Tuple{Matrix{T}, ImageInfo}`: (image, info)
+    - image: 2D camera image as Matrix{T}
+    - info: ImageInfo containing timing and image statistics
 """
 function gen_image(smld::SMLD, psf::AbstractPSF, frame::Int; kwargs...)
     # Call gen_images with a single frame
-    images = gen_images(smld, psf; frames=[frame], kwargs...)
-    return images[:,:,1]
+    images, info = gen_images(smld, psf; frames=[frame], kwargs...)
+    return images[:,:,1], info
 end

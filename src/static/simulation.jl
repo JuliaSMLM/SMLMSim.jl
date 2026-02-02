@@ -31,10 +31,9 @@ and localization uncertainty.
   allowing some molecules to bleach and reach pseudo-equilibrium.
 
 # Returns
-- `Tuple{BasicSMLD, BasicSMLD, BasicSMLD}`: (true_positions, model_kinetics, noisy_data)
-    - true_positions: Ground truth emitter positions (after labeling)
-    - model_kinetics: Positions with simulated blinking
+- `Tuple{BasicSMLD, SimInfo}`: (noisy_data, info)
     - noisy_data: Positions with blinking and localization uncertainty
+    - info: SimInfo containing smld_true, smld_model, timing, and counts
 
 # Example
 ```julia
@@ -50,16 +49,20 @@ params = StaticSMLMParams(
 
 # Run simulation with Nmer pattern
 pattern = Nmer3D(n=6, d=0.2)
-smld_true, smld_model, smld_noisy = simulate(params; pattern=pattern)
+smld_noisy, info = simulate(params; pattern=pattern)
+
+# Access intermediate results
+smld_true = info.smld_true
+smld_model = info.smld_model
 
 # Run with Poisson labeling (average 1.5 fluorophores per binding site)
-smld_true, smld_model, smld_noisy = simulate(params;
+smld_noisy, info = simulate(params;
     pattern=pattern,
     labeling=PoissonLabeling(1.5)
 )
 
 # Run with partial labeling efficiency (80% of sites labeled)
-smld_true, smld_model, smld_noisy = simulate(params;
+smld_noisy, info = simulate(params;
     pattern=pattern,
     labeling=PoissonLabeling(1.0; efficiency=0.8)
 )
@@ -68,7 +71,7 @@ smld_true, smld_model, smld_noisy = simulate(params;
 k_off, k_on, k_bleach = 10.0, 1.0, 0.1
 Q = [-(k_off+k_bleach) k_off k_bleach; k_on -k_on 0.0; 0.0 0.0 0.0]
 fluor = GenericFluor(1e4, Q)
-smld_true, smld_model, smld_noisy = simulate(params;
+smld_noisy, info = simulate(params;
     molecule=fluor,
     state1=1,        # Start in ON state (required for absorbing states)
     burn_in=5.0      # 5 seconds pre-illumination
@@ -79,7 +82,7 @@ custom_emitters = [
     Emitter2DFit{Float64}(x, y, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, track_id=i)
     for (i, (x, y)) in enumerate(zip(rand(10), rand(10)))
 ]
-smld_true, smld_model, smld_noisy = simulate(params; starting_conditions=custom_emitters)
+smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 ```
 # Note
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
@@ -96,12 +99,15 @@ function simulate(params::StaticSMLMParams;
                  camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1),
                  state1::Union{Int, Symbol}=:equilibrium,
                  burn_in::Real=0.0)
-    
+
+    start_time = time_ns()
+    n_patterns = 0
+
     # Initialize metadata
     metadata = Dict{String,Any}(
         "simulation_parameters" => params
     )
-    
+
     # Process starting conditions if provided
     if starting_conditions !== nothing
         # Extract emitters from starting_conditions
@@ -112,27 +118,28 @@ function simulate(params::StaticSMLMParams;
             # Already a vector of emitters
             deepcopy.(starting_conditions)
         end
-        
+
         # Validate that emitters have appropriate type
         emitter_type = eltype(emitters)
         if !(emitter_type <: AbstractEmitter)
             error("Starting conditions must contain valid emitters")
         end
-        
+
         # Set up metadata for ground truth with starting conditions
         metadata["simulation_type"] = "ground_truth_from_starting_conditions"
         metadata["source"] = "user_provided"
-        
+
         # Create SMLD with true positions from starting conditions
         smld_true = BasicSMLD(emitters, camera, 1, 1, metadata)
+        n_patterns = 0  # User-provided, no patterns generated
     else
         # Use pattern-based generation (original code path)
-        
+
         # Use appropriate default pattern if none provided
         if pattern === nothing
             pattern = params.ndims == 3 ? Nmer3D() : Nmer2D()
         end
-        
+
         # Get field size in microns from camera
         centers_x, centers_y = get_pixel_centers(camera)
         field_x = maximum(centers_x) - minimum(centers_x)
@@ -148,6 +155,9 @@ function simulate(params::StaticSMLMParams;
             ((x, y, z), pattern_ids)
         end
         coords, pattern_ids = coords_with_ids
+
+        # Count patterns before labeling expands them
+        n_patterns = length(unique(pattern_ids))
 
         # Apply labeling to expand binding sites to fluorophore positions
         coords, pattern_ids = apply_labeling(coords, pattern_ids, labeling)
@@ -197,7 +207,7 @@ function simulate(params::StaticSMLMParams;
             fn => getfield(labeling, fn)
             for fn in fieldnames(typeof(labeling))
         )
-        
+
         # Create SMLD with true positions
         smld_true = BasicSMLD(emitters, camera, 1, 1, metadata)
     end
@@ -214,9 +224,25 @@ function simulate(params::StaticSMLMParams;
     else
         [params.σ_psf, params.σ_psf, 3.0*params.σ_psf]  # typical 3D PSF scaling
     end
-    
+
     # Add localization noise with appropriate PSF scaling
     smld_noisy = apply_noise(smld_model, σ_scaled)
 
-    return smld_true, smld_model, smld_noisy
+    elapsed_ns = time_ns() - start_time
+
+    # Build SimInfo
+    info = SimInfo(
+        elapsed_ns=elapsed_ns,
+        backend=:cpu,
+        device_id=-1,
+        seed=nothing,
+        smld_true=smld_true,
+        smld_model=smld_model,
+        n_patterns=n_patterns,
+        n_emitters=length(smld_true.emitters),
+        n_localizations=length(smld_noisy.emitters),
+        n_frames=params.nframes
+    )
+
+    return smld_noisy, info
 end

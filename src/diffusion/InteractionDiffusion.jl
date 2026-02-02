@@ -56,6 +56,7 @@ using Printf
 import ..simulate
 import ..Core: AbstractSim
 import ..Core: SMLMSimParams
+import ..SimInfo
 
 include("types.jl")
 include("smoluchowski.jl")

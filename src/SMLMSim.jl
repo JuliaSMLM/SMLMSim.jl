@@ -49,6 +49,9 @@ using LinearAlgebra
 # Re-export critical types from SMLMData to make them available to users
 export AbstractCamera, IdealCamera, SCMOSCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
 
+# Include info types before submodules so they can use them
+include("types.jl")
+
 # Core module (includes molecules.jl and patterns.jl internally)
 include("core/Core.jl")
 
@@ -181,6 +184,10 @@ export
     poisson_noise!,
     scmos_noise,
     scmos_noise!,
+
+# Info types
+    SimInfo,
+    ImageInfo,
 
 # API overview
     api

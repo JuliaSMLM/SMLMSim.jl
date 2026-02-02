@@ -27,6 +27,7 @@ import ..Core: AbstractSim, SMLMSimParams
 import ..Core: AbstractLabeling, FixedLabeling, PoissonLabeling, BinomialLabeling
 import ..Core: n_fluorophores, apply_labeling
 import ..simulate
+import ..SimInfo
 
 include("parameters.jl")
 include("coordinate_noise.jl")
