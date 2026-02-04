@@ -36,7 +36,7 @@ include("simulation.jl")
 # Export functions and types
 export
     # Core types
-    StaticSMLMParams,
+    StaticSMLMConfig,
     
     # Simulation functions
     simulate,

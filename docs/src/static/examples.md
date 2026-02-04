@@ -18,7 +18,7 @@ using CairoMakie
 camera = IdealCamera(128, 64, 0.1)  # 128×64 pixels, 100nm pixels
 
 # Create simulation parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 1.0,        # patterns per μm²
     σ_psf = 0.13,         # PSF width in μm
 )
@@ -73,7 +73,7 @@ using CairoMakie
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # Create 3D simulation parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 0.5,        # emitters per μm²
     σ_psf = 0.13,         # PSF width in μm
     ndims = 3,            # 3D simulation
@@ -129,7 +129,7 @@ using CairoMakie
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # Create simulation parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 2.0,        # patterns per μm²
     σ_psf = 0.13,         # 130nm PSF width
     nframes = 100,        # 100 frames
@@ -247,7 +247,7 @@ camera = IdealCamera(64, 64, 0.1)
 grid = JitteredGrid2D()
 
 # Create simulation parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 0.2,        # Patterns per μm²
     nframes = 1000        # Number of frames
 )

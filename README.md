@@ -35,7 +35,7 @@ using SMLMSim
 
 # Define a camera and simulation parameters
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
-params = StaticSMLMParams(density=1.0, σ_psf=0.13) # Density 1/μm², PSF 130nm
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13) # Density 1/μm², PSF 130nm
 
 # Run simulation for an 8-molecule ring pattern
 smld_noisy, info = simulate(
@@ -58,7 +58,7 @@ Simulate molecules diffusing and interacting (e.g., dimerization).
 using SMLMSim
 
 # Set diffusion simulation parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,           # molecules per μm²
     box_size = 10.0,         # μm
     diff_monomer = 0.1,      # μm²/s
@@ -109,7 +109,7 @@ Create camera images from simulation results.
 using MicroscopePSFs # Needed for PSF types
 
 # Generate images from diffusion simulation output
-# Note: Frame timing is controlled by DiffusionSMLMParams (camera_framerate, camera_exposure)
+# Note: Frame timing is controlled by DiffusionSMLMConfig (camera_framerate, camera_exposure)
 # Multiple simulation timesteps are automatically integrated during simulate()
 psf = GaussianPSF(0.15) # 150nm PSF width
 images, img_info = gen_images(smld, psf;
@@ -132,7 +132,7 @@ using MicroscopePSFs
 camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
 
 # Run static simulation with sCMOS camera
-params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13)
 smld_noisy, info = simulate(
     params,
     pattern=Nmer2D(n=8, d=0.1),
@@ -145,7 +145,7 @@ psf = GaussianPSF(0.15)
 images_scmos, img_info = gen_images(smld_noisy, psf, bg=10.0, camera_noise=true)
 
 # For diffusion simulations
-diff_params = DiffusionSMLMParams(density=0.5, box_size=10.0)
+diff_params = DiffusionSMLMConfig(density=0.5, box_size=10.0)
 smld_diff, diff_info = simulate(diff_params; camera=camera_scmos, override_count=10)
 ```
 
@@ -165,7 +165,7 @@ using MicroscopePSFs
 
 # --- Simulation Setup ---
 camera = IdealCamera(128, 128, 0.1) # 128×128 pixels, 100nm pixels
-params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13)
 smld_noisy, info = simulate(
     params,
     pattern=Nmer2D(n=6, d=0.2), # Hexamer
@@ -203,7 +203,7 @@ using Statistics
 camera_scmos = SCMOSCamera(64, 64, 0.1, 1.6)  # 64×64 pixels, 100nm/px, 1.6 e⁻ read noise
 
 # Run diffusion simulation
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 1.0,           # 1 molecule/μm²
     box_size = 6.4,          # 6.4×6.4 μm field
     diff_monomer = 0.1,      # 0.1 μm²/s diffusion

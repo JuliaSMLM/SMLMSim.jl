@@ -22,8 +22,8 @@ All simulations use consistent physical units:
 
 - `AbstractSim`: Base type for all simulation types
   - `SMLMSimParams`: Base type for simulation parameters
-    - `StaticSMLMParams`: Parameters for static SMLM simulation
-    - `DiffusionSMLMParams`: Parameters for diffusion simulation
+    - `StaticSMLMConfig`: Parameters for static SMLM simulation
+    - `DiffusionSMLMConfig`: Parameters for diffusion simulation
 
 - `SimInfo`: Metadata and intermediate results from simulation functions
 - `ImageInfo`: Metadata from image generation functions
@@ -50,12 +50,12 @@ All simulations use consistent physical units:
 
 ## Essential Types
 
-### StaticSMLMParams
+### StaticSMLMConfig
 
 Parameters for static SMLM simulation with fixed molecular patterns.
 
 ```julia
-Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
+Base.@kwdef mutable struct StaticSMLMConfig <: SMLMSimParams
     density::Float64 = 1.0          # density in particles per square micron
     σ_psf::Float64 = 0.13           # PSF width in microns
     minphotons::Int = 50            # minimum photons for detection
@@ -67,12 +67,12 @@ Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
 end
 ```
 
-### DiffusionSMLMParams
+### DiffusionSMLMConfig
 
 Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 ```julia
-Base.@kwdef mutable struct DiffusionSMLMParams <: SMLMSimParams
+Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     density::Float64 = 1.0          # number density (molecules/μm²)
     box_size::Float64 = 10.0        # simulation box size (μm)
     diff_monomer::Float64 = 0.1     # monomer diffusion coefficient (μm²/s)
@@ -222,10 +222,10 @@ end
 
 ```julia
 # Static SMLM with default parameters
-params_static = StaticSMLMParams()
+params_static = StaticSMLMConfig()
 
 # Custom parameters for static simulation
-params_static = StaticSMLMParams(
+params_static = StaticSMLMConfig(
     density = 2.0,        # 2 patterns per μm²
     σ_psf = 0.15,         # 150nm PSF width
     nframes = 2000,       # 2000 frames
@@ -233,10 +233,10 @@ params_static = StaticSMLMParams(
 )
 
 # Diffusion simulation with default parameters
-params_diff = DiffusionSMLMParams()
+params_diff = DiffusionSMLMConfig()
 
 # Custom parameters for diffusion simulation
-params_diff = DiffusionSMLMParams(
+params_diff = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
     box_size = 15.0,      # 15μm box size
     diff_monomer = 0.2,   # 0.2 μm²/s diffusion coefficient
@@ -338,7 +338,7 @@ All `simulate()` methods return a tuple: `(primary_output, info)`.
 ```julia
 # Static SMLM simulation
 # First create simulation parameters
-params = StaticSMLMParams()
+params = StaticSMLMConfig()
 
 # Then run simulation - returns (smld_noisy, SimInfo)
 smld_noisy, info = simulate(
@@ -363,7 +363,7 @@ smld_noisy, info = simulate(
 
 # Diffusion simulation
 # First create simulation parameters
-params_diff = DiffusionSMLMParams()
+params_diff = DiffusionSMLMConfig()
 
 # Then run simulation - returns (smld, SimInfo)
 smld, info = simulate(
@@ -498,7 +498,7 @@ single_frame, info = gen_image(
 # Example usage of diffusion analysis functions
 
 # First, run a diffusion simulation
-params = DiffusionSMLMParams()
+params = DiffusionSMLMConfig()
 smld, info = simulate(params)
 
 # Extract dimers from diffusion simulation
@@ -523,7 +523,7 @@ state_history = track_state_changes(smld)
 # Example usage of track utilities
 
 # First, run a simulation
-params = StaticSMLMParams()
+params = StaticSMLMConfig()
 smld_noisy, info = simulate(params)
 
 # Specify a track ID to extract
@@ -630,7 +630,7 @@ x, y, z, pattern_ids = uniform3D(density, pattern3d, field_x, field_y, zrange=[-
 
 ```julia
 # 1. Define parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 1.0,
     σ_psf = 0.13,
     nframes = 1000
@@ -674,7 +674,7 @@ images, img_info = gen_images(smld_model, psf;
 
 ```julia
 # 1. Define parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
@@ -714,7 +714,7 @@ using MicroscopePSFs
 
 # Define a camera and simulation parameters
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
-params = StaticSMLMParams(density=1.0, σ_psf=0.13, nframes=1000)
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13, nframes=1000)
 
 # Run simulation for an 8-molecule ring pattern
 smld_noisy, info = simulate(
@@ -748,7 +748,7 @@ using SMLMSim
 using MicroscopePSFs
 
 # Set diffusion simulation parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
@@ -823,7 +823,7 @@ end
 
 # Create camera and parameters
 camera = IdealCamera(128, 128, 0.1)
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 0.5,
     σ_psf = 0.13,
     nframes = 2000,

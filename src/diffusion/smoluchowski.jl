@@ -1,5 +1,5 @@
 """
-    DiffusionSMLMParams <: SMLMSimParams
+    DiffusionSMLMConfig <: SMLMSimParams
 
 Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
@@ -22,10 +22,10 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 # Examples
 ```julia
 # Default parameters
-params = DiffusionSMLMParams()
+params = DiffusionSMLMConfig()
 
 # Custom parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 1.0,           # 1 molecule per μm²
     box_size = 20.0,         # 20μm × 20μm box
     diff_monomer = 0.2,      # 0.2 μm²/s
@@ -43,7 +43,7 @@ params = DiffusionSMLMParams(
 )
 ```
 """
-Base.@kwdef mutable struct DiffusionSMLMParams <: SMLMSimParams
+Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     density::Float64 = 1.0
     box_size::Float64 = 10.0
     diff_monomer::Float64 = 0.1
@@ -61,7 +61,7 @@ Base.@kwdef mutable struct DiffusionSMLMParams <: SMLMSimParams
     camera_framerate::Float64 = 10.0     # Frames per second
     camera_exposure::Float64 = 0.1       # Exposure time in seconds
     
-    function DiffusionSMLMParams(
+    function DiffusionSMLMConfig(
         density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
         k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
         camera_framerate, camera_exposure
@@ -118,19 +118,19 @@ Base.@kwdef mutable struct DiffusionSMLMParams <: SMLMSimParams
 end
 
 """
-    initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.0; override_count::Union{Nothing, Int}=nothing)
+    initialize_emitters(params::DiffusionSMLMConfig, photons::Float64=1000.0; override_count::Union{Nothing, Int}=nothing)
 
 Create initial emitter positions for the simulation.
 
 # Arguments
-- `params::DiffusionSMLMParams`: Simulation parameters
+- `params::DiffusionSMLMConfig`: Simulation parameters
 - `photons::Float64=1000.0`: Number of photons per emitter
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Vector of initialized emitters
 """
-function initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.0; override_count::Union{Nothing, Int}=nothing)
+function initialize_emitters(params::DiffusionSMLMConfig, photons::Float64=1000.0; override_count::Union{Nothing, Int}=nothing)
     # Calculate number of molecules
     n_molecules = if override_count !== nothing
         override_count
@@ -186,19 +186,19 @@ function initialize_emitters(params::DiffusionSMLMParams, photons::Float64=1000.
 end
 
 """
-    update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMParams, dt::Float64) 
+    update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64) 
 
 Update all emitters based on Smoluchowski diffusion dynamics.
 
 # Arguments
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters state
-- `params::DiffusionSMLMParams`: Simulation parameters
+- `params::DiffusionSMLMConfig`: Simulation parameters
 - `dt::Float64`: Time step
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Updated emitters
 """
-function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMParams, dt::Float64)
+function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64)
     # Create new array for updated emitters
     new_emitters = Vector{eltype(emitters)}()
     
@@ -293,12 +293,12 @@ Add emitters to camera frames when they fall within an exposure window.
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters from simulation
 - `time::Float64`: Current simulation time
 - `frame_num::Int`: Current frame number
-- `params::DiffusionSMLMParams`: Simulation parameters
+- `params::DiffusionSMLMConfig`: Simulation parameters
 
 # Returns
 - `Nothing`
 """
-function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params::DiffusionSMLMParams)
+function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params::DiffusionSMLMConfig)
     # Check if this timepoint falls within a camera exposure window
     exposure_start = (frame_num - 1) / params.camera_framerate
     exposure_end = exposure_start + params.camera_exposure
@@ -338,7 +338,7 @@ function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, 
 end
 
 """
-    simulate(params::DiffusionSMLMParams;
+    simulate(params::DiffusionSMLMConfig;
              starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
              photons::Float64=1000.0,
              override_count::Union{Nothing, Int}=nothing,
@@ -348,7 +348,7 @@ Run a Smoluchowski diffusion simulation and return a BasicSMLD object
 with emitters that have both frame number and timestamp information.
 
 # Arguments
-- `params::DiffusionSMLMParams`: Simulation parameters
+- `params::DiffusionSMLMConfig`: Simulation parameters
 
 # Keyword Arguments
 - `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing`: Optional starting emitters
@@ -367,7 +367,7 @@ with emitters that have both frame number and timestamp information.
 # Example
 ```julia
 # Set up parameters with camera settings
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,           # molecules per μm²
     box_size = 10.0,         # μm
     camera_framerate = 20.0, # 20 fps
@@ -386,7 +386,7 @@ final_state_emitters = filter(e -> e.frame == final_frame, smld.emitters)
 smld_continued, info = simulate(params; starting_conditions=final_state_emitters)
 ```
 """
-function simulate(params::DiffusionSMLMParams;
+function simulate(params::DiffusionSMLMConfig;
                  starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
                  photons::Float64=1000.0,
                  override_count::Union{Nothing, Int}=nothing,
@@ -530,7 +530,7 @@ static_emitters = smld_static.emitters
 diffusing_emitters = convert_to_diffusing_emitters(static_emitters)
 
 # Use as starting conditions for a diffusion simulation
-params = DiffusionSMLMParams(t_max=10.0)
+params = DiffusionSMLMConfig(t_max=10.0)
 smld = simulate(params; starting_conditions=diffusing_emitters)
 ```
 """
@@ -586,14 +586,14 @@ Extract the emitters from the final frame of a simulation to use as starting con
 # Example
 ```julia
 # Run a simulation
-params = DiffusionSMLMParams(t_max=5.0)
+params = DiffusionSMLMConfig(t_max=5.0)
 smld = simulate(params)
 
 # Extract final state
 final_state = extract_final_state(smld)
 
 # Continue simulation with new parameters
-params_new = DiffusionSMLMParams(t_max=10.0, diff_monomer=0.2)
+params_new = DiffusionSMLMConfig(t_max=10.0, diff_monomer=0.2)
 smld_continued = simulate(params_new; starting_conditions=final_state)
 ```
 """

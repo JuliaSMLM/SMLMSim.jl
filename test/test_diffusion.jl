@@ -1,6 +1,6 @@
 @testset "Diffusion SMLM" begin
     # Create diffusion simulation parameters
-    params = DiffusionSMLMParams(
+    params = DiffusionSMLMConfig(
         density = 0.5,             # molecules per μm²
         box_size = 5.0,            # 5μm box
         diff_monomer = 0.1,        # μm²/s
@@ -34,7 +34,7 @@
     @test params.camera_exposure == 0.01
     
     # Test simulation (using a smaller system for faster tests)
-    small_params = DiffusionSMLMParams(
+    small_params = DiffusionSMLMConfig(
         density = 0.5,             # molecules per μm²
         box_size = 2.0,            # 2μm box for faster tests
         diff_monomer = 0.1,        # μm²/s
@@ -181,8 +181,8 @@
             push!(emitters_timeline, DiffusingEmitter2D{Float64}(1.8, 1.8, 1000.0, 0.3, 4, 1, 2, :monomer, nothing))
             
             # Create test SMLD
-            # Convert DiffusionSMLMParams to Dict{String, Any} to match constructor signature
-            metadata = Dict{String, Any}("simulation_parameters" => DiffusionSMLMParams(camera_framerate=10.0))
+            # Convert DiffusionSMLMConfig to Dict{String, Any} to match constructor signature
+            metadata = Dict{String, Any}("simulation_parameters" => DiffusionSMLMConfig(camera_framerate=10.0))
             timeline_smld = BasicSMLD(emitters_timeline, camera, 4, 1, metadata)
             
             # Test lifetime calculation

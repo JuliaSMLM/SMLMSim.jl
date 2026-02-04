@@ -1,7 +1,7 @@
 @testset "Integration Tests" begin
     @testset "Static SMLM Workflow" begin
-        # Create StaticSMLMParams
-        params = StaticSMLMParams(
+        # Create StaticSMLMConfig
+        params = StaticSMLMConfig(
             density = 0.5,        # particles per μm²
             σ_psf = 0.13,         # μm
             minphotons = 100,
@@ -42,7 +42,7 @@
 
     @testset "Diffusion SMLM Workflow" begin
         # Create diffusion simulation parameters (small system for quick tests)
-        params = DiffusionSMLMParams(
+        params = DiffusionSMLMConfig(
             density = 0.5,             # molecules per μm²
             box_size = 2.0,            # 2μm box
             diff_monomer = 0.1,        # μm²/s

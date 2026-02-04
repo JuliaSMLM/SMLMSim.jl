@@ -43,13 +43,13 @@ All simulation parameters use consistent physical units:
 
 ### Running a Basic Simulation
 
-The main interface for running diffusion simulations is the `simulate` function with `DiffusionSMLMParams`:
+The main interface for running diffusion simulations is the `simulate` function with `DiffusionSMLMConfig`:
 
 ```julia
 using SMLMSim
 
 # Set simulation parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
@@ -69,11 +69,11 @@ The `smld` output is a `BasicSMLD` structure containing all emitters across all 
 
 ## Simulation Parameters
 
-The `DiffusionSMLMParams` structure allows you to customize various aspects of the simulation:
+The `DiffusionSMLMConfig` structure allows you to customize various aspects of the simulation:
 
 ```julia
 # More complex simulation
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 2.0,           # Higher density
     box_size = 20.0,         # Larger area
     diff_monomer = 0.2,      # Faster monomer diffusion

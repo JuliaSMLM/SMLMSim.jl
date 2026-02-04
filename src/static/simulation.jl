@@ -3,7 +3,7 @@
 """
 
 """
-    simulate(params::StaticSMLMParams;
+    simulate(params::StaticSMLMConfig;
              starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}=nothing,
              pattern::Pattern=nothing,
              labeling::AbstractLabeling=FixedLabeling(),
@@ -16,7 +16,7 @@ Generate simulated static SMLM data with realistic blinking kinetics
 and localization uncertainty.
 
 # Arguments
-- `params::StaticSMLMParams`: Simulation parameters
+- `params::StaticSMLMConfig`: Simulation parameters
 - `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}`: Optional starting conditions instead of generating patterns
 - `pattern::Pattern`: Pattern to use (default depends on params.ndims)
 - `labeling::AbstractLabeling`: Labeling strategy for fluorophore attachment (default: FixedLabeling() = 1 per site)
@@ -38,7 +38,7 @@ and localization uncertainty.
 # Example
 ```julia
 # Create parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 2.0,              # 2 patterns per μm²
     σ_psf = 0.15,         # 150nm PSF width
     minphotons = 100,     # 100 photons for detection
@@ -91,7 +91,7 @@ smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 - Labeling and molecule are separate concepts: labeling controls how many fluorophores per binding site,
   molecule controls the photophysics (blinking) of each fluorophore.
 """
-function simulate(params::StaticSMLMParams;
+function simulate(params::StaticSMLMConfig;
                  starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}=nothing,
                  pattern::Union{Pattern,Nothing}=nothing,
                  labeling::AbstractLabeling=FixedLabeling(),

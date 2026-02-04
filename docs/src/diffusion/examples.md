@@ -26,7 +26,7 @@ using CairoMakie
 using MicroscopePSFs
 
 # Set up simulation parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 2.0,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
@@ -111,7 +111,7 @@ using MicroscopePSFs
 using CairoMakie
 
 # Set up diffusion parameters with high temporal resolution
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 1.0,          # molecules per μm²
     box_size = 10.0,        # μm
     diff_monomer = 0.2,     # μm²/s (moderate diffusion)
@@ -176,7 +176,7 @@ using SMLMSim
 using CairoMakie
 
 # Set up simulations with different dissociation rates
-params_stable = DiffusionSMLMParams(
+params_stable = DiffusionSMLMConfig(
     density = 1.0,        # molecules per μm²
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s
@@ -184,7 +184,7 @@ params_stable = DiffusionSMLMParams(
     t_max = 20.0          # s
 )
 
-params_unstable = DiffusionSMLMParams(
+params_unstable = DiffusionSMLMConfig(
     density = 1.0,        # molecules per μm²
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s
@@ -234,7 +234,7 @@ using CairoMakie
 using MicroscopePSFs
 
 # Set simulation parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.3,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
@@ -317,7 +317,7 @@ using SMLMSim
 using CairoMakie
 
 # Set up a minimal simulation with just two particles
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     box_size = 1.0,       # 1 μm box for close interactions
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s

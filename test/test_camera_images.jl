@@ -139,7 +139,7 @@ end
 
 @testset "Diffusion with SCMOSCamera" begin
     # Test that diffusion simulation accepts camera parameter
-    params = DiffusionSMLMParams(
+    params = DiffusionSMLMConfig(
         density = 0.5,
         box_size = 5.0,
         dt = 0.01,

@@ -1,5 +1,5 @@
 """
-    StaticSMLMParams <: SMLMSimParams
+    StaticSMLMConfig <: SMLMSimParams
 
 Parameters for static SMLM simulation.
 
@@ -16,10 +16,10 @@ Parameters for static SMLM simulation.
 # Examples
 ```julia
 # Default parameters
-params = StaticSMLMParams()
+params = StaticSMLMConfig()
 
 # Custom parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 2.0,              # 2 particles per μm²
     σ_psf = 0.15,         # 150nm PSF width
     minphotons = 100,     # minimum photons for detection
@@ -31,7 +31,7 @@ params = StaticSMLMParams(
 )
 ```
 """
-Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
+Base.@kwdef mutable struct StaticSMLMConfig <: SMLMSimParams
     density::Float64 = 1.0
     σ_psf::Float64 = 0.13
     minphotons::Int = 50
@@ -41,7 +41,7 @@ Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
     ndims::Int = 2
     zrange::Vector{Float64} = [-1.0, 1.0]
     
-    function StaticSMLMParams(
+    function StaticSMLMConfig(
         density, σ_psf, minphotons, ndatasets, nframes, framerate, ndims, zrange
     )
         # Input validation
@@ -81,8 +81,8 @@ Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
     end
 end
 
-function Base.show(io::IO, params::StaticSMLMParams)
-    println(io, "StaticSMLMParams:")
+function Base.show(io::IO, params::StaticSMLMConfig)
+    println(io, "StaticSMLMConfig:")
     println(io, "  density    = $(params.density) particles/μm²")
     println(io, "  σ_psf     = $(params.σ_psf) μm")
     println(io, "  minphotons = $(params.minphotons)")
@@ -93,8 +93,8 @@ function Base.show(io::IO, params::StaticSMLMParams)
     print(io,   "  zrange    = [$(params.zrange[1]), $(params.zrange[2])] μm")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", params::StaticSMLMParams)
-    println(io, "StaticSMLMParams:")
+function Base.show(io::IO, ::MIME"text/plain", params::StaticSMLMConfig)
+    println(io, "StaticSMLMConfig:")
     println(io, "  Density           = $(params.density) particles/μm²")
     println(io, "  PSF width (σ)     = $(params.σ_psf) μm ($(params.σ_psf*1000) nm)")
     println(io, "  Min photons       = $(params.minphotons)")

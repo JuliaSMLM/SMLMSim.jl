@@ -16,7 +16,7 @@
             # Run simulation with minimal parameters for speed
             # Increase density, frame count, and reduce photon threshold
             smld_noisy, info = SMLMSim.simulate(
-                StaticSMLMParams(density=10.0, nframes=20, ndatasets=1, minphotons=10),  # Much higher density, more frames
+                StaticSMLMConfig(density=10.0, nframes=20, ndatasets=1, minphotons=10),  # Much higher density, more frames
                 pattern=Nmer2D(n=6, d=0.3),  # Larger pattern
                 molecule=GenericFluor(photons=1e4, k_off=1.0, k_on=5.0),  # More active blinking
                 camera=camera
@@ -67,7 +67,7 @@
             # Run simulation with Line2D pattern
             # Increased density and adjusted parameters for better blinking
             smld_noisy, info = SMLMSim.simulate(
-                StaticSMLMParams(density=10.0, nframes=20, ndatasets=1, minphotons=10),
+                StaticSMLMConfig(density=10.0, nframes=20, ndatasets=1, minphotons=10),
                 pattern=Line2D(λ=20.0, endpoints=[(-0.4, 0.0), (0.4, 0.0)]),  # Higher density, longer line
                 molecule=GenericFluor(photons=1e4, k_off=1.0, k_on=5.0),  # More active blinking
                 camera=camera
@@ -92,7 +92,7 @@
             # Run simulation with Nmer3D pattern
             # Increased density and adjusted parameters for better visibility
             smld_noisy, info = SMLMSim.simulate(
-                StaticSMLMParams(
+                StaticSMLMConfig(
                     density=15.0,     # Very high density
                     nframes=20,       # More frames
                     ndatasets=1,
@@ -141,8 +141,8 @@
         k_on = 0.1
     )
     
-    # Create 2D StaticSMLMParams
-    params2d = StaticSMLMParams(
+    # Create 2D StaticSMLMConfig
+    params2d = StaticSMLMConfig(
         density = 0.5,        # particles per μm²
         σ_psf = 0.13,         # μm
         minphotons = 100,     
@@ -152,8 +152,8 @@
         ndims = 2             
     )
     
-    # Create 3D StaticSMLMParams
-    params3d = StaticSMLMParams(
+    # Create 3D StaticSMLMConfig
+    params3d = StaticSMLMConfig(
         density = 0.5,        # particles per μm²
         σ_psf = 0.13,         # μm
         minphotons = 100,     

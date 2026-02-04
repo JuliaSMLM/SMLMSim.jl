@@ -63,7 +63,7 @@ AbstractLabeling → FixedLabeling, PoissonLabeling, BinomialLabeling
 Molecule → GenericFluor
 
 # Simulation params
-SMLMSimParams → StaticSMLMParams, DiffusionSMLMParams
+SMLMSimParams → StaticSMLMConfig, DiffusionSMLMConfig
 ```
 
 ### Key Files by Function
@@ -81,8 +81,8 @@ SMLMSimParams → StaticSMLMParams, DiffusionSMLMParams
 ### Dispatch Pattern
 
 The `simulate()` function dispatches on parameter type:
-- `simulate(params::StaticSMLMParams; ...)` → static simulation (returns 3-tuple)
-- `simulate(params::DiffusionSMLMParams; ...)` → diffusion simulation (returns BasicSMLD)
+- `simulate(params::StaticSMLMConfig; ...)` → static simulation (returns 3-tuple)
+- `simulate(params::DiffusionSMLMConfig; ...)` → diffusion simulation (returns BasicSMLD)
 
 ## Code Style
 

@@ -32,7 +32,7 @@ using MicroscopePSFs
 
 # Create or load an SMLD object
 # (This could be from either static or diffusion simulation)
-params = StaticSMLMParams(density=1.0, σ_psf=0.13, nframes=1000)
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13, nframes=1000)
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 pattern = Nmer2D(n=6, d=0.2)  # Hexamer with 200nm diameter
 molecule = GenericFluor(1e4, [-50.0 50.0; 1e-2 -1e-2])  # Blinking model
@@ -132,7 +132,7 @@ using MicroscopePSFs
 camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
 
 # Run simulation with sCMOS camera
-params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13)
 smld_true, smld_model, smld_noisy = simulate(
     params,
     pattern=Nmer2D(n=8, d=0.1),
