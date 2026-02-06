@@ -34,7 +34,7 @@ if info.smld_true !== nothing
 end
 ```
 """
-struct SimInfo
+struct SimInfo <: AbstractSMLMInfo
     # Common fields (ecosystem convention)
     elapsed_s::Float64
     backend::Symbol
@@ -91,7 +91,7 @@ println("Generated \$(info.frames_generated) frames in \$(info.elapsed_s) second
 println("Total photons: \$(info.n_photons_total)")
 ```
 """
-struct ImageInfo
+struct ImageInfo <: AbstractSMLMInfo
     # Common fields
     elapsed_s::Float64
     backend::Symbol

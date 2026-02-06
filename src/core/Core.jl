@@ -35,7 +35,6 @@ include("track_utils.jl")
 
 # Export abstract types
 export
-    AbstractSim,
     SMLMSimParams
 
 # Export molecule types

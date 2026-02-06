@@ -54,7 +54,6 @@ using Printf
 
 # Import the main simulate function to add our method
 import ..simulate
-import ..Core: AbstractSim
 import ..Core: SMLMSimParams
 import ..SimInfo
 

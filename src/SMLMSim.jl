@@ -47,7 +47,8 @@ using Distributions
 using LinearAlgebra
 
 # Re-export critical types from SMLMData to make them available to users
-export AbstractCamera, IdealCamera, SCMOSCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
+export AbstractCamera, IdealCamera, SCMOSCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD,
+       AbstractSMLMConfig, AbstractSMLMInfo
 
 # Include info types before submodules so they can use them
 include("types.jl")
@@ -61,7 +62,7 @@ include("interface.jl")
 using .Core: CTMC, get_state, get_next, intensity_trace, kinetic_model
 using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
 using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
-using .Core: AbstractSim, SMLMSimParams # Add abstract types import
+using .Core: SMLMSimParams
 using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
 using .Core: AbstractLabeling, FixedLabeling, PoissonLabeling, BinomialLabeling
 using .Core: n_fluorophores, apply_labeling
@@ -92,8 +93,7 @@ using .StaticSMLM: simulate
 # Export simulation interfaces
 export
     # Simulation interfaces
-    AbstractSim,
-    SMLMSimParams  # Add this export
+    SMLMSimParams
 
 # Export simulation functions
 export
