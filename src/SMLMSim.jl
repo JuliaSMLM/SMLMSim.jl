@@ -28,11 +28,11 @@ to provide a unified user interface.
 using SMLMSim
 
 # Example: Static simulation
-params_static = StaticSMLMParams(density=1.0, σ_psf=0.13)
+params_static = StaticSMLMConfig(density=1.0, σ_psf=0.13)
 _, _, smld_noisy = simulate(params_static)
 
 # Example: Diffusion simulation
-params_diff = DiffusionSMLMParams(density=0.5, diff_monomer=0.1)
+params_diff = DiffusionSMLMConfig(density=0.5, diff_monomer=0.1)
 smld_diff = simulate(params_diff)
 
 # Example: Generate images
@@ -47,7 +47,11 @@ using Distributions
 using LinearAlgebra
 
 # Re-export critical types from SMLMData to make them available to users
-export AbstractCamera, IdealCamera, SCMOSCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD
+export AbstractCamera, IdealCamera, SCMOSCamera, AbstractEmitter, Emitter2D, Emitter3D, Emitter2DFit, Emitter3DFit, BasicSMLD,
+       AbstractSMLMConfig, AbstractSMLMInfo
+
+# Include info types before submodules so they can use them
+include("types.jl")
 
 # Core module (includes molecules.jl and patterns.jl internally)
 include("core/Core.jl")
@@ -58,8 +62,10 @@ include("interface.jl")
 using .Core: CTMC, get_state, get_next, intensity_trace, kinetic_model
 using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
 using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
-using .Core: AbstractSim, SMLMSimParams # Add abstract types import
+using .Core: SMLMSimParams
 using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
+using .Core: AbstractLabeling, FixedLabeling, PoissonLabeling, BinomialLabeling
+using .Core: n_fluorophores, apply_labeling
 
 # Include submodules after the Core imports are available
 include("static/StaticSMLM.jl")
@@ -70,12 +76,12 @@ include("camera_images/CameraImages.jl")
 include("api.jl")
 
 # Import specific functions from InteractionDiffusion
-using .InteractionDiffusion: DiffusionSMLMParams, get_dimers, 
+using .InteractionDiffusion: DiffusionSMLMConfig, get_dimers, 
                             get_monomers, analyze_dimer_fraction, analyze_dimer_lifetime,
                             DiffusingEmitter2D, DiffusingEmitter3D, extract_final_state
 
 # Import from StaticSMLM
-using .StaticSMLM: StaticSMLMParams, apply_noise
+using .StaticSMLM: StaticSMLMConfig, apply_noise
 
 # Import from CameraImages
 using .CameraImages: gen_images, gen_image, poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
@@ -87,8 +93,7 @@ using .StaticSMLM: simulate
 # Export simulation interfaces
 export
     # Simulation interfaces
-    AbstractSim,
-    SMLMSimParams  # Add this export
+    SMLMSimParams
 
 # Export simulation functions
 export
@@ -105,7 +110,7 @@ export
 # Core types and functions for diffusion simulation
 export
     # Core types
-    DiffusionSMLMParams,  # Changed here
+    DiffusionSMLMConfig,
     
     # New diffusing emitter types for imaging
     DiffusingEmitter2D,
@@ -143,13 +148,27 @@ export
 export
     # Abstract molecule types
     Molecule,
-    
+
     # Concrete molecule types
     GenericFluor,
-    
+
     # Static SMLM types
-    StaticSMLMParams,
+    StaticSMLMConfig,
     apply_noise
+
+# Export labeling types and functions
+export
+    # Abstract labeling type
+    AbstractLabeling,
+
+    # Concrete labeling types
+    FixedLabeling,
+    PoissonLabeling,
+    BinomialLabeling,
+
+    # Labeling functions
+    n_fluorophores,
+    apply_labeling
 
 # Track utility functions
 export
@@ -165,6 +184,10 @@ export
     poisson_noise!,
     scmos_noise,
     scmos_noise!,
+
+# Info types
+    SimInfo,
+    ImageInfo,
 
 # API overview
     api

@@ -51,11 +51,11 @@ Note that the axial (z) uncertainty is typically 2-3× larger than the lateral (
 
 ## Uncertainty in Static Simulations
 
-The `StaticSMLMParams` includes a parameter `σ_psf` that controls the PSF width used for uncertainty calculations:
+The `StaticSMLMConfig` includes a parameter `σ_psf` that controls the PSF width used for uncertainty calculations:
 
 ```julia
 # Create simulation parameters with specific PSF width
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     σ_psf=0.15,  # 150nm PSF width
     ρ=1.0,       # 1 pattern per μm²
     nframes=1000

@@ -6,16 +6,16 @@
     emitters = Vector{Emitter2DFit{Float64}}()
     
     # Track 1: Two emitters in different frames
-    push!(emitters, Emitter2DFit(0.5, 0.5, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 1, 1))
-    push!(emitters, Emitter2DFit(0.51, 0.52, 900.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2, 1, 1, 1))
-    
+    push!(emitters, Emitter2DFit{Float64}(0.5, 0.5, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=1, id=1))
+    push!(emitters, Emitter2DFit{Float64}(0.51, 0.52, 900.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=2, dataset=1, track_id=1, id=1))
+
     # Track 2: Single emitter
-    push!(emitters, Emitter2DFit(1.5, 1.5, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 2, 2))
-    
+    push!(emitters, Emitter2DFit{Float64}(1.5, 1.5, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=2, id=2))
+
     # Track 3: Three emitters in different frames
-    push!(emitters, Emitter2DFit(2.5, 2.5, 700.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 3, 3))
-    push!(emitters, Emitter2DFit(2.52, 2.53, 750.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2, 1, 3, 3))
-    push!(emitters, Emitter2DFit(2.54, 2.56, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3, 1, 3, 3))
+    push!(emitters, Emitter2DFit{Float64}(2.5, 2.5, 700.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=3, id=3))
+    push!(emitters, Emitter2DFit{Float64}(2.52, 2.53, 750.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=2, dataset=1, track_id=3, id=3))
+    push!(emitters, Emitter2DFit{Float64}(2.54, 2.56, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=3, dataset=1, track_id=3, id=3))
     
     # Create test SMLD
     smld = BasicSMLD(emitters, camera, 3, 1)

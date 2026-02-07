@@ -72,7 +72,7 @@ smld_true, smld_model, smld_noisy = simulate(
 
 ```julia
 # Set diffusion simulation parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s

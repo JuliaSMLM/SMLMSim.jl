@@ -1,15 +1,8 @@
 """
-    AbstractSim
-
-Abstract type for all simulation types in SMLMSim.
-Concrete subtypes should implement their own simulate methods.
-"""
-abstract type AbstractSim end
-
-"""
-    SMLMSimParams <: AbstractSim
+    SMLMSimParams <: AbstractSMLMConfig
 
 Abstract type for all SMLM simulation parameter types.
-Provides a common parent for different types of SMLM simulations.
+Inherits from SMLMData.AbstractSMLMConfig to participate in the
+ecosystem-wide (Config, Info, Data) tuple pattern.
 """
-abstract type SMLMSimParams <: AbstractSim end
+abstract type SMLMSimParams <: AbstractSMLMConfig end

@@ -323,13 +323,14 @@ Create coordinate arrays for randomly placed and rotated 2D patterns.
 - `field_y::Float64`: Field height in microns
 
 # Returns
-- `Tuple{Vector{Float64}, Vector{Float64}}`: (x, y) coordinates in microns
+- `Tuple{Vector{Float64}, Vector{Float64}, Vector{Int}}`: (x, y, pattern_ids) where
+  pattern_ids indicates which pattern instance each point belongs to
 
 # Example
 ```julia
 # Generate coordinates for randomly placed Nmer2D patterns
 nmer = Nmer2D(; n=6, d=0.2)
-x, y = uniform2D(1.0, nmer, 10.0, 10.0)
+x, y, pattern_ids = uniform2D(1.0, nmer, 10.0, 10.0)
 ```
 """
 function uniform2D(ρ::T1, p::Pattern2D, field_x::T2, field_y::T3) where {T1<:AbstractFloat, T2<:AbstractFloat, T3<:AbstractFloat}
@@ -348,7 +349,8 @@ function _uniform2D_impl(ρ::T, p::Pattern2D, field_x::T, field_y::T) where T <:
     # Initialize coordinate arrays
     x = Vector{T}(undef, ntotal)
     y = Vector{T}(undef, ntotal)
-    
+    pattern_ids = Vector{Int}(undef, ntotal)
+
     idx = 1
     for nn = 1:npatterns
         θ = 2 * pi * rand()
@@ -359,15 +361,16 @@ function _uniform2D_impl(ρ::T, p::Pattern2D, field_x::T, field_y::T) where T <:
             # Rotate and translate pattern points
             x[idx] = p.x[mm] * cos(θ) - p.y[mm] * sin(θ) + x0
             y[idx] = p.x[mm] * sin(θ) + p.y[mm] * cos(θ) + y0
+            pattern_ids[idx] = nn
             idx += 1
         end
     end
 
-    return x, y
+    return x, y, pattern_ids
 end
 
 """
-    uniform3D(ρ::Float64, p::Pattern3D, field_x::Float64, field_y::Float64; 
+    uniform3D(ρ::Float64, p::Pattern3D, field_x::Float64, field_y::Float64;
              zrange::Vector{Float64}=[-1.0, 1.0])
 
 Create coordinate arrays for randomly placed and rotated 3D patterns.
@@ -380,13 +383,14 @@ Create coordinate arrays for randomly placed and rotated 3D patterns.
 - `zrange::Vector{Float64}=[-1.0, 1.0]`: [min_z, max_z] range in microns
 
 # Returns
-- `Tuple{Vector{Float64}, Vector{Float64}, Vector{Float64}}`: (x, y, z) coordinates
+- `Tuple{Vector{Float64}, Vector{Float64}, Vector{Float64}, Vector{Int}}`: (x, y, z, pattern_ids) where
+  pattern_ids indicates which pattern instance each point belongs to
 
 # Example
 ```julia
 # Generate coordinates for randomly placed Nmer3D patterns
 nmer = Nmer3D(; n=6, d=0.2)
-x, y, z = uniform3D(1.0, nmer, 10.0, 10.0; zrange=[-2.0, 2.0])
+x, y, z, pattern_ids = uniform3D(1.0, nmer, 10.0, 10.0; zrange=[-2.0, 2.0])
 ```
 """
 function uniform3D(ρ::T1, p::Pattern3D, field_x::T2, field_y::T3;
@@ -405,7 +409,7 @@ function _uniform3D_impl(ρ::T, p::Pattern3D, field_x::T, field_y::T;
     if length(zrange) != 2 || zrange[1] >= zrange[2]
         throw(ArgumentError("zrange must be a vector of two values [min_z, max_z] where min_z < max_z"))
     end
-    
+
     # Generate random number of patterns (note: ρ is 2D density)
     npatterns = rand(Poisson(field_x * field_y * ρ))
     ntotal = npatterns * p.n
@@ -414,7 +418,8 @@ function _uniform3D_impl(ρ::T, p::Pattern3D, field_x::T, field_y::T;
     x = Vector{T}(undef, ntotal)
     y = Vector{T}(undef, ntotal)
     z = Vector{T}(undef, ntotal)
-    
+    pattern_ids = Vector{Int}(undef, ntotal)
+
     idx = 1
     for nn = 1:npatterns
         # Random position
@@ -425,12 +430,12 @@ function _uniform3D_impl(ρ::T, p::Pattern3D, field_x::T, field_y::T;
         # Generate random 3D rotation using quaternions
         # This gives uniform rotation in 3D space
         u1, u2, u3 = rand(3)
-        
+
         q0 = sqrt(1 - u1) * sin(2π * u2)
         q1 = sqrt(1 - u1) * cos(2π * u2)
         q2 = sqrt(u1) * sin(2π * u3)
         q3 = sqrt(u1) * cos(2π * u3)
-        
+
         # Convert quaternion to rotation matrix
         R = [
             1-2*(q2^2 + q3^2)  2*(q1*q2 - q0*q3)  2*(q1*q3 + q0*q2);
@@ -444,11 +449,12 @@ function _uniform3D_impl(ρ::T, p::Pattern3D, field_x::T, field_y::T;
             x[idx] = pos[1] + x0
             y[idx] = pos[2] + y0
             z[idx] = pos[3] + z0
+            pattern_ids[idx] = nn
             idx += 1
         end
     end
 
-    return x, y, z
+    return x, y, z, pattern_ids
 end
 
 #==========================================================================

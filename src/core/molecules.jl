@@ -51,6 +51,10 @@ Create a simple two-state (on/off) fluorophore with specified parameters.
 Creates a fluorophore with a 2-state model and the specified rates.
 State 1 is the on (bright) state, and state 2 is the off (dark) state.
 The rate matrix is constructed as: q = [-k_off k_off; k_on -k_on]
+
+Note: k_on and k_off are transition rates (1/s), not duty cycle fractions.
+The duty cycle (fraction of time in ON state) is k_on/(k_on + k_off).
+For typical dSTORM, k_on << k_off gives low duty cycle (mostly dark, brief blinks).
 """
 function GenericFluor(; 
     photons::AbstractFloat=1e5, 

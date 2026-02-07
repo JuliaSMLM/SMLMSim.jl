@@ -1,6 +1,6 @@
 @testset "Diffusion SMLM" begin
     # Create diffusion simulation parameters
-    params = DiffusionSMLMParams(
+    params = DiffusionSMLMConfig(
         density = 0.5,             # molecules per μm²
         box_size = 5.0,            # 5μm box
         diff_monomer = 0.1,        # μm²/s
@@ -34,7 +34,7 @@
     @test params.camera_exposure == 0.01
     
     # Test simulation (using a smaller system for faster tests)
-    small_params = DiffusionSMLMParams(
+    small_params = DiffusionSMLMConfig(
         density = 0.5,             # molecules per μm²
         box_size = 2.0,            # 2μm box for faster tests
         diff_monomer = 0.1,        # μm²/s
@@ -53,19 +53,25 @@
     
     # Calculate expected number of molecules based on density and box size
     expected_n_molecules = round(Int, small_params.density * small_params.box_size^2)
-    
+
     # Run simulation
-    result = simulate(small_params)
-    
+    result, info = simulate(small_params)
+
+    # Check SimInfo
+    @test isa(info, SimInfo)
+    @test info.elapsed_s > 0
+    @test info.backend == :cpu
+    @test info.n_emitters > 0
+
     # From our earlier check, we know result is a BasicSMLD, not a structure with trajectories
     # Let's test the SMLD properties instead
-    
+
     # Test that we have emitters in our simulation result
     @test !isempty(result)
-    
+
     # Test metadata
     @test haskey(result.metadata, "simulation_type")
-    
+
     # Check that emitters have proper physical units
     if !isempty(result.emitters)
         e = result.emitters[1]
@@ -75,17 +81,18 @@
             @test e.z >= 0 && e.z <= small_params.box_size
         end
     end
-    
+
     # Test camera integration with diffusion results
     if !isempty(result) && result.camera !== nothing
         # Create a PSF model
         psf = GaussianPSF(0.13)  # 130 nm PSF width
-        
+
         # Generate camera images
-        images = gen_images(result, psf)
-        
+        images, img_info = gen_images(result, psf)
+
         # Verify we have at least one frame
         @test size(images, 3) > 0
+        @test isa(img_info, ImageInfo)
     end
     
     @testset "Diffusion Analysis Functions" begin
@@ -174,8 +181,8 @@
             push!(emitters_timeline, DiffusingEmitter2D{Float64}(1.8, 1.8, 1000.0, 0.3, 4, 1, 2, :monomer, nothing))
             
             # Create test SMLD
-            # Convert DiffusionSMLMParams to Dict{String, Any} to match constructor signature
-            metadata = Dict{String, Any}("simulation_parameters" => DiffusionSMLMParams(camera_framerate=10.0))
+            # Convert DiffusionSMLMConfig to Dict{String, Any} to match constructor signature
+            metadata = Dict{String, Any}("simulation_parameters" => DiffusionSMLMConfig(camera_framerate=10.0))
             timeline_smld = BasicSMLD(emitters_timeline, camera, 4, 1, metadata)
             
             # Test lifetime calculation
@@ -223,24 +230,26 @@
         
         # Test physical constraints
         @testset "Physical Constraints" begin
-            if !isempty(result.emitters)
+            # Use `result` from the outer scope (already unpacked)
+            smld_result = result
+            if !isempty(smld_result.emitters)
                 # Check that all emitters are within the box boundaries
-                @test all(e -> 0 <= e.x <= small_params.box_size, result.emitters)
-                @test all(e -> 0 <= e.y <= small_params.box_size, result.emitters)
-                
+                @test all(e -> 0 <= e.x <= small_params.box_size, smld_result.emitters)
+                @test all(e -> 0 <= e.y <= small_params.box_size, smld_result.emitters)
+
                 # Get dimers
-                dimer_emitters = filter(e -> e.state == :dimer, result.emitters)
-                
+                dimer_emitters = filter(e -> e.state == :dimer, smld_result.emitters)
+
                 # Check that dimers reference each other correctly
                 for e in dimer_emitters
                     if !isnothing(e.partner_id)
                         # Find the partner emitter
-                        partner = findfirst(p -> p.track_id == e.partner_id, result.emitters)
+                        partner = findfirst(p -> p.track_id == e.partner_id, smld_result.emitters)
                         if !isnothing(partner)
                             # Partner should have this emitter as its partner
-                            @test result.emitters[partner].partner_id == e.track_id
+                            @test smld_result.emitters[partner].partner_id == e.track_id
                             # Partner should also be a dimer
-                            @test result.emitters[partner].state == :dimer
+                            @test smld_result.emitters[partner].state == :dimer
                         end
                     end
                 end

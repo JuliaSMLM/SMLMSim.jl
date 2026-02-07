@@ -35,19 +35,20 @@ using SMLMSim
 
 # Define a camera and simulation parameters
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
-params = StaticSMLMParams(density=1.0, σ_psf=0.13) # Density 1/μm², PSF 130nm
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13) # Density 1/μm², PSF 130nm
 
 # Run simulation for an 8-molecule ring pattern
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params; # Use semicolon to separate positional and keyword arguments
     pattern=Nmer2D(n=8, d=0.1), # 100nm diameter ring
     camera=camera
 )
 
 # smld_noisy contains realistic SMLM coordinates
+# info.smld_true and info.smld_model contain intermediate results
 println("Generated $(length(smld_noisy.emitters)) localizations.")
 ```
-*Output:* `smld_true` (ground truth), `smld_model` (kinetics), `smld_noisy` (kinetics + noise).
+*Output:* `smld_noisy` (kinetics + noise), `info` (SimInfo with `smld_true`, `smld_model`, timing).
 
 ### Diffusion & Interaction Simulation
 
@@ -57,7 +58,7 @@ Simulate molecules diffusing and interacting (e.g., dimerization).
 using SMLMSim
 
 # Set diffusion simulation parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,           # molecules per μm²
     box_size = 10.0,         # μm
     diff_monomer = 0.1,      # μm²/s
@@ -69,7 +70,7 @@ params = DiffusionSMLMParams(
 )
 
 # Run diffusion simulation
-smld = simulate(params) # Returns a BasicSMLD object with all emitters
+smld, info = simulate(params) # Returns (BasicSMLD, SimInfo)
 
 println("Simulated diffusion for $(params.t_max) seconds.")
 # 'smld' can be used for analysis or image generation
@@ -108,15 +109,15 @@ Create camera images from simulation results.
 using MicroscopePSFs # Needed for PSF types
 
 # Generate images from diffusion simulation output
-# Note: Frame timing is controlled by DiffusionSMLMParams (camera_framerate, camera_exposure)
+# Note: Frame timing is controlled by DiffusionSMLMConfig (camera_framerate, camera_exposure)
 # Multiple simulation timesteps are automatically integrated during simulate()
 psf = GaussianPSF(0.15) # 150nm PSF width
-images = gen_images(smld, psf;
+images, img_info = gen_images(smld, psf;
     support=1.0,        # PSF support radius in μm (faster than default Inf)
     poisson_noise=true  # Add shot noise
 )
 
-println("Generated $(size(images,3)) camera images.")
+println("Generated $(img_info.frames_generated) camera images.")
 ```
 
 ### sCMOS Camera with Realistic Noise
@@ -131,8 +132,8 @@ using MicroscopePSFs
 camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
 
 # Run static simulation with sCMOS camera
-params = StaticSMLMParams(density=1.0, σ_psf=0.13)
-smld_true, smld_model, smld_noisy = simulate(
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13)
+smld_noisy, info = simulate(
     params,
     pattern=Nmer2D(n=8, d=0.1),
     camera=camera_scmos
@@ -141,11 +142,11 @@ smld_true, smld_model, smld_noisy = simulate(
 # Generate images with full sCMOS noise model
 # (quantum efficiency, Poisson, read noise, gain, offset)
 psf = GaussianPSF(0.15)
-images_scmos = gen_images(smld_noisy, psf, bg=10.0, camera_noise=true)
+images_scmos, img_info = gen_images(smld_noisy, psf, bg=10.0, camera_noise=true)
 
 # For diffusion simulations
-diff_params = DiffusionSMLMParams(density=0.5, box_size=10.0)
-smld_diff = simulate(diff_params; camera=camera_scmos, override_count=10)
+diff_params = DiffusionSMLMConfig(density=0.5, box_size=10.0)
+smld_diff, diff_info = simulate(diff_params; camera=camera_scmos, override_count=10)
 ```
 
 The sCMOS noise model applies:
@@ -164,8 +165,8 @@ using MicroscopePSFs
 
 # --- Simulation Setup ---
 camera = IdealCamera(128, 128, 0.1) # 128×128 pixels, 100nm pixels
-params = StaticSMLMParams(density=1.0, σ_psf=0.13)
-smld_true, smld_model, smld_noisy = simulate(
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13)
+smld_noisy, info = simulate(
     params,
     pattern=Nmer2D(n=6, d=0.2), # Hexamer
     camera=camera
@@ -202,24 +203,24 @@ using Statistics
 camera_scmos = SCMOSCamera(64, 64, 0.1, 1.6)  # 64×64 pixels, 100nm/px, 1.6 e⁻ read noise
 
 # Run diffusion simulation
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 1.0,           # 1 molecule/μm²
     box_size = 6.4,          # 6.4×6.4 μm field
     diff_monomer = 0.1,      # 0.1 μm²/s diffusion
     t_max = 0.5,             # 0.5 second total
     camera_framerate = 100.0 # 100 fps
 )
-smld = simulate(params; camera=camera_scmos, photons=200.0)
+smld, info = simulate(params; camera=camera_scmos, photons=200.0)
 
 # Generate images with full sCMOS noise model
 # (quantum efficiency, Poisson, read noise, gain, offset)
 psf = GaussianPSF(0.13)  # 130nm PSF
-images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
+images_scmos, _ = gen_images(smld, psf, bg=10.0, camera_noise=true)
 
 # For comparison: same data with ideal camera (Poisson noise only)
 camera_ideal = IdealCamera(64, 64, 0.1)
 smld_ideal = BasicSMLD(smld.emitters, camera_ideal, smld.n_frames, smld.n_datasets)
-images_ideal = gen_images(smld_ideal, psf, bg=10.0, poisson_noise=true)
+images_ideal, _ = gen_images(smld_ideal, psf, bg=10.0, poisson_noise=true)
 
 # Compare statistics
 println("sCMOS: mean=$(round(mean(images_scmos), digits=1)) ADU, std=$(round(std(images_scmos), digits=1))")

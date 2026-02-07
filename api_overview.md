@@ -22,8 +22,11 @@ All simulations use consistent physical units:
 
 - `AbstractSim`: Base type for all simulation types
   - `SMLMSimParams`: Base type for simulation parameters
-    - `StaticSMLMParams`: Parameters for static SMLM simulation
-    - `DiffusionSMLMParams`: Parameters for diffusion simulation
+    - `StaticSMLMConfig`: Parameters for static SMLM simulation
+    - `DiffusionSMLMConfig`: Parameters for diffusion simulation
+
+- `SimInfo`: Metadata and intermediate results from simulation functions
+- `ImageInfo`: Metadata from image generation functions
 
 - `Pattern`: Base type for all molecular patterns
   - `Pattern2D`: Base type for 2D patterns
@@ -32,6 +35,11 @@ All simulations use consistent physical units:
   - `Pattern3D`: Base type for 3D patterns
     - `Nmer3D`: N molecules arranged in a circle in 3D
     - `Line3D`: Molecules arranged along a 3D line
+
+- `AbstractLabeling`: Base type for labeling strategies
+  - `FixedLabeling`: Deterministic number of fluorophores per site
+  - `PoissonLabeling`: Poisson-distributed number of fluorophores per site
+  - `BinomialLabeling`: Binomial-distributed number of fluorophores per site
 
 - `Molecule`: Base type for all photophysical models
   - `GenericFluor`: General fluorophore with kinetic state model
@@ -42,12 +50,12 @@ All simulations use consistent physical units:
 
 ## Essential Types
 
-### StaticSMLMParams
+### StaticSMLMConfig
 
 Parameters for static SMLM simulation with fixed molecular patterns.
 
 ```julia
-Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
+Base.@kwdef mutable struct StaticSMLMConfig <: SMLMSimParams
     density::Float64 = 1.0          # density in particles per square micron
     σ_psf::Float64 = 0.13           # PSF width in microns
     minphotons::Int = 50            # minimum photons for detection
@@ -59,12 +67,12 @@ Base.@kwdef mutable struct StaticSMLMParams <: SMLMSimParams
 end
 ```
 
-### DiffusionSMLMParams
+### DiffusionSMLMConfig
 
 Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 ```julia
-Base.@kwdef mutable struct DiffusionSMLMParams <: SMLMSimParams
+Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     density::Float64 = 1.0          # number density (molecules/μm²)
     box_size::Float64 = 10.0        # simulation box size (μm)
     diff_monomer::Float64 = 0.1     # monomer diffusion coefficient (μm²/s)
@@ -111,6 +119,42 @@ mutable struct Line2D <: Pattern2D
 end
 ```
 
+### Info Types
+
+#### SimInfo
+
+Metadata and intermediate results from simulation functions. Returned as the second element of the tuple from `simulate()`.
+
+```julia
+struct SimInfo
+    elapsed_s::Float64              # Wall-clock time in nanoseconds
+    backend::Symbol                 # Computation backend (:cpu)
+    device_id::Int                  # Device identifier (-1 for CPU)
+    seed::Union{UInt64, Nothing}    # RNG seed for reproducibility
+    smld_true::Any                  # Ground truth positions (static only)
+    smld_model::Any                 # After kinetic model (static only)
+    n_patterns::Int                 # Number of spatial patterns
+    n_emitters::Int                 # Total emitters simulated
+    n_localizations::Int            # Total localizations generated
+    n_frames::Int                   # Number of frames
+end
+```
+
+#### ImageInfo
+
+Metadata from image generation functions. Returned as the second element of the tuple from `gen_images()` and `gen_image()`.
+
+```julia
+struct ImageInfo
+    elapsed_s::Float64              # Wall-clock time in nanoseconds
+    backend::Symbol                 # Computation backend (:cpu)
+    device_id::Int                  # Device identifier (-1 for CPU)
+    frames_generated::Int           # Number of frames generated
+    n_photons_total::Float64        # Total photon count
+    output_size::Tuple{Int,Int,Int} # Image dimensions (H, W, T)
+end
+```
+
 ### Fluorophore Models
 
 #### GenericFluor
@@ -124,16 +168,64 @@ struct GenericFluor <: Molecule
 end
 ```
 
+### Labeling Strategies
+
+Labeling is separate from photophysics (Molecule). These types control how many fluorophores
+attach to each binding site, while Molecule handles blinking kinetics of each fluorophore.
+
+#### AbstractLabeling
+
+Abstract type for labeling strategies. All implementations support an `efficiency` parameter
+controlling the probability that a binding site gets labeled at all.
+
+#### FixedLabeling
+
+Deterministic labeling with exactly `n` fluorophores per site.
+
+```julia
+struct FixedLabeling <: AbstractLabeling
+    n::Int               # Number of fluorophores per site
+    efficiency::Float64  # Probability that a site gets labeled (0 to 1)
+end
+```
+
+#### PoissonLabeling
+
+Poisson-distributed number of fluorophores per site.
+
+```julia
+struct PoissonLabeling <: AbstractLabeling
+    mean::Float64        # Mean number of fluorophores per site (λ for Poisson)
+    efficiency::Float64  # Probability that a site gets labeled (0 to 1)
+end
+```
+
+Note: With Poisson statistics, some sites may receive 0 fluorophores even when
+efficiency=1.0 (especially for small mean values).
+
+#### BinomialLabeling
+
+Binomial-distributed number of fluorophores per site. Models scenarios where each
+binding site has `n` potential attachment points, each occupied with probability `p`.
+
+```julia
+struct BinomialLabeling <: AbstractLabeling
+    n::Int               # Number of potential attachment points per site
+    p::Float64           # Probability each attachment point is occupied (0 to 1)
+    efficiency::Float64  # Probability that a site gets labeled (0 to 1)
+end
+```
+
 ## Constructor Examples
 
 ### Creating Simulation Parameters
 
 ```julia
 # Static SMLM with default parameters
-params_static = StaticSMLMParams()
+params_static = StaticSMLMConfig()
 
 # Custom parameters for static simulation
-params_static = StaticSMLMParams(
+params_static = StaticSMLMConfig(
     density = 2.0,        # 2 patterns per μm²
     σ_psf = 0.15,         # 150nm PSF width
     nframes = 2000,       # 2000 frames
@@ -141,10 +233,10 @@ params_static = StaticSMLMParams(
 )
 
 # Diffusion simulation with default parameters
-params_diff = DiffusionSMLMParams()
+params_diff = DiffusionSMLMConfig()
 
 # Custom parameters for diffusion simulation
-params_diff = DiffusionSMLMParams(
+params_diff = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
     box_size = 15.0,      # 15μm box size
     diff_monomer = 0.2,   # 0.2 μm²/s diffusion coefficient
@@ -186,6 +278,28 @@ fluor = GenericFluor(1e5, [-10.0 10.0; 0.1 -0.1])
 fluor = GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2)
 ```
 
+### Creating Labeling Strategies
+
+```julia
+# Perfect labeling - exactly 1 fluorophore per site (default)
+labeling = FixedLabeling()
+
+# 2 fluorophores per site, 90% of sites labeled
+labeling = FixedLabeling(2; efficiency=0.9)
+
+# Poisson labeling - average 1.5 fluorophores per site
+labeling = PoissonLabeling(1.5)
+
+# Poisson with 80% labeling efficiency
+labeling = PoissonLabeling(2.0; efficiency=0.8)
+
+# Binomial labeling - antibody with 4 dye attachment points, 80% occupancy
+labeling = BinomialLabeling(4, 0.8)
+
+# Same with 90% of sites receiving an antibody
+labeling = BinomialLabeling(4, 0.8; efficiency=0.9)
+```
+
 ### Creating a Camera
 
 ```julia
@@ -219,29 +333,46 @@ camera_scmos = SCMOSCamera(
 #### simulate
 
 The main simulation function with multiple methods for different simulation types.
+All `simulate()` methods return a tuple: `(primary_output, info)`.
 
 ```julia
 # Static SMLM simulation
 # First create simulation parameters
-params = StaticSMLMParams()
+params = StaticSMLMConfig()
 
-# Then run simulation
-smld_true, smld_model, smld_noisy = simulate(
+# Then run simulation - returns (smld_noisy, SimInfo)
+smld_noisy, info = simulate(
     params;
     pattern=Nmer2D(),
+    labeling=FixedLabeling(),      # Default: 1 fluorophore per site
     molecule=GenericFluor(),
     camera=IdealCamera(128, 128, 0.1)
 )
 
+# Access intermediate results from info
+smld_true = info.smld_true    # Ground truth positions
+smld_model = info.smld_model  # After kinetic model
+
+# With Poisson labeling (variable fluorophores per site)
+smld_noisy, info = simulate(
+    params;
+    pattern=Nmer2D(n=6, d=0.2),
+    labeling=PoissonLabeling(1.5),  # Average 1.5 fluorophores per site
+    molecule=GenericFluor()
+)
+
 # Diffusion simulation
 # First create simulation parameters
-params_diff = DiffusionSMLMParams()
+params_diff = DiffusionSMLMConfig()
 
-# Then run simulation
-smld = simulate(
+# Then run simulation - returns (smld, SimInfo)
+smld, info = simulate(
     params_diff;
     photons=1000.0
 )
+
+# Check timing
+println("Simulation took $(info.elapsed_s) seconds")
 ```
 
 #### kinetic_model
@@ -290,9 +421,10 @@ smld_noisy_3d = apply_noise(smld_model_3d, [0.13, 0.13, 0.39])  # [x, y, z] widt
 #### gen_images
 
 Generate camera images from SMLD data using the specified PSF model.
+Returns a tuple: `(images, ImageInfo)`.
 
 ```julia
-images = gen_images(
+images, info = gen_images(
     smld::SMLD,
     psf::AbstractPSF;
     dataset::Int=1,                # Dataset number to use from SMLD
@@ -306,6 +438,10 @@ images = gen_images(
                                    # - For SCMOSCamera: QE, Poisson, read noise, gain, offset
                                    # - For IdealCamera: ignored (use poisson_noise instead)
 )
+
+# Access image metadata
+println("Generated $(info.frames_generated) frames in $(info.elapsed_s) seconds")
+println("Total photons: $(info.n_photons_total)")
 
 # The support parameter controls PSF computation region:
 # 1. Inf (default): Compute PSF over entire image (most accurate but slowest)
@@ -321,18 +457,19 @@ support=(4.0, 6.0, 4.0, 6.0)  # Only compute PSF within this region
 # Example: sCMOS camera with realistic noise
 camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
 smld = BasicSMLD(emitters, camera_scmos, n_frames, n_datasets)
-images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
+images_scmos, info = gen_images(smld, psf, bg=10.0, camera_noise=true)
 # Applies: QE → Poisson → read noise → gain → offset
 
 # Example: IdealCamera with Poisson noise only
 camera_ideal = IdealCamera(128, 128, 0.1)
 smld = BasicSMLD(emitters, camera_ideal, n_frames, n_datasets)
-images_poisson = gen_images(smld, psf, bg=10.0, poisson_noise=true)
+images_poisson, info = gen_images(smld, psf, bg=10.0, poisson_noise=true)
 ```
 
 #### gen_image
 
 Generate a single frame camera image.
+Returns a tuple: `(image, ImageInfo)`.
 
 ```julia
 # Example of generating a single frame image
@@ -343,8 +480,8 @@ psf = GaussianPSF(0.15)  # PSF model with 150nm width
 frame_number = 10  # The frame you want to generate
 
 # Generate image for a specific frame
-single_frame = gen_image(
-    smld,          # SMLD data 
+single_frame, info = gen_image(
+    smld,          # SMLD data
     psf,           # PSF model
     frame_number;  # Frame to generate
     support=1.0,   # Same keyword arguments as gen_images
@@ -361,8 +498,8 @@ single_frame = gen_image(
 # Example usage of diffusion analysis functions
 
 # First, run a diffusion simulation
-params = DiffusionSMLMParams()
-smld = simulate(params)
+params = DiffusionSMLMConfig()
+smld, info = simulate(params)
 
 # Extract dimers from diffusion simulation
 dimer_smld = get_dimers(smld)
@@ -386,8 +523,8 @@ state_history = track_state_changes(smld)
 # Example usage of track utilities
 
 # First, run a simulation
-params = StaticSMLMParams()
-smld_true, smld_model, smld_noisy = simulate(params)
+params = StaticSMLMConfig()
+smld_noisy, info = simulate(params)
 
 # Specify a track ID to extract
 track_id = 1  # ID of the track to extract
@@ -412,7 +549,7 @@ pattern2d = Nmer2D(n=6, d=0.2)
 pattern3d = Nmer3D(n=8, d=0.15)
 
 # Rotate a 2D pattern by 45 degrees
-rotate!(pattern2d, π/4) 
+rotate!(pattern2d, π/4)
 
 # Rotate a 3D pattern with Euler angles (ZYZ convention)
 rotate!(pattern3d, π/4, π/6, π/3)  # α, β, γ angles
@@ -421,17 +558,63 @@ rotate!(pattern3d, π/4, π/6, π/3)  # α, β, γ angles
 θ = π/2 # 90 degrees
 R = [cos(θ) -sin(θ) 0; sin(θ) cos(θ) 0; 0 0 1]  # Z-axis rotation
 rotate!(pattern3d, R)
+```
+
+### Labeling Functions
+
+#### apply_labeling
+
+Apply labeling strategy to binding site coordinates, expanding each site to the
+appropriate number of fluorophore positions while preserving pattern IDs.
+
+```julia
+# Generate binding site coordinates with pattern IDs from pattern distribution
+x, y, pattern_ids = uniform2D(1.0, Nmer2D(), 10.0, 10.0)
+
+# Apply labeling with pattern ID tracking (returns coords tuple and new IDs)
+(x_labeled, y_labeled), new_ids = apply_labeling((x, y), pattern_ids, PoissonLabeling(1.5))
+
+# Backward-compatible: without pattern IDs (returns only coords)
+x_labeled, y_labeled = apply_labeling((x, y), FixedLabeling(1; efficiency=0.8))
+
+# Works with 3D coordinates too
+x, y, z, pattern_ids = uniform3D(1.0, Nmer3D(), 10.0, 10.0)
+(x_labeled, y_labeled, z_labeled), new_ids = apply_labeling((x, y, z), pattern_ids, BinomialLabeling(4, 0.8))
+```
+
+#### n_fluorophores
+
+Sample the number of fluorophores to place at a single binding site. Called internally
+by `apply_labeling`, but can be used directly for custom workflows.
+
+```julia
+labeling = PoissonLabeling(1.5)
+
+# Sample number of fluorophores for one site
+n = n_fluorophores(labeling)  # Returns Int (can be 0)
+```
+
+### Pattern Distribution
+
+Generate random pattern distributions in a field. Each function returns coordinates
+plus pattern instance IDs for tracking which emitters belong to the same pattern.
+
+```julia
+# Create patterns
+pattern2d = Nmer2D(n=6, d=0.2)
+pattern3d = Nmer3D(n=8, d=0.15)
 
 # Generate random pattern distribution in a field
 field_x = 10.0 # μm
 field_y = 10.0 # μm
 density = 1.0  # patterns per μm²
 
-# Get coordinates for 2D distribution
-x, y = uniform2D(density, pattern2d, field_x, field_y)
+# Get coordinates for 2D distribution (returns pattern IDs)
+x, y, pattern_ids = uniform2D(density, pattern2d, field_x, field_y)
+# pattern_ids[i] indicates which pattern instance point i belongs to
 
-# Get coordinates for 3D distribution
-x, y, z = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
+# Get coordinates for 3D distribution (returns pattern IDs)
+x, y, z, pattern_ids = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
 ```
 
 ## Common Workflows
@@ -440,13 +623,14 @@ x, y, z = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
 
 1. Define simulation parameters
 2. Create a pattern (or use default)
-3. Define a fluorophore model (or use default)
-4. Run simulation to get true positions, kinetic model, and noisy localizations
-5. Generate microscope images or analyze the data
+3. Choose a labeling strategy (or use default FixedLabeling)
+4. Define a fluorophore model (or use default)
+5. Run simulation to get noisy localizations and info (with intermediate results)
+6. Generate microscope images or analyze the data
 
 ```julia
 # 1. Define parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 1.0,
     σ_psf = 0.13,
     nframes = 1000
@@ -455,19 +639,27 @@ params = StaticSMLMParams(
 # 2. Create a pattern
 pattern = Nmer2D(n=6, d=0.2)  # hexamer with 200nm diameter
 
-# 3. Define fluorophore model
+# 3. Choose labeling strategy
+labeling = PoissonLabeling(1.5)  # Average 1.5 fluorophores per binding site
+
+# 4. Define fluorophore model
 fluor = GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2)
 
-# 4. Run simulation
-smld_true, smld_model, smld_noisy = simulate(
+# 5. Run simulation - returns (smld_noisy, SimInfo)
+smld_noisy, info = simulate(
     params;
     pattern=pattern,
+    labeling=labeling,
     molecule=fluor
 )
 
-# 5. Create microscope images with efficient PSF support
+# Access intermediate results from info
+smld_true = info.smld_true    # Ground truth positions
+smld_model = info.smld_model  # After kinetic model
+
+# 6. Create microscope images with efficient PSF support
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld_model, psf; 
+images, img_info = gen_images(smld_model, psf;
     support=1.0,         # 1.0 μm radius around each emitter
     poisson_noise=true   # Add realistic photon counting noise
 )
@@ -482,7 +674,7 @@ images = gen_images(smld_model, psf;
 
 ```julia
 # 1. Define parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
@@ -491,8 +683,8 @@ params = DiffusionSMLMParams(
     t_max = 10.0          # s
 )
 
-# 2. Run simulation
-smld = simulate(params)
+# 2. Run simulation - returns (smld, SimInfo)
+smld, info = simulate(params)
 
 # 3. Analyze the results
 dimer_smld = get_dimers(smld)
@@ -505,7 +697,7 @@ camera_scmos = SCMOSCamera(n_pixels, n_pixels, 0.1, 1.6)
 smld_cam = BasicSMLD(smld.emitters, camera_scmos, smld.n_frames, 1)
 
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld_cam, psf;
+images, img_info = gen_images(smld_cam, psf;
     support=1.0,         # 1.0 μm PSF support radius (faster)
     bg=5.0,              # Background photons per pixel
     camera_noise=true    # Full sCMOS noise model (QE, Poisson, read noise, gain, offset)
@@ -522,27 +714,31 @@ using MicroscopePSFs
 
 # Define a camera and simulation parameters
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
-params = StaticSMLMParams(density=1.0, σ_psf=0.13, nframes=1000) 
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13, nframes=1000)
 
 # Run simulation for an 8-molecule ring pattern
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params;
     pattern=Nmer2D(n=8, d=0.1),  # 100nm diameter ring
     molecule=GenericFluor(1e5, [-10.0 10.0; 0.5 -0.5]),  # γ=100,000, k_off=10, k_on=0.5
     camera=camera
 )
 
+# Access intermediate results from info
+smld_model = info.smld_model
+
 # Create a PSF model
 psf = GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate microscope images with finite PSF support
-images = gen_images(smld_model, psf;
+images, img_info = gen_images(smld_model, psf;
     support=1.0,         # 1.0 μm PSF support radius (faster than Inf)
     bg=5.0,              # 5 background photons per pixel
     poisson_noise=true   # Add realistic photon counting noise
 )
 
-println("Generated $(length(smld_noisy.emitters)) localizations and $(size(images,3)) images.")
+println("Generated $(length(smld_noisy.emitters)) localizations and $(img_info.frames_generated) images.")
+println("Simulation took $(info.elapsed_s) seconds")
 ```
 
 ### Diffusion with Dimer Analysis
@@ -552,7 +748,7 @@ using SMLMSim
 using MicroscopePSFs
 
 # Set diffusion simulation parameters
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
@@ -563,7 +759,7 @@ params = DiffusionSMLMParams(
 )
 
 # Run diffusion simulation
-smld = simulate(params)
+smld, info = simulate(params)
 
 # Analyze dimer formation
 frames, dimer_fraction = analyze_dimer_fraction(smld)
@@ -571,7 +767,7 @@ avg_lifetime = analyze_dimer_lifetime(smld)
 
 # Generate microscope images with finite PSF support
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(smld, psf; 
+images, img_info = gen_images(smld, psf;
     support=1.0,         # 1.0 μm PSF support radius (faster)
     bg=2.0,              # Background photons per pixel
     poisson_noise=true   # Add realistic photon counting noise
@@ -605,7 +801,7 @@ function DoubleRing3D(; n=8, d1=0.1, d2=0.2, z1=-0.2, z2=0.2)
     x = zeros(total_n)
     y = zeros(total_n)
     z = zeros(total_n)
-    
+
     # First ring (bottom)
     for i = 1:n
         θ = 2π * (i-1) / n
@@ -613,7 +809,7 @@ function DoubleRing3D(; n=8, d1=0.1, d2=0.2, z1=-0.2, z2=0.2)
         y[i] = d1/2 * sin(θ)
         z[i] = z1
     end
-    
+
     # Second ring (top)
     for i = 1:n
         θ = 2π * (i-1) / n + π/n  # Offset angle for second ring
@@ -621,13 +817,13 @@ function DoubleRing3D(; n=8, d1=0.1, d2=0.2, z1=-0.2, z2=0.2)
         y[n+i] = d2/2 * sin(θ)
         z[n+i] = z2
     end
-    
+
     return DoubleRing3D(n, d1, d2, z1, z2, x, y, z)
 end
 
 # Create camera and parameters
 camera = IdealCamera(128, 128, 0.1)
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density = 0.5,
     σ_psf = 0.13,
     nframes = 2000,
@@ -639,11 +835,14 @@ params = StaticSMLMParams(
 double_ring = DoubleRing3D(n=6, d1=0.15, d2=0.3, z1=-0.3, z2=0.3)
 
 # Run simulation
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params;
     pattern=double_ring,
     camera=camera
 )
+
+# Access intermediate results
+smld_model = info.smld_model
 
 # Generate images with a 3D astigmatic PSF and finite support
 # Create a PSF with astigmatism using Zernike coefficients
@@ -659,7 +858,7 @@ z_range = -1.0:z_sampling:1.0
 psf_spline = SplinePSF(psf_scalar, x_range, y_range, z_range)
 
 # Generate images using the spline PSF with finite support
-images = gen_images(smld_model, psf_spline; 
+images, img_info = gen_images(smld_model, psf_spline;
     support=0.5,         # 0.5 μm PSF support radius for performance
     bg=5.0,              # Background photons per pixel
     poisson_noise=true   # Add realistic photon counting noise

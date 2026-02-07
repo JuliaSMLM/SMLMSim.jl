@@ -89,10 +89,22 @@ function CTMC(q::Array{T}, simulation_time::T, state1::Int) where {T<:AbstractFl
     if size(q, 1) != size(q, 2)
         throw(ArgumentError("Rate matrix q must be square"))
     end
-    if any(diag(q) .>= 0)
-        @warn "Diagonal elements of rate matrix should be negative (representing exit rates)"
+
+    # Check diagonal elements - should be negative (exit rates) or zero (absorbing states)
+    diag_vals = diag(q)
+    for (i, d) in enumerate(diag_vals)
+        if d > 0
+            @warn "Diagonal element q[$i,$i] = $d is positive; should be negative (exit rate) or zero (absorbing state)"
+        elseif d == 0
+            # Check if this is a valid absorbing state (all off-diagonal elements in row are zero)
+            row_sum = sum(q[i, :]) - d
+            if row_sum > 1e-10
+                @warn "Row $i has zero diagonal but non-zero off-diagonal elements; invalid rate matrix"
+            end
+            # Valid absorbing state - no warning needed
+        end
     end
-    
+
     # Check for row sums approximately zero (rate matrix property)
     row_sums = sum(q, dims=2)
     if !all(abs.(row_sums) .< 1e-10)

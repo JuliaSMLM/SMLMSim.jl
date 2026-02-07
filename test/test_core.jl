@@ -1,3 +1,136 @@
+@testset "Core - Labeling" begin
+    # Test FixedLabeling
+    @testset "FixedLabeling" begin
+        # Default: 1 fluorophore per site, 100% efficiency
+        label = FixedLabeling()
+        @test label.n == 1
+        @test label.efficiency == 1.0
+
+        # Custom n
+        label2 = FixedLabeling(3)
+        @test label2.n == 3
+        @test label2.efficiency == 1.0
+
+        # Custom n and efficiency
+        label3 = FixedLabeling(2; efficiency=0.5)
+        @test label3.n == 2
+        @test label3.efficiency == 0.5
+
+        # n_fluorophores with 100% efficiency should always return n
+        label_fixed = FixedLabeling(3; efficiency=1.0)
+        counts = [n_fluorophores(label_fixed) for _ in 1:100]
+        @test all(c -> c == 3, counts)
+
+        # n_fluorophores with 0% efficiency should always return 0
+        label_zero = FixedLabeling(3; efficiency=0.0)
+        counts_zero = [n_fluorophores(label_zero) for _ in 1:100]
+        @test all(c -> c == 0, counts_zero)
+
+        # Input validation
+        @test_throws ArgumentError FixedLabeling(-1)
+        @test_throws ArgumentError FixedLabeling(1; efficiency=1.5)
+        @test_throws ArgumentError FixedLabeling(1; efficiency=-0.1)
+    end
+
+    # Test PoissonLabeling
+    @testset "PoissonLabeling" begin
+        # Default
+        label = PoissonLabeling()
+        @test label.mean == 1.0
+        @test label.efficiency == 1.0
+
+        # Custom mean
+        label2 = PoissonLabeling(2.5)
+        @test label2.mean == 2.5
+        @test label2.efficiency == 1.0
+
+        # Custom mean and efficiency
+        label3 = PoissonLabeling(1.5; efficiency=0.8)
+        @test label3.mean == 1.5
+        @test label3.efficiency == 0.8
+
+        # n_fluorophores should produce Poisson-distributed counts
+        label_poisson = PoissonLabeling(5.0; efficiency=1.0)
+        counts = [n_fluorophores(label_poisson) for _ in 1:1000]
+        @test mean(counts) ≈ 5.0 atol=0.5  # Should be close to mean
+        @test var(counts) ≈ 5.0 atol=1.0   # Poisson: variance ≈ mean
+
+        # Input validation
+        @test_throws ArgumentError PoissonLabeling(-1.0)
+        @test_throws ArgumentError PoissonLabeling(1.0; efficiency=1.5)
+    end
+
+    # Test BinomialLabeling
+    @testset "BinomialLabeling" begin
+        # Default
+        label = BinomialLabeling()
+        @test label.n == 1
+        @test label.p == 1.0
+        @test label.efficiency == 1.0
+
+        # Custom n and p
+        label2 = BinomialLabeling(4, 0.8)
+        @test label2.n == 4
+        @test label2.p == 0.8
+        @test label2.efficiency == 1.0
+
+        # n_fluorophores should produce binomial-distributed counts
+        label_binom = BinomialLabeling(10, 0.5; efficiency=1.0)
+        counts = [n_fluorophores(label_binom) for _ in 1:1000]
+        @test mean(counts) ≈ 5.0 atol=0.5  # n*p = 10*0.5 = 5
+        @test all(c -> 0 <= c <= 10, counts)  # Always between 0 and n
+
+        # Input validation
+        @test_throws ArgumentError BinomialLabeling(-1, 0.5)
+        @test_throws ArgumentError BinomialLabeling(5, 1.5)
+        @test_throws ArgumentError BinomialLabeling(5, -0.1)
+    end
+
+    # Test apply_labeling
+    @testset "apply_labeling" begin
+        # 2D coordinates
+        x = [1.0, 2.0, 3.0]
+        y = [4.0, 5.0, 6.0]
+
+        # FixedLabeling with n=1 should preserve coordinate count
+        label_1 = FixedLabeling(1; efficiency=1.0)
+        new_x, new_y = apply_labeling((x, y), label_1)
+        @test length(new_x) == 3
+        @test length(new_y) == 3
+
+        # FixedLabeling with n=2 should double coordinates
+        label_2 = FixedLabeling(2; efficiency=1.0)
+        new_x, new_y = apply_labeling((x, y), label_2)
+        @test length(new_x) == 6
+        @test length(new_y) == 6
+        # Each original coordinate should appear twice
+        @test count(==(1.0), new_x) == 2
+        @test count(==(2.0), new_x) == 2
+        @test count(==(3.0), new_x) == 2
+
+        # FixedLabeling with efficiency=0 should produce empty arrays
+        label_0 = FixedLabeling(1; efficiency=0.0)
+        new_x, new_y = apply_labeling((x, y), label_0)
+        @test length(new_x) == 0
+        @test length(new_y) == 0
+
+        # 3D coordinates
+        z = [7.0, 8.0, 9.0]
+        label_3d = FixedLabeling(2; efficiency=1.0)
+        new_x, new_y, new_z = apply_labeling((x, y, z), label_3d)
+        @test length(new_x) == 6
+        @test length(new_y) == 6
+        @test length(new_z) == 6
+
+        # PoissonLabeling should produce variable counts
+        label_pois = PoissonLabeling(2.0; efficiency=1.0)
+        # Run multiple times to check variability
+        lengths = [length(apply_labeling((x, y), label_pois)[1]) for _ in 1:100]
+        @test !all(==(lengths[1]), lengths)  # Should have some variability
+        @test mean(lengths) ≈ 6.0 atol=1.5   # 3 sites * 2.0 mean = 6
+    end
+end
+
 @testset "Core - CTMC" begin
     # Test CTMC state transitions
     # Rate matrix: state 1 -> state 2 at rate 2.0, state 2 -> state 1 at rate 1.0

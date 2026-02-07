@@ -17,14 +17,14 @@ Static simulations follow this general workflow:
 
 ## Simulation Parameters
 
-Static simulations are configured using the `StaticSMLMParams` type:
+Static simulations are configured using the `StaticSMLMConfig` type:
 
 ```julia
 # Default parameters
-params = StaticSMLMParams()
+params = StaticSMLMConfig()
 
 # Custom parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density=2.0,                # 2 patterns per μm²
     σ_psf=0.15,           # 150nm PSF width
     minphotons=100,       # Minimum photons for detection
@@ -125,12 +125,12 @@ The dimensionality of the simulation is controlled by both the `ndims` parameter
 
 ```julia
 # 2D simulation
-params = StaticSMLMParams(ndims=2)
+params = StaticSMLMConfig(ndims=2)
 pattern2d = Nmer2D(n=6, d=0.2)
 smld_true_2d, smld_model_2d, smld_noisy_2d = simulate(params, pattern=pattern2d)
 
 # 3D simulation
-params = StaticSMLMParams(ndims=3, zrange=[-2.0, 2.0])
+params = StaticSMLMConfig(ndims=3, zrange=[-2.0, 2.0])
 pattern3d = Nmer3D(n=6, d=0.2)
 smld_true_3d, smld_model_3d, smld_noisy_3d = simulate(params, pattern=pattern3d)
 ```
