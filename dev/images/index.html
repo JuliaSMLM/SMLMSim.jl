@@ -4,7 +4,7 @@ using MicroscopePSFs
 
 # Create or load an SMLD object
 # (This could be from either static or diffusion simulation)
-params = StaticSMLMParams(density=1.0, σ_psf=0.13, nframes=1000)
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13, nframes=1000)
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 pattern = Nmer2D(n=6, d=0.2)  # Hexamer with 200nm diameter
 molecule = GenericFluor(1e4, [-50.0 50.0; 1e-2 -1e-2])  # Blinking model
@@ -43,7 +43,7 @@ using MicroscopePSFs
 camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
 
 # Run simulation with sCMOS camera
-params = StaticSMLMParams(density=1.0, σ_psf=0.13)
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13)
 smld_true, smld_model, smld_noisy = simulate(
     params,
     pattern=Nmer2D(n=8, d=0.1),
@@ -122,4 +122,4 @@ ax = Axis(fig[1, 1], yreversed=true)
 # record will clear and redraw each frame for you
 record(fig, &quot;smlm_simulation.mp4&quot;, 1:size(images, 3); framerate = 10) do i
     heatmap!(ax, images[:, :, i]&#39;, colormap = :inferno)
-end</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../diffusion/examples/">« Examples</a><a class="docs-footer-nextpage" href="../api/">API Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Monday 1 December 2025 21:33">Monday 1 December 2025</span>. Using Julia version 1.12.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../diffusion/examples/">« Examples</a><a class="docs-footer-nextpage" href="../api/">API Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Saturday 7 February 2026 19:25">Saturday 7 February 2026</span>. Using Julia version 1.12.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
