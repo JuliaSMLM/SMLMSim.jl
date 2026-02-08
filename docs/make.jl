@@ -20,6 +20,7 @@ makedocs(;
         "Home" => "index.md",
         "Core Components" => [
             "Patterns" => "core/patterns.md",
+            "Labeling" => "core/labeling.md",
             "Photophysics" => "core/photophysics.md",
             "Localization Uncertainty" => "core/noise.md"
         ],
