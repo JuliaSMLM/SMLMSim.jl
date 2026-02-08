@@ -93,7 +93,7 @@ To simulate the fluorescence signal over time, SMLMSim integrates photon emissio
 
 ```julia
 # Generate intensity trace for 1000 frames at 50 fps
-fluor = GenericFluor(γ=10000.0, q=[-5 5; 10 -10])
+fluor = GenericFluor(10000.0, [-5 5; 10 -10])
 photons = intensity_trace(fluor, 1000, 50.0)
 ```
 
@@ -112,8 +112,8 @@ The simplest model contains just ON and OFF states:
 # Two-state model (ON ⟷ OFF)
 # kon = 5 s⁻¹, koff = 10 s⁻¹
 fluor = GenericFluor(
-    γ=1e4,                # 10,000 photons/s
-    q=[-10 10; 5 -5]      # [ON→OFF; OFF→ON] rates in s⁻¹
+    1e4,                  # 10,000 photons/s
+    [-10 10; 5 -5]        # [ON→OFF; OFF→ON] rates in s⁻¹
 )
 ```
 
@@ -127,8 +127,8 @@ For more realistic behavior including photobleaching:
 # Three-state model (ON ⟷ OFF → BLEACHED)
 # State 1: ON, State 2: OFF, State 3: BLEACHED
 fluor = GenericFluor(
-    γ=1e4,
-    q=[-10.1 10 0.1; 5 -5 0; 0 0 0]  # Note: state 3 is absorbing (no outgoing transitions)
+    1e4,
+    [-10.1 10 0.1; 5 -5 0; 0 0 0]    # Note: state 3 is absorbing (no outgoing transitions)
 )
 ```
 
@@ -141,9 +141,9 @@ The `simulate()` function integrates these photophysical models automatically:
 ```julia
 # Simulation with custom fluorophore
 camera = IdealCamera(128, 128, 0.1)
-fluor = GenericFluor(γ=2e4, q=[-20 20; 5 -5])
+fluor = GenericFluor(2e4, [-20 20; 5 -5])
 
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     molecule=fluor,
     framerate=50.0,     # frames per second
     nframes=2000,       # total frames

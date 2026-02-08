@@ -38,13 +38,13 @@ pattern = Nmer2D(n=6, d=0.2)  # Hexamer with 200nm diameter
 molecule = GenericFluor(1e4, [-50.0 50.0; 1e-2 -1e-2])  # Blinking model
 
 # Run simulation
-smld_true, smld_model, smld_noisy = simulate(params, pattern=pattern, molecule=molecule, camera=camera)
+smld_noisy, info = simulate(params, pattern=pattern, molecule=molecule, camera=camera)
 
 # Create a PSF model (Gaussian with 150nm width)
 psf = GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate image stack from emitter data
-images = gen_images(smld_model, psf; 
+images, img_info = gen_images(info.smld_model, psf;
     bg=5.0,             # background photons per pixel
     poisson_noise=true  # add realistic photon counting noise
 )
@@ -58,7 +58,7 @@ To generate an image for a specific frame:
 
 ```julia
 # Generate image for frame 10
-frame_image = gen_image(smld_model, psf, 10;
+frame_image, frame_info = gen_image(info.smld_model, psf, 10;
     bg=5.0,
     poisson_noise=true
 )
@@ -69,7 +69,7 @@ frame_image = gen_image(smld_model, psf, 10;
 The `gen_images` function has the following signature:
 
 ```julia
-gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> Array{T, 3} where T<:Real
+gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> (Array{T, 3}, info) where T<:Real
 ```
 
 ### Required Parameters
@@ -81,7 +81,7 @@ gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> Array{T, 3} where T<:Real
 
 ```julia
 # Complete example with all available options
-images = gen_images(smld_model, psf;
+images, img_info = gen_images(info.smld_model, psf;
     dataset::Int=1,                # Dataset number to use from SMLD
     frames=nothing,                # Specific frames to generate (default: all frames)
     support=Inf,                   # PSF support region size in μm (Inf, scalar, or tuple)
@@ -103,7 +103,7 @@ Photon shot noise follows a Poisson distribution and is the most fundamental noi
 
 ```julia
 # Enable Poisson noise (default: false)
-images = gen_images(smld_model, psf, poisson_noise=true)
+images, img_info = gen_images(info.smld_model, psf, poisson_noise=true)
 ```
 
 When enabled, each pixel's intensity is drawn from a Poisson distribution with λ equal to the expected photon count.
@@ -114,7 +114,7 @@ Background noise can be added as a constant offset to all pixels:
 
 ```julia
 # Add background signal (photons per pixel)
-images = gen_images(smld_model, psf, bg=10.0)
+images, img_info = gen_images(info.smld_model, psf, bg=10.0)
 ```
 
 When combined with Poisson noise, the background is included in the Poisson sampling process for a realistic noise model.
@@ -133,7 +133,7 @@ camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
 
 # Run simulation with sCMOS camera
 params = StaticSMLMConfig(density=1.0, σ_psf=0.13)
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params,
     pattern=Nmer2D(n=8, d=0.1),
     camera=camera_scmos
@@ -141,7 +141,7 @@ smld_true, smld_model, smld_noisy = simulate(
 
 # Generate images with full sCMOS noise model
 psf = GaussianPSF(0.15)
-images = gen_images(smld_model, psf, bg=10.0, camera_noise=true)
+images, img_info = gen_images(info.smld_model, psf, bg=10.0, camera_noise=true)
 ```
 
 The sCMOS noise model applies these transformations in order:
@@ -176,12 +176,12 @@ Each parameter can be either:
 # IdealCamera: Use with poisson_noise for simple shot noise
 camera_ideal = IdealCamera(128, 128, 0.1)
 smld = BasicSMLD(emitters, camera_ideal, n_frames, n_datasets)
-images_ideal = gen_images(smld, psf, bg=10.0, poisson_noise=true)
+images_ideal, img_info_ideal = gen_images(smld, psf, bg=10.0, poisson_noise=true)
 
 # SCMOSCamera: Use with camera_noise for realistic noise
 camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
 smld = BasicSMLD(emitters, camera_scmos, n_frames, n_datasets)
-images_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
+images_scmos, img_info_scmos = gen_images(smld, psf, bg=10.0, camera_noise=true)
 ```
 
 !!! warning "Camera Type Compatibility"
@@ -226,7 +226,7 @@ camera_scmos = SCMOSCamera(
 
 # Generate images with realistic spatial artifacts
 # (offset gradient, readnoise stripes, etc.)
-images = gen_images(smld, psf, bg=10.0, camera_noise=true)
+images, img_info = gen_images(smld, psf, bg=10.0, camera_noise=true)
 ```
 
 This creates realistic spatial artifacts visible in the images, including:
@@ -242,13 +242,13 @@ The PSF support region controls how much of the PSF is calculated for each emitt
 
 ```julia
 # Define a small support region (faster but may truncate PSF wings)
-images = gen_images(smld_model, psf, support=3.0)  # 3.0 μm radius around each emitter
+images, img_info = gen_images(smld_model, psf, support=3.0)  # 3.0 μm radius around each emitter
 
 # Define a rectangular support region
-images = gen_images(smld_model, psf, support=(3.0, 3.0, 1.0, 1.0))  # (left, right, bottom, top) in μm
+images, img_info = gen_images(smld_model, psf, support=(3.0, 3.0, 1.0, 1.0))  # (left, right, bottom, top) in μm
 
 # Use infinite support (most accurate but slowest)
-images = gen_images(smld_model, psf, support=Inf)
+images, img_info = gen_images(smld_model, psf, support=Inf)
 ```
 
 Reducing the support region can significantly improve performance for large datasets at the cost of some accuracy. For most PSFs, a support radius of 3-5 times the PSF width (σ) is sufficient (typically 0.5-1.0 μm for a standard SMLM PSF).

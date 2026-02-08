@@ -3,7 +3,7 @@
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://JuliaSMLM.github.io/SMLMSim.jl/stable)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://JuliaSMLM.github.io/SMLMSim.jl/dev)
 [![Build Status](https://github.com/JuliaSMLM/SMLMSim.jl/workflows/CI/badge.svg)](https://github.com/JuliaSMLM/SMLMSim.jl/actions)
-[![Coverage](https://codecov.io/gh/JuliaSMLM/SMLMSim.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/JuliaSMLM/SMLMSim.jl)
+[![Coverage](https://codecov.io/gh/JuliaSMLM/SMLMSim.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/JuliaSMLM/SMLMSim.jl)
 
 ## Overview
 
@@ -86,6 +86,27 @@ Define spatial arrangements (see `Pattern` types like `Nmer2D`, `Line3D`, `unifo
 # Examples:
 nmer = Nmer2D(n=8, d=0.1)  # 8 molecules in a 100nm diameter circle
 line = Line3D(λ=5.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)]) # 5 mols/μm
+```
+
+### Labeling
+
+Control how many fluorophores attach to each binding site (see `AbstractLabeling`).
+
+```julia
+# Default: exactly 1 fluorophore per site
+labeling = FixedLabeling()
+
+# Poisson-distributed (avg 1.5 per site)
+labeling = PoissonLabeling(1.5)
+
+# Binomial: 4 attachment points, 80% probability each
+labeling = BinomialLabeling(4, 0.8)
+
+# With labeling efficiency (90% of sites get labeled)
+labeling = PoissonLabeling(1.5; efficiency=0.9)
+
+# Use in simulation
+smld_noisy, info = simulate(params; pattern=Nmer2D(), labeling=PoissonLabeling(1.5))
 ```
 
 ### Molecules & Photophysics

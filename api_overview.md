@@ -20,13 +20,14 @@ All simulations use consistent physical units:
 
 ## Type Hierarchy
 
-- `AbstractSim`: Base type for all simulation types
+- `AbstractSMLMConfig`: Base type for all config types (from SMLMData)
   - `SMLMSimParams`: Base type for simulation parameters
     - `StaticSMLMConfig`: Parameters for static SMLM simulation
     - `DiffusionSMLMConfig`: Parameters for diffusion simulation
 
-- `SimInfo`: Metadata and intermediate results from simulation functions
-- `ImageInfo`: Metadata from image generation functions
+- `AbstractSMLMInfo`: Base type for info structs (from SMLMData)
+  - `SimInfo`: Metadata and intermediate results from simulation functions
+  - `ImageInfo`: Metadata from image generation functions
 
 - `Pattern`: Base type for all molecular patterns
   - `Pattern2D`: Base type for 2D patterns
@@ -126,8 +127,8 @@ end
 Metadata and intermediate results from simulation functions. Returned as the second element of the tuple from `simulate()`.
 
 ```julia
-struct SimInfo
-    elapsed_s::Float64              # Wall-clock time in nanoseconds
+struct SimInfo <: AbstractSMLMInfo
+    elapsed_s::Float64              # Wall-clock time in seconds
     backend::Symbol                 # Computation backend (:cpu)
     device_id::Int                  # Device identifier (-1 for CPU)
     seed::Union{UInt64, Nothing}    # RNG seed for reproducibility
@@ -145,8 +146,8 @@ end
 Metadata from image generation functions. Returned as the second element of the tuple from `gen_images()` and `gen_image()`.
 
 ```julia
-struct ImageInfo
-    elapsed_s::Float64              # Wall-clock time in nanoseconds
+struct ImageInfo <: AbstractSMLMInfo
+    elapsed_s::Float64              # Wall-clock time in seconds
     backend::Symbol                 # Computation backend (:cpu)
     device_id::Int                  # Device identifier (-1 for CPU)
     frames_generated::Int           # Number of frames generated
