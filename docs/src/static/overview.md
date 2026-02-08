@@ -55,7 +55,7 @@ The high-level `simulate()` function provides a simple interface for static simu
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # Run simulation with parameters
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params,
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     molecule=GenericFluor(1e4, [-10.0 10.0; 0.5 -0.5]),  # fluorophore model
@@ -66,7 +66,7 @@ smld_true, smld_model, smld_noisy = simulate(
 Alternatively, you can use keyword arguments directly:
 
 ```julia
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     density=1.0,                # patterns per μm²
     σ_psf=0.13,           # PSF width in μm
     nframes=1000,         # frames
@@ -79,22 +79,17 @@ smld_true, smld_model, smld_noisy = simulate(
 
 ## Understanding Simulation Results
 
-The `simulate()` function returns three `SMLD` objects:
+The `simulate()` function returns a tuple `(smld_noisy, info::SimInfo)`:
 
-1. **`smld_true`**: Ground truth emitter positions
-   - Contains the exact coordinates of all emitters
-   - Single frame (no temporal information)
-   - No blinking or noise applied
-
-2. **`smld_model`**: Positions with blinking kinetics
-   - Subset of true positions appearing in different frames
-   - Realistic blinking behavior based on kinetic model
-   - No position uncertainty (exact coordinates)
-
-3. **`smld_noisy`**: Positions with blinking and localization uncertainty
-   - Same temporal distribution as `smld_model`
+1. **`smld_noisy`**: Positions with blinking and localization uncertainty
    - Position noise based on photon statistics
+   - Realistic blinking behavior based on kinetic model
    - Most comparable to real experimental data
+
+2. **`info`**: A `SimInfo` struct containing additional simulation data:
+   - **`info.smld_true`**: Ground truth emitter positions (exact coordinates, no blinking or noise)
+   - **`info.smld_model`**: Positions with blinking kinetics (no position uncertainty)
+   - **`info.elapsed_s`**: Simulation elapsed time in seconds
 
 Each SMLD object contains emitters with properties like position, frame number, photon count, and uncertainties.
 
@@ -127,12 +122,12 @@ The dimensionality of the simulation is controlled by both the `ndims` parameter
 # 2D simulation
 params = StaticSMLMConfig(ndims=2)
 pattern2d = Nmer2D(n=6, d=0.2)
-smld_true_2d, smld_model_2d, smld_noisy_2d = simulate(params, pattern=pattern2d)
+smld_noisy_2d, info_2d = simulate(params, pattern=pattern2d)
 
 # 3D simulation
 params = StaticSMLMConfig(ndims=3, zrange=[-2.0, 2.0])
 pattern3d = Nmer3D(n=6, d=0.2)
-smld_true_3d, smld_model_3d, smld_noisy_3d = simulate(params, pattern=pattern3d)
+smld_noisy_3d, info_3d = simulate(params, pattern=pattern3d)
 ```
 
 For 3D simulations, the localization uncertainty is automatically scaled in the axial dimension to reflect the typically lower z-resolution in SMLM experiments.

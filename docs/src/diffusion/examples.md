@@ -40,7 +40,7 @@ params = DiffusionSMLMConfig(
 )
 
 # Run simulation
-smld = simulate(params; photons=1000.0)
+smld, info = simulate(params; photons=1000.0)
 
 # Extract coordinates based on monomer/dimer state for a specific frame
 function extract_frame_by_state(smld, frame_num)
@@ -126,7 +126,7 @@ params = DiffusionSMLMConfig(
 )
 
 # Run simulation
-smld = simulate(params)
+smld, info = simulate(params)
 
 # Setup camera and PSF
 pixelsize = 0.1  # 100nm pixels
@@ -140,7 +140,7 @@ psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 # For diffusion simulations, the camera integration time (exposure) has already been
 # modeled in the simulation process, so each frame already includes the positions
 # from all emitters that appeared during the exposure window
-images = gen_images(smld, psf;
+images, img_info = gen_images(smld, psf;
     bg=5.0,               # background photons per pixel
     poisson_noise=true     # add photon counting noise
 )
@@ -193,8 +193,8 @@ params_unstable = DiffusionSMLMConfig(
 )
 
 # Run simulations
-smld_stable = simulate(params_stable)
-smld_unstable = simulate(params_unstable)
+smld_stable, info_stable = simulate(params_stable)
+smld_unstable, info_unstable = simulate(params_unstable)
 
 # Analyze dimer formation
 frames_stable, frac_stable = analyze_dimer_fraction(smld_stable)
@@ -249,7 +249,7 @@ params = DiffusionSMLMConfig(
 )
 
 # Run simulation
-smld = simulate(params)
+smld, info = simulate(params)
 
 # Set up camera and PSF
 pixelsize = 0.1  # 100nm pixels
@@ -260,7 +260,7 @@ camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate images for all molecules
-images_all = gen_images(smld, psf;
+images_all, img_info_all = gen_images(smld, psf;
     bg=5.0,
     poisson_noise=true
 )
@@ -269,7 +269,7 @@ images_all = gen_images(smld, psf;
 dimer_smld = get_dimers(smld)
 
 # Generate images showing only dimers
-images_dimers = gen_images(dimer_smld, psf;
+images_dimers, img_info_dimers = gen_images(dimer_smld, psf;
     bg=5.0,
     poisson_noise=true
 )
@@ -354,7 +354,7 @@ particle2 = DiffusingEmitter2D{Float64}(
 )
 
 # Run simulation with custom starting positions
-smld = simulate(params; starting_conditions=[particle1, particle2])
+smld, info = simulate(params; starting_conditions=[particle1, particle2])
 
 track_smlds = get_tracks(smld)
 

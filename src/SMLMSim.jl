@@ -29,15 +29,16 @@ using SMLMSim
 
 # Example: Static simulation
 params_static = StaticSMLMConfig(density=1.0, σ_psf=0.13)
-_, _, smld_noisy = simulate(params_static)
+smld_noisy, info = simulate(params_static)
+# Access intermediate results: info.smld_true, info.smld_model
 
 # Example: Diffusion simulation
 params_diff = DiffusionSMLMConfig(density=0.5, diff_monomer=0.1)
-smld_diff = simulate(params_diff)
+smld, info = simulate(params_diff)
 
 # Example: Generate images
 psf = GaussianPSF(0.15)
-images = gen_images(smld_noisy, psf)
+images, img_info = gen_images(smld_noisy, psf)
 ```
 """
 module SMLMSim
@@ -98,9 +99,8 @@ export
 # Export simulation functions
 export
     # Kinetic simulation
-    intensity_trace, # Renamed from intensitytrace to match function name
-    kinetic_model,   # Renamed from kineticmodel to match function name
-    noise,
+    intensity_trace,
+    kinetic_model,
     
     # CTMC type and functions
     CTMC,

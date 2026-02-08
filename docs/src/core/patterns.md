@@ -79,12 +79,12 @@ custom_line3d = Line3D(
 
 Individual patterns define the arrangement of a single group of molecules. To create realistic samples, you'll typically want to distribute many instances of a pattern throughout the field of view.
 
-The `simulate()` function handles this automatically with the density parameter `ρ`:
+The `simulate()` function handles this automatically with the `density` parameter:
 
 ```julia
 # Simulate with 2 patterns per square micron
-smld_true, smld_model, smld_noisy = simulate(
-    ρ=2.0,
+smld_noisy, info = simulate(
+    density=2.0,
     pattern=Nmer2D(n=6, d=0.2)
 )
 ```
@@ -173,6 +173,6 @@ end
 
 # Use your custom pattern
 grid = Grid2D(nx=4, ny=3, dx=0.1, dy=0.15)
-smld_true, smld_model, smld_noisy = simulate(pattern=grid)
+smld_noisy, info = simulate(pattern=grid)
 ```
 

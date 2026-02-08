@@ -62,10 +62,10 @@ params = DiffusionSMLMConfig(
 )
 
 # Run the simulation
-smld = simulate(params)
+smld, info = simulate(params)
 ```
 
-The `smld` output is a `BasicSMLD` structure containing all emitters across all time points, with each emitter having frame information corresponding to the camera settings.
+The `smld` output is a `BasicSMLD` structure containing all emitters across all time points, with each emitter having frame information corresponding to the camera settings. The `info` struct contains additional simulation metadata such as `info.elapsed_s`.
 
 ## Simulation Parameters
 
@@ -110,7 +110,7 @@ using MicroscopePSFs
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
 # Generate images
-image_stack = gen_images(smld, psf;
+image_stack, img_info = gen_images(smld, psf;
     photons=1000.0,
     bg=5.0,
     poisson_noise=true

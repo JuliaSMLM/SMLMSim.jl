@@ -33,18 +33,18 @@ This formula captures the key insight that localization precision improves with:
 
 ## Implementing Uncertainty in SMLMSim
 
-SMLMSim applies localization uncertainty using the `noise()` function, which adds position errors based on photon counts:
+SMLMSim applies localization uncertainty using the `apply_noise()` function, which adds position errors based on photon counts:
 
 ```julia
 # Apply localization uncertainty to model with kinetic blinking
-smld_noisy = noise(smld_model, 0.13)  # 0.13μm = 130nm PSF width
+smld_noisy = apply_noise(smld_model, 0.13)  # 0.13μm = 130nm PSF width
 ```
 
 For 3D simulations, you specify the PSF width in each dimension:
 
 ```julia
 # Apply 3D localization uncertainty
-smld_noisy_3d = noise(smld_model_3d, [0.13, 0.13, 0.39])  # [σx, σy, σz] in μm
+smld_noisy_3d = apply_noise(smld_model_3d, [0.13, 0.13, 0.39])  # [σx, σy, σz] in μm
 ```
 
 Note that the axial (z) uncertainty is typically 2-3× larger than the lateral (x,y) uncertainty.
@@ -57,15 +57,15 @@ The `StaticSMLMConfig` includes a parameter `σ_psf` that controls the PSF width
 # Create simulation parameters with specific PSF width
 params = StaticSMLMConfig(
     σ_psf=0.15,  # 150nm PSF width
-    ρ=1.0,       # 1 pattern per μm²
+    density=1.0, # 1 pattern per μm²
     nframes=1000
 )
 
 # Run simulation
-smld_true, smld_model, smld_noisy = simulate(params)
+smld_noisy, info = simulate(params)
 ```
 
-The third returned object (`smld_noisy`) contains emitters with:
+The first returned object (`smld_noisy`) contains emitters with:
 - Position noise added according to the PSF width and photon counts
 - Uncertainty fields (`σ_x`, `σ_y`, and for 3D `σ_z`) populated with the theoretical uncertainty values
 
@@ -101,10 +101,10 @@ The PSF width is the most important parameter affecting localization uncertainty
 
 ```julia
 # Simulation with wider PSF (150nm)
-smld_true, smld_model, smld_wide_psf = simulate(σ_psf=0.15)
+smld_wide_psf, info_wide = simulate(σ_psf=0.15)
 
 # Simulation with narrower PSF (100nm)
-smld_true, smld_model, smld_narrow_psf = simulate(σ_psf=0.10)
+smld_narrow_psf, info_narrow = simulate(σ_psf=0.10)
 ```
 
 Realistic PSF widths depend on:
@@ -131,9 +131,9 @@ bright_fluor = GenericFluor(5e4, [-5.0 5.0; 1.0 -1.0])
 dim_fluor = GenericFluor(5e3, [-5.0 5.0; 1.0 -1.0])
 
 # Bright emitters with lower uncertainty
-smld_true, smld_model, smld_bright = simulate(molecule=bright_fluor)
+smld_bright, info_bright = simulate(molecule=bright_fluor)
 
 # Dim emitters with higher uncertainty
-smld_true, smld_model, smld_dim = simulate(molecule=dim_fluor)
+smld_dim, info_dim = simulate(molecule=dim_fluor)
 ```
 

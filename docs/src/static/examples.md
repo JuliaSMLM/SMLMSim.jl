@@ -24,7 +24,7 @@ params = StaticSMLMConfig(
 )
 
 # Run simulation with specified pattern and camera
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params;
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     camera=camera
@@ -81,7 +81,7 @@ params = StaticSMLMConfig(
 )
 
 # Run 3D simulation
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params;
     pattern=Nmer3D(n=8, d=0.2),  # 3D pattern with 200nm diameter
     camera=camera
@@ -137,7 +137,7 @@ params = StaticSMLMConfig(
 )
 
 # Run simulation
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params;
     pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
     camera=camera
@@ -146,11 +146,11 @@ smld_true, smld_model, smld_noisy = simulate(
 # Create a PSF model (Gaussian with 150nm width)
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
-# Note: We use smld_model (not smld_noisy) to avoid double-counting uncertainty
+# Note: We use info.smld_model (not smld_noisy) to avoid double-counting uncertainty
 # smld_noisy already contains localization errors, and rendering camera images
 # naturally introduces noise, so using smld_noisy would apply noise twice
 # Generate image stack from emitter data with Poisson noise
-images = gen_images(smld_model, psf;
+images, img_info = gen_images(info.smld_model, psf;
     bg=5.0,            # background photons per pixel
     poisson_noise=true  # add realistic shot noise
 )
@@ -175,7 +175,7 @@ ax2 = Axis(fig[1, 2],
 )
 
 # Extract emitters in frame 20
-frame20_emitters = filter(e -> e.frame == 20, smld_model.emitters)
+frame20_emitters = filter(e -> e.frame == 20, info.smld_model.emitters)
 x = [e.x for e in frame20_emitters]
 y = [e.y for e in frame20_emitters]
 photons = [e.photons for e in frame20_emitters]
@@ -253,7 +253,7 @@ params = StaticSMLMConfig(
 )
 
 # Run simulation with custom pattern
-smld_true, smld_model, smld_noisy = simulate(
+smld_noisy, info = simulate(
     params;
     pattern=grid,
     camera=camera
@@ -278,8 +278,8 @@ ax2 = Axis(fig[1, 2],
 )
 
 # Extract coordinates
-x_true = [e.x for e in smld_true.emitters]
-y_true = [e.y for e in smld_true.emitters]
+x_true = [e.x for e in info.smld_true.emitters]
+y_true = [e.y for e in info.smld_true.emitters]
 
 x_noisy = [e.x for e in smld_noisy.emitters]
 y_noisy = [e.y for e in smld_noisy.emitters]
