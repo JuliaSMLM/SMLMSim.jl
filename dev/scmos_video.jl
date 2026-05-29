@@ -78,7 +78,7 @@ println("  Offset: $(round(minimum(offset_map), digits=1)) - $(round(maximum(off
 
 # Run diffusion simulation
 println("\nRunning diffusion simulation...")
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = density,
     box_size = box_size,
     dt = 0.001,
@@ -88,7 +88,7 @@ params = DiffusionSMLMParams(
     diff_monomer = D
 )
 
-smld = simulate(params; camera=camera_scmos, photons=photons)
+smld, _ = simulate(params; camera=camera_scmos, photons=photons)
 println("  Generated $(length(smld.emitters)) localizations")
 
 # Generate images
@@ -96,12 +96,12 @@ println("\nGenerating images...")
 psf = GaussianPSF(0.13)
 
 println("  sCMOS images (with camera_noise=true)...")
-images_scmos = gen_images(smld, psf, camera_noise=true, bg=5.0)
+images_scmos, _ = gen_images(smld, psf, camera_noise=true, bg=5.0)
 
 println("  Ideal images (for comparison)...")
 camera_ideal = IdealCamera(n_pixels, n_pixels, pixel_size)
 smld_ideal = BasicSMLD(smld.emitters, camera_ideal, smld.n_frames, smld.n_datasets)
-images_ideal = gen_images(smld_ideal, psf, poisson_noise=true, bg=5.0)
+images_ideal, _ = gen_images(smld_ideal, psf, poisson_noise=true, bg=5.0)
 
 # Create video
 println("\nCreating video...")

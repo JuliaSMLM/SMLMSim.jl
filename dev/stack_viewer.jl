@@ -22,9 +22,9 @@ img_stack = rand(Float32, 512, 512, 100)
 view_stack(img_stack)
 
 # Example with SMLM image data
-using SMLMSim
-psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
-images = gen_image_sequence(psf, systems)
+using SMLMSim, MicroscopePSFs
+smld, _ = simulate(DiffusionSMLMConfig(density=0.5, box_size=5.0))
+images, _ = gen_images(smld, GaussianPSF(0.15))  # 150nm PSF width
 view_stack(images)
 ```
 """

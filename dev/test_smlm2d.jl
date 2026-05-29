@@ -21,7 +21,7 @@ camera = IdealCamera(1:256, 1:256, pixelsize)
 pattern = Nmer2D(n=6, d=0.2)  # 6 molecules in a 200nm circle
 
 # Create static SMLM parameters
-params = StaticSMLMParams(
+params = StaticSMLMConfig(
     density=1.0,           # 1 pattern per square micron
     σ_psf=0.13,      # 130nm PSF width (realistic for visible light)
     minphotons=50,   # Default minimum photon count for detection
@@ -59,12 +59,15 @@ fluor = GenericFluor(
 )
 
 # Run simulation with custom pattern and fluorophore model
-smld_true, smld_model, smld_noisy = simulate(
+# simulate returns (smld_noisy, info); intermediate results live on info
+smld_noisy, info = simulate(
     params;
     pattern=pattern,
     molecule=fluor,
     camera=camera
 )
+smld_true = info.smld_true
+smld_model = info.smld_model
 
 println("SMLM simulation complete")
 println("- True emitters: $(length(smld_true.emitters))")
@@ -97,7 +100,7 @@ psf = MicroscopePSFs.GaussianPSF(0.13)  # 130nm PSF width
 
 # Generate camera images
 println("Generating camera images...")
-images = gen_images(smld_noisy, psf;
+images, _ = gen_images(smld_noisy, psf;
     support=1.0,  # PSF support radius in μm
     bg=2.0,             # Background photons
     poisson_noise=true   # Add realistic Poisson noise

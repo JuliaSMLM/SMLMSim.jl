@@ -15,6 +15,7 @@ Parameters:
 
 using SMLMSim
 using SMLMData
+using Statistics
 using Printf
 
 println("=" ^ 80)
@@ -110,7 +111,7 @@ println("  Gain range: $(minimum(gain_map)) - $(maximum(gain_map))")
 
 # Set up diffusion simulation parameters
 println("\nRunning diffusion simulation...")
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = density,
     box_size = box_size,
     dt = 0.001,  # 1 ms timesteps for simulation
@@ -120,8 +121,8 @@ params = DiffusionSMLMParams(
     diff_monomer = D
 )
 
-# Run simulation
-smld = simulate(params; camera=camera_scmos, photons=photons)
+# Run simulation (returns (smld, info))
+smld, _ = simulate(params; camera=camera_scmos, photons=photons)
 
 println("  Generated $(length(smld.emitters)) localizations")
 println("  Frames: $(smld.n_frames)")
@@ -131,14 +132,14 @@ println("\nGenerating images with sCMOS camera noise...")
 using MicroscopePSFs
 psf = GaussianPSF(0.13)  # 130 nm PSF width
 
-images_scmos = gen_images(smld, psf, camera_noise=true, bg=10.0)
+images_scmos, _ = gen_images(smld, psf, camera_noise=true, bg=10.0)
 println("  Image stack size: $(size(images_scmos))")
 
 # Also generate ideal images for comparison
 println("\nGenerating ideal comparison images...")
 camera_ideal = IdealCamera(n_pixels, n_pixels, pixel_size)
 smld_ideal = BasicSMLD(smld.emitters, camera_ideal, smld.n_frames, smld.n_datasets)
-images_ideal = gen_images(smld_ideal, psf, poisson_noise=true, bg=10.0)
+images_ideal, _ = gen_images(smld_ideal, psf, poisson_noise=true, bg=10.0)
 
 # Calculate statistics
 println("\nImage Statistics:")
