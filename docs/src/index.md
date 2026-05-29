@@ -92,7 +92,7 @@ SMLMSim is built upon [SMLMData.jl](https://github.com/JuliaSMLM/SMLMData.jl), r
 
 The main components of the package are:
 
-- **Patterns**: Spatial arrangements of molecules (Nmer2D, Line2D, etc.)
+- **Patterns**: Spatial arrangements of molecules (Nmer2D, Line2D, Nanoruler2D, etc.)
 - **Molecules**: Photophysical models (e.g., GenericFluor)
 - **Simulation**: Kinetic models and noise generation
 - **Diffusion**: Smoluchowski dynamics for molecular interactions
