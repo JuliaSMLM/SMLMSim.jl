@@ -1,156 +1,156 @@
-# using Pkg
-# Pkg.activate("dev")
+# test_README.jl - Executable mirror of the code examples in README.md.
+#
+# Run this to verify the README's examples work against the current API
+# (v0.7.0: *Config parameter objects + 2-tuple `simulate`/`gen_images` returns).
+# Uses CairoMakie (headless-friendly) for the visualization example.
 
+using Pkg
+Pkg.activate(@__DIR__)
 using Revise
+
 using SMLMSim
-using CairoMakie
 using MicroscopePSFs
+using CairoMakie
+using Statistics
+
 #==========================================================================
-Basic Usage
+Quick Start: Static SMLM Simulation
 ==========================================================================#
 
-# Basic simulation with default parameters
-camera = IdealCamera(1:128, 1:128, 0.1)  # 128×128 pixels, 100nm pixels
-smld_true, smld_model, smld_noisy = simulate(
+camera = IdealCamera(128, 128, 0.1)                   # 128×128 pixels, 100nm pixels
+params = StaticSMLMConfig(density=1.0, σ_psf=0.13)    # density 1/μm², PSF 130nm
+
+smld_noisy, info = simulate(
+    params;                                           # ';' separates positional from keyword args
+    pattern=Nmer2D(n=8, d=0.1),                       # 100nm diameter ring
     camera=camera
 )
-
-# More customized simulation
-smld_true, smld_model, smld_noisy = simulate(;
-    ρ=1.0,                # emitters per μm²
-    σ_psf=0.13,           # PSF width in μm (130nm)
-    minphotons=50,        # minimum photons for detection
-    ndatasets=10,         # number of independent datasets
-    nframes=1000,         # frames per dataset
-    framerate=50.0,       # frames per second
-    pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
-    molecule=GenericFluor(photons=1e5, k_off=50.0, k_on=1e-2),  # rates in 1/s
-    camera=IdealCamera(1:256, 1:128, 0.1)  # pixelsize in μm
-)
+# info.smld_true and info.smld_model hold the intermediate results
+println("Static: generated $(length(smld_noisy.emitters)) localizations.")
 
 #==========================================================================
-Pattern Types
+Quick Start: Diffusion & Interaction Simulation
 ==========================================================================#
 
-# 2D Patterns
-# N molecules arranged in a circle
-nmer = Nmer2D(n=8, d=0.1)  # 8 molecules in a 100nm diameter circle
-
-# Linear pattern with random positions
-line = Line2D(λ=5.0, endpoints=[(-2.0, 0.0), (2.0, 0.0)])  # 5 molecules per μm along line
-
-# 3D Patterns
-# N molecules arranged in a circle at z=0
-nmer3d = Nmer3D(n=8, d=0.1)  # 8 molecules in a 100nm diameter circle
-
-# 3D line with random positions
-line3d = Line3D(λ=5.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)])
+diff_params = DiffusionSMLMConfig(
+    density = 0.5,           # molecules per μm²
+    box_size = 10.0,         # μm
+    diff_monomer = 0.1,      # μm²/s
+    k_off = 0.2,             # s⁻¹ dimer dissociation rate
+    dt = 0.01,               # s simulation timestep
+    t_max = 10.0,            # s total simulation time
+    camera_framerate = 10.0, # 10 fps (100ms per frame)
+    camera_exposure = 0.1    # 100ms exposure integrates 10 timesteps per frame
+)
+smld_diff, diff_info = simulate(diff_params)          # returns (BasicSMLD, SimInfo)
+println("Diffusion: simulated $(diff_params.t_max) s -> $(smld_diff.n_frames) frames.")
 
 #==========================================================================
-Molecule Models
+Patterns
 ==========================================================================#
 
-# Generic fluorophore with two-state kinetics
-fluor = GenericFluor(
-    photons=10000.0,     # photon emission rate in Hz
-    k_off=10.0,          # off rate in Hz (state 1 → state 2)
-    k_on=1e-2            # on rate in Hz (state 2 → state 1)
-)
+nmer = Nmer2D(n=8, d=0.1)                             # 8 molecules in a 100nm circle
+line = Line3D(λ=5.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)])  # 5 mols/μm
 
 #==========================================================================
-Diffusion and Interaction Simulation
+Labeling
 ==========================================================================#
 
-# Set up parameters for diffusion simulation using Smoluchowski dynamics
-params = DiffusionSMLMParams(
-    density = 0.5,        # molecules per μm²
-    box_size = 10.0,      # μm
-    diff_monomer = 0.1,   # μm²/s
-    diff_dimer = 0.05,    # μm²/s
-    k_off = 0.2,          # s⁻¹
-    r_react = 0.01,       # μm
-    d_dimer = 0.05,       # μm
-    dt = 0.01,            # s
-    t_max = 10.0          # s
-)
+labeling = FixedLabeling()                            # exactly 1 fluorophore per site
+labeling = PoissonLabeling(1.5)                       # Poisson, avg 1.5 per site
+labeling = BinomialLabeling(4, 0.8)                   # 4 attachment points, 80% each
+labeling = PoissonLabeling(1.5; efficiency=0.9)       # 90% of sites get labeled
 
-# Run simulation
-systems = simulate(params)
-
-# Visualize the simulation
-visualize_sequence(systems, filename="diffusion.mp4", framerate=round(Int64,1/params.dt))
-
-# Generate microscope images
-psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_image_sequence(
-    psf, 
-    systems,
-    frame_integration=10
-)
-
-# Extract only dimers
-dimer_systems = get_dimers(systems)
-dimer_images = gen_image_sequence(
-    psf, 
-    dimer_systems, 
-    frame_integration=10
-)
+smld_lab, _ = simulate(params; pattern=Nmer2D(), labeling=PoissonLabeling(1.5))
+println("Labeling: $(length(smld_lab.emitters)) localizations with Poisson labeling.")
 
 #==========================================================================
-2D Simulation with Visualization
+Molecules & Photophysics
 ==========================================================================#
 
-# Create camera with physical pixel size
-camera_viz = IdealCamera(1:128, 1:256, 0.1)  # 128×256 pixels, 100nm pixels
+# Two-state blinking model using the positional rate-matrix constructor
+fluor = GenericFluor(10000.0, [-10.0 10.0; 1e-2 -1e-2])  # γ=1e4, k_off=10, k_on=1e-2
 
-# Simulation parameters in physical units
-smld_true_viz, smld_model_viz, smld_noisy_viz = simulate(;
-    ρ=1.0,                # emitters per μm²
-    σ_psf=0.13,           # PSF width in μm
-    pattern=Nmer2D(n=6, d=0.2),  # hexamer with 200nm diameter
+#==========================================================================
+Image Generation
+==========================================================================#
+
+psf = GaussianPSF(0.15)                               # 150nm PSF width
+images, img_info = gen_images(smld_diff, psf;
+    support=1.0,                                      # PSF support radius in μm (faster)
+    poisson_noise=true                                # add shot noise
+)
+println("Image generation: $(img_info.frames_generated) images, stack size $(size(images)).")
+
+#==========================================================================
+sCMOS Camera with Realistic Noise
+==========================================================================#
+
+# sCMOS camera (128×128 pixels, 100nm pixels, 1.6 e⁻ read noise)
+camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)
+smld_scmos, _ = simulate(params;
+    pattern=Nmer2D(n=8, d=0.1),
+    camera=camera_scmos
+)
+# Full sCMOS noise model: QE, Poisson, read noise, gain, offset
+images_scmos, _ = gen_images(smld_scmos, GaussianPSF(0.15); bg=10.0, camera_noise=true)
+println("sCMOS static images: size $(size(images_scmos)).")
+
+# For diffusion simulations
+diff_scmos_params = DiffusionSMLMConfig(density=0.5, box_size=10.0)
+smld_diff_scmos, _ = simulate(diff_scmos_params; camera=camera_scmos, override_count=10)
+println("sCMOS diffusion: $(length(smld_diff_scmos.emitters)) emitters across all frames.")
+
+#==========================================================================
+Example Workflow: Static Simulation & Visualization
+==========================================================================#
+
+camera_viz = IdealCamera(128, 128, 0.1)
+params_viz = StaticSMLMConfig(density=1.0, σ_psf=0.13)
+smld_viz, _ = simulate(
+    params_viz;
+    pattern=Nmer2D(n=6, d=0.2),                       # hexamer
     camera=camera_viz
 )
 
-# Extract coordinates from emitters
-x_noisy = [e.x for e in smld_noisy_viz.emitters]
-y_noisy = [e.y for e in smld_noisy_viz.emitters]
-photons = [e.photons for e in smld_noisy_viz.emitters]
+emitters = smld_viz.emitters
+x_coords = [e.x for e in emitters]
+y_coords = [e.y for e in emitters]
+photons  = [e.photons for e in emitters]
 
-# Create figure and plot results
-fig = Figure(size=(800, 600))
-ax = Axis(fig[1, 1], 
-    title="Simulated SMLM Localizations",
-    xlabel="x (μm)",
-    ylabel="y (μm)",
-    aspect=DataAspect(),
-    yreversed=true  # This makes (0,0) at top-left
+fig = Figure(size=(600, 500))
+ax = Axis(fig[1, 1],
+    title="Simulated SMLM Localizations (Hexamer)",
+    xlabel="x (μm)", ylabel="y (μm)",
+    aspect=DataAspect(), yreversed=true
 )
-
-# Scatter plot with photon counts as color
-scatter!(ax, x_noisy, y_noisy, 
-    color=photons,
-    colormap=:viridis,
-    markersize=4,
-    alpha=0.6
-)
-
+scatter!(ax, x_coords, y_coords, color=photons, colormap=:viridis, markersize=4, alpha=0.7)
 Colorbar(fig[1, 2], colormap=:viridis, label="Photons")
-
-# Show or save the figure
 display(fig)
-# save("smlm_simulation.png", fig)
+# save("smlm_hexamer.png", fig)
 
 #==========================================================================
-3D Simulation
+Example Workflow: Diffusion with Realistic sCMOS Noise
 ==========================================================================#
 
-# Create camera with physical pixel size
-camera_3d = IdealCamera(1:128, 1:256, 0.1)  # 128×256 pixels, 100nm pixels
-
-# Simulation parameters in physical units
-smld_true_3d, smld_model_3d, smld_noisy_3d = simulate(;
-    ρ=0.5,                # emitters per μm²
-    pattern=Nmer3D(n=8, d=0.3),  # 3D pattern
-    camera=camera_3d,
-    zrange=[-2.0, 2.0]    # 4μm axial range
+camera_scmos2 = SCMOSCamera(64, 64, 0.1, 1.6)         # 64×64 pixels, 100nm/px, 1.6 e⁻
+params_spt = DiffusionSMLMConfig(
+    density = 1.0,            # 1 molecule/μm²
+    box_size = 6.4,           # 6.4×6.4 μm field
+    diff_monomer = 0.1,       # 0.1 μm²/s diffusion
+    t_max = 0.5,              # 0.5 second total
+    camera_framerate = 100.0  # 100 fps
 )
+smld_spt, _ = simulate(params_spt; camera=camera_scmos2, photons=200.0)
+
+# sCMOS images vs ideal-camera images for the same data
+images_spt_scmos, _ = gen_images(smld_spt, GaussianPSF(0.13); bg=10.0, camera_noise=true)
+
+camera_ideal = IdealCamera(64, 64, 0.1)
+smld_spt_ideal = BasicSMLD(smld_spt.emitters, camera_ideal, smld_spt.n_frames, smld_spt.n_datasets)
+images_spt_ideal, _ = gen_images(smld_spt_ideal, GaussianPSF(0.13); bg=10.0, poisson_noise=true)
+
+println("sCMOS: mean=$(round(mean(images_spt_scmos), digits=1)) ADU, std=$(round(std(images_spt_scmos), digits=1))")
+println("Ideal: mean=$(round(mean(images_spt_ideal), digits=1)) photons, std=$(round(std(images_spt_ideal), digits=1))")
+
+println("\nAll README examples executed successfully.")

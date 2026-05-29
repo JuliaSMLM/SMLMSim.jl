@@ -16,7 +16,7 @@ println("Setting up diffusion simulation parameters...")
 # Create simulation parameters
 temporal_sampling = 10
 frame_rate = 100.0
-params = DiffusionSMLMParams(
+params = DiffusionSMLMConfig(
     density = 1.0,        # molecules per μm²
     box_size = 5.0,       # 5μm box 
     diff_monomer = 0.1,   # Diffusion coefficient for monomers (μm²/s)
@@ -40,8 +40,9 @@ println("- Reaction parameters: r_react=$(params.r_react) μm, k_off=$(params.k_
 println("- Time parameters: dt=$(params.dt) s, t_max=$(params.t_max) s")
 
 println("Running diffusion simulation...")
-systems = simulate(params)
-n_frames = length(systems)
+# simulate returns (smld, info); smld is a BasicSMLD spanning all frames
+smld, info = simulate(params)
+n_frames = smld.n_frames
 
 println("Simulation complete with $(n_frames) frames")
 
@@ -51,7 +52,7 @@ psf = GaussianPSF(0.13)  # 130nm PSF width
 
 # Generate camera images
 println("Generating camera images...")
-images = gen_images(systems, psf;
+images, _ = gen_images(smld, psf;
     support=1.0,  # PSF support radius in μm
     bg=2.0,             # Background photons
     poisson_noise=true   # Add realistic Poisson noise
@@ -63,9 +64,9 @@ println("Image stack generated with size: $(size(images))")
 println("Launching stack viewer...")
 fig1 = view_stack(images, title="SMLM 2D Simulation (Hexamer Pattern)")
 
-# Show dimers only 
-system_dimers = get_dimers(systems)
-images_dimers = gen_images(system_dimers, psf;
+# Show dimers only
+smld_dimers = get_dimers(smld)
+images_dimers, _ = gen_images(smld_dimers, psf;
     support=1.0,  # PSF support radius in μm
     bg=2.0,             # Background photons
     poisson_noise=true   # Add realistic Poisson noise
@@ -73,15 +74,15 @@ images_dimers = gen_images(system_dimers, psf;
 fig2 = view_stack(images_dimers, title="SMLM 2D Simulation (Hexamer Pattern)")
 
 # Show monomers only
-system_monomers = get_monomers(systems)
-images_monomers = gen_images(system_monomers, psf;
+smld_monomers = get_monomers(smld)
+images_monomers, _ = gen_images(smld_monomers, psf;
     support=1.0,  # PSF support radius in μm
     bg=2.0,             # Background photons
     poisson_noise=true   # Add realistic Poisson noise
 )
 fig3 = view_stack(images_monomers, title="SMLM 2D Simulation (Hexamer Pattern)")
 
-dimer_lifetime = analyze_dimer_lifetime(systems)
+dimer_lifetime = analyze_dimer_lifetime(smld)
 println("Dimer lifetime: $(dimer_lifetime)")
 
 

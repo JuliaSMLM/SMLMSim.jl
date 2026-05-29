@@ -60,7 +60,7 @@ emitters = Emitter2DFit{Float64}[]
 # Add grid of emitters
 for x in range(1.0, stop=box_size-1.0, length=8)
     for y in range(1.0, stop=box_size-1.0, length=8)
-        push!(emitters, Emitter2DFit(x, y, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, 1, 1, 1))
+        push!(emitters, Emitter2DFit{Float64}(x, y, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0; σ_xy=0.0, frame=1, dataset=1, track_id=1, id=1))
     end
 end
 println("  Created $(length(emitters)) emitters in grid pattern")
@@ -73,16 +73,16 @@ println("\nGenerating images...")
 psf = GaussianPSF(0.13)
 
 println("  1. Clean image (no noise)...")
-img_clean = gen_images(smld_scmos, psf, bg=10.0)
+img_clean, _ = gen_images(smld_scmos, psf, bg=10.0)
 
 println("  2. sCMOS camera noise...")
-img_scmos = gen_images(smld_scmos, psf, camera_noise=true, bg=10.0)
+img_scmos, _ = gen_images(smld_scmos, psf, camera_noise=true, bg=10.0)
 
 # For comparison, make ideal camera version
 println("  3. Ideal camera (Poisson only) for comparison...")
 camera_ideal = IdealCamera(n_pixels, n_pixels, pixel_size)
 smld_ideal = BasicSMLD(emitters, camera_ideal, 1, 1)
-img_ideal = gen_images(smld_ideal, psf, poisson_noise=true, bg=10.0)
+img_ideal, _ = gen_images(smld_ideal, psf, poisson_noise=true, bg=10.0)
 
 # Statistics
 println("\nImage Statistics:")
