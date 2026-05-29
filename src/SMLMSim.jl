@@ -62,7 +62,7 @@ include("interface.jl")
 # Import specific functions from Core
 using .Core: CTMC, get_state, get_next, intensity_trace, kinetic_model
 using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
-using .Core: Nmer2D, Nmer3D, Line2D, Line3D, uniform2D, uniform3D, rotate!
+using .Core: Nmer2D, Nmer3D, Line2D, Line3D, Nanoruler2D, Nanoruler3D, uniform2D, uniform3D, rotate!
 using .Core: SMLMSimParams
 using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
 using .Core: AbstractLabeling, FixedLabeling, PoissonLabeling, BinomialLabeling
@@ -138,6 +138,8 @@ export
     Nmer3D,
     Line2D,
     Line3D,
+    Nanoruler2D,
+    Nanoruler3D,
 
     # Pattern generation
     uniform2D,

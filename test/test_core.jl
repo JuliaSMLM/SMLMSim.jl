@@ -275,6 +275,55 @@ end
         @test all(isapprox.(original_distances, rotated_distances, atol=1e-10))
     end
     
+    # Test Nanoruler pattern types (collinear, uniformly-spaced marks)
+    @testset "Nanoruler Patterns" begin
+        # Test Nanoruler2D with GATTAquant-style 20 nm spacing
+        ruler2d = Nanoruler2D(spacing=0.02)
+        @test ruler2d.n == 3  # default is the 3-mark ruler
+        @test ruler2d.spacing == 0.02
+        @test length(ruler2d.x) == 3
+        @test length(ruler2d.y) == 3
+
+        # Marks are collinear along x (y all zero) and centered on the origin
+        @test all(isapprox.(ruler2d.y, 0.0, atol=1e-12))
+        @test isapprox(sum(ruler2d.x), 0.0, atol=1e-12)
+
+        # Adjacent spacing equals `spacing`; marks at [-s, 0, +s]
+        @test all(isapprox.(diff(ruler2d.x), 0.02, atol=1e-12))
+        @test isapprox(ruler2d.x[1], -0.02, atol=1e-12)
+        @test isapprox(ruler2d.x[end], 0.02, atol=1e-12)
+
+        # General n is supported
+        ruler2d_5 = Nanoruler2D(n=5, spacing=0.05)
+        @test ruler2d_5.n == 5
+        @test length(ruler2d_5.x) == 5
+        @test all(isapprox.(diff(ruler2d_5.x), 0.05, atol=1e-12))
+
+        # Rotation preserves distance from the (origin-centered) ruler center
+        rotated = Nanoruler2D(n=3, spacing=0.02)
+        original_x = copy(rotated.x)
+        SMLMSim.rotate!(rotated, π/3)
+        @test !all(isapprox.(rotated.x, original_x, atol=1e-10))  # coords changed
+        @test all(isapprox.(
+            sqrt.(rotated.x.^2 .+ rotated.y.^2),
+            abs.(original_x),
+            atol=1e-10))
+
+        # Test Nanoruler3D (marks on x-axis, z=0 before rotation)
+        ruler3d = Nanoruler3D(n=3, spacing=0.04)
+        @test ruler3d.n == 3
+        @test length(ruler3d.z) == 3
+        @test all(isapprox.(ruler3d.y, 0.0, atol=1e-12))
+        @test all(isapprox.(ruler3d.z, 0.0, atol=1e-12))
+        @test all(isapprox.(diff(ruler3d.x), 0.04, atol=1e-12))
+
+        # Distributing rulers yields a multiple of n marks
+        x, y = SMLMSim.uniform2D(0.5, Nanoruler2D(spacing=0.02), 10.0, 10.0)
+        @test length(x) % 3 == 0
+        x3, y3, z3 = SMLMSim.uniform3D(0.5, Nanoruler3D(spacing=0.04), 10.0, 10.0, zrange=[-1.0, 1.0])
+        @test length(x3) % 3 == 0
+    end
+
     # Test pattern distribution functions
     @testset "Pattern Distribution" begin
         # Test uniform2D

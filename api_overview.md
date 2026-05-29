@@ -33,9 +33,11 @@ All simulations use consistent physical units:
   - `Pattern2D`: Base type for 2D patterns
     - `Nmer2D`: N molecules arranged in a circle
     - `Line2D`: Molecules arranged along a line
+    - `Nanoruler2D`: N collinear, uniformly-spaced marks (DNA-PAINT nanoruler)
   - `Pattern3D`: Base type for 3D patterns
     - `Nmer3D`: N molecules arranged in a circle in 3D
     - `Line3D`: Molecules arranged along a 3D line
+    - `Nanoruler3D`: N collinear, uniformly-spaced marks in 3D (DNA-PAINT nanoruler)
 
 - `AbstractLabeling`: Base type for labeling strategies
   - `FixedLabeling`: Deterministic number of fluorophores per site
@@ -117,6 +119,20 @@ mutable struct Line2D <: Pattern2D
     y::Vector{Float64}    # Y positions of molecules in microns
     λ::Float64            # Linear molecule density (molecules per micron)
     endpoints::Vector{Tuple{Float64,Float64}}  # Vector of endpoint coordinates
+end
+```
+
+#### Nanoruler2D
+
+`n` collinear marks with uniform spacing, modeling DNA-PAINT calibration
+nanorulers (e.g. GATTAquant). `Nanoruler3D` is the 3D analog (adds a `z` field).
+
+```julia
+mutable struct Nanoruler2D <: Pattern2D
+    n::Int               # Number of marks in the pattern (default 3)
+    spacing::Float64     # Distance between adjacent marks in microns
+    x::Vector{Float64}   # X positions of marks in microns
+    y::Vector{Float64}   # Y positions of marks in microns
 end
 ```
 
@@ -263,6 +279,10 @@ line = Line2D(λ=5.0, endpoints=[(-2.0, 0.0), (2.0, 0.0)])  # 5 molecules/μm
 
 # Create a 3D line pattern
 line3d = Line3D(λ=8.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)])
+
+# Create a DNA-PAINT nanoruler: 3 collinear marks, 20nm spacing (GATTAquant-style)
+ruler = Nanoruler2D(spacing=0.02)
+ruler3d = Nanoruler3D(n=3, spacing=0.04)
 ```
 
 ### Creating Fluorophore Models
