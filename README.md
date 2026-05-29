@@ -86,6 +86,7 @@ Define spatial arrangements (see `Pattern` types like `Nmer2D`, `Line3D`, `unifo
 # Examples:
 nmer = Nmer2D(n=8, d=0.1)  # 8 molecules in a 100nm diameter circle
 line = Line3D(λ=5.0, endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)]) # 5 mols/μm
+ruler = Nanoruler2D(spacing=0.02)  # GATTAquant-style 3-mark ruler, 20nm spacing
 ```
 
 ### Labeling

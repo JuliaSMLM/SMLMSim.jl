@@ -46,6 +46,23 @@ custom_line = Line2D(λ=5.0, endpoints=[(-2.0, 0.0), (2.0, 0.0)])
 
 The density parameter λ (lambda) specifies the average number of molecules per micron along the line. The actual number of molecules is drawn from a Poisson distribution.
 
+### Nanoruler2D
+
+The `Nanoruler2D` pattern creates `n` marks arranged collinearly with uniform `spacing`, modeling DNA-PAINT calibration nanorulers (e.g. GATTAquant). Unlike `Line2D`, the marks are deterministic and evenly spaced. The marks lie on the x-axis centered on the origin; `uniform2D` then applies random placement and rotation.
+
+```julia
+# Default 3-mark nanoruler with 40 nm spacing
+ruler = Nanoruler2D()
+
+# GATTAquant-style 3-mark ruler with 20 nm spacing (marks at -20, 0, +20 nm)
+ruler = Nanoruler2D(spacing=0.02)
+
+# 5-mark ruler with 50 nm spacing
+ruler = Nanoruler2D(n=5, spacing=0.05)
+```
+
+`spacing` is the distance between adjacent marks in microns, so the total ruler length is `(n - 1) * spacing`.
+
 ## 3D Patterns
 
 ### Nmer3D
@@ -73,6 +90,21 @@ custom_line3d = Line3D(
     λ=5.0,  # molecules per micron
     endpoints=[(-1.0, 0.0, -0.5), (1.0, 0.0, 0.5)]
 )
+```
+
+### Nanoruler3D
+
+The `Nanoruler3D` pattern is the 3D equivalent of `Nanoruler2D`: `n` collinear marks with uniform `spacing` along the x-axis at z=0. `uniform3D` then applies a random 3D rotation, giving the rod-like ruler a random orientation in space.
+
+```julia
+# Default 3-mark nanoruler with 40 nm spacing
+ruler3d = Nanoruler3D()
+
+# GATTAquant-style 3-mark ruler with 20 nm spacing
+ruler3d = Nanoruler3D(spacing=0.02)
+
+# 5-mark ruler with 50 nm spacing
+ruler3d = Nanoruler3D(n=5, spacing=0.05)
 ```
 
 ## Creating Pattern Distributions

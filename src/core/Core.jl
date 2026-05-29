@@ -71,6 +71,8 @@ export
     Nmer3D,
     Line2D,
     Line3D,
+    Nanoruler2D,
+    Nanoruler3D,
 
     # Pattern generation
     uniform2D,

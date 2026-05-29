@@ -308,6 +308,142 @@ function Base.show(io::IO, ::MIME"text/plain", line::Line3D)
 end
 
 #==========================================================================
+Nanoruler Pattern Types
+==========================================================================#
+
+"""
+    Nanoruler2D <: Pattern2D
+
+`n` fluorophore marks arranged collinearly with uniform spacing, modeling
+DNA-PAINT calibration nanorulers (e.g. GATTAquant). Marks lie on the x-axis,
+centered on the origin; `uniform2D` then applies random placement and rotation.
+
+# Fields
+- `n::Int`: Number of marks in the pattern
+- `spacing::Float64`: Distance between adjacent marks in microns
+- `x::Vector{Float64}`: X positions of marks in microns
+- `y::Vector{Float64}`: Y positions of marks in microns
+
+# Examples
+```julia
+# Default 3-mark nanoruler with 40 nm spacing
+ruler = Nanoruler2D()
+
+# GATTAquant-style 3-mark ruler with 20 nm spacing (marks at -20, 0, +20 nm)
+ruler = Nanoruler2D(; spacing=0.02)
+
+# 5-mark ruler with 50 nm spacing
+ruler = Nanoruler2D(; n=5, spacing=0.05)
+```
+"""
+mutable struct Nanoruler2D <: Pattern2D
+    n::Int
+    spacing::Float64
+    x::Vector{Float64}
+    y::Vector{Float64}
+end
+
+function Nanoruler2D(; n::Int=3, spacing::Float64=0.04)
+    ruler = Nanoruler2D(n, spacing, zeros(n), zeros(n))
+    for nn = 1:n
+        ruler.x[nn] = (nn - (n + 1) / 2) * spacing
+        ruler.y[nn] = 0.0
+    end
+    return ruler
+end
+
+function Base.show(io::IO, ruler::Nanoruler2D)
+    print(io, "Nanoruler2D(n=$(ruler.n), spacing=$(ruler.spacing) μm)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", ruler::Nanoruler2D)
+    println(io, "Nanoruler2D pattern:")
+    println(io, "  Number of marks (n) = $(ruler.n)")
+    println(io, "  Spacing = $(ruler.spacing) μm ($(ruler.spacing*1000) nm)")
+    println(io, "  Total length = $(round((ruler.n - 1) * ruler.spacing, digits=4)) μm")
+
+    if ruler.n <= 10  # Only show coordinates for small patterns
+        println(io, "  Coordinates (μm):")
+        for i in 1:ruler.n
+            print(io, "    [$(i)]: (")
+            print(io, @sprintf("%.3f", ruler.x[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", ruler.y[i]))
+            println(io, ")")
+        end
+    end
+end
+
+"""
+    Nanoruler3D <: Pattern3D
+
+3D equivalent of [`Nanoruler2D`](@ref): `n` fluorophore marks arranged collinearly
+with uniform spacing along the x-axis at z=0, centered on the origin. `uniform3D`
+then applies random 3D placement and rotation, giving the rod-like ruler a random
+orientation in space.
+
+# Fields
+- `n::Int`: Number of marks in the pattern
+- `spacing::Float64`: Distance between adjacent marks in microns
+- `x::Vector{Float64}`: X positions of marks in microns
+- `y::Vector{Float64}`: Y positions of marks in microns
+- `z::Vector{Float64}`: Z positions of marks in microns
+
+# Examples
+```julia
+# Default 3-mark nanoruler with 40 nm spacing
+ruler = Nanoruler3D()
+
+# GATTAquant-style 3-mark ruler with 20 nm spacing
+ruler = Nanoruler3D(; spacing=0.02)
+
+# 5-mark ruler with 50 nm spacing
+ruler = Nanoruler3D(; n=5, spacing=0.05)
+```
+"""
+mutable struct Nanoruler3D <: Pattern3D
+    n::Int
+    spacing::Float64
+    x::Vector{Float64}
+    y::Vector{Float64}
+    z::Vector{Float64}
+end
+
+function Nanoruler3D(; n::Int=3, spacing::Float64=0.04)
+    ruler = Nanoruler3D(n, spacing, zeros(n), zeros(n), zeros(n))
+    for nn = 1:n
+        ruler.x[nn] = (nn - (n + 1) / 2) * spacing
+        ruler.y[nn] = 0.0
+        ruler.z[nn] = 0.0
+    end
+    return ruler
+end
+
+function Base.show(io::IO, ruler::Nanoruler3D)
+    print(io, "Nanoruler3D(n=$(ruler.n), spacing=$(ruler.spacing) μm)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", ruler::Nanoruler3D)
+    println(io, "Nanoruler3D pattern:")
+    println(io, "  Number of marks (n) = $(ruler.n)")
+    println(io, "  Spacing = $(ruler.spacing) μm ($(ruler.spacing*1000) nm)")
+    println(io, "  Total length = $(round((ruler.n - 1) * ruler.spacing, digits=4)) μm")
+
+    if ruler.n <= 10  # Only show coordinates for small patterns
+        println(io, "  Coordinates (μm):")
+        for i in 1:ruler.n
+            print(io, "    [$(i)]: (")
+            print(io, @sprintf("%.3f", ruler.x[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", ruler.y[i]))
+            print(io, ", ")
+            print(io, @sprintf("%.3f", ruler.z[i]))
+            println(io, ")")
+        end
+    end
+end
+
+#==========================================================================
 Pattern Generation Functions
 ==========================================================================#
 
