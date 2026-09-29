@@ -563,6 +563,8 @@ function simulate(params::DiffusionSMLMConfig;
     # Initialize emitters
     n_initial_emitters = 0
     prior_D = nothing
+    prior_γ = nothing
+    prior_dt = nothing
     γ_val = γ_new
     if starting_conditions !== nothing
         # Extract emitters from starting_conditions
@@ -573,6 +575,8 @@ function simulate(params::DiffusionSMLMConfig;
             prior_D = get(start_smld.metadata, "monomer_D", nothing)
             prior_γ = get(start_smld.metadata, "γ", nothing)
             γ === nothing && (γ_val = prior_γ === nothing ? nothing : Float64(prior_γ))
+            sim_params = get(start_smld.metadata, "simulation_parameters", nothing)
+            prior_dt = sim_params isa DiffusionSMLMConfig ? sim_params.dt : nothing
         else
             # Already a vector of emitters
             start_emitters = starting_conditions
@@ -601,15 +605,19 @@ function simulate(params::DiffusionSMLMConfig;
         by_id = Dict(e.track_id => e for e in start_emitters)
         orphan(e) = e.state == :dimer && begin
             partner = e.partner_id === nothing ? nothing : get(by_id, e.partner_id, nothing)
-            partner === nothing || partner.state != :dimer || partner.partner_id != e.track_id
+            partner === nothing || partner.state != :dimer || partner.partner_id != e.track_id ||
+                e.partner_id == e.track_id
         end
         if any(orphan, start_emitters)
             @warn "starting_conditions has dimers without a matching dimer partner; converted to monomers" maxlog=1
             start_emitters = [orphan(e) ? restamp(e; state=:monomer, partner_id=nothing) : e for e in start_emitters]
         end
 
-        # Reset timestamps to start at 0.0 and frame to 1; an explicit γ restamps the brightness
-        emitters = [restamp(e; photons=(γ === nothing ? e.photons : Float64(γ) * params.dt),
+        # Reset timestamps to start at 0.0 and frame to 1; an explicit γ restamps the brightness,
+        # and so does a changed dt when continuing from an SMLD (the saved rate applies to the new step)
+        dt_changed = prior_γ !== nothing && prior_dt !== nothing && prior_dt != params.dt
+        emitters = [restamp(e; photons=(γ !== nothing ? Float64(γ) * params.dt :
+                                        dt_changed ? Float64(prior_γ) * params.dt : e.photons),
                             timestamp=0.0, frame=1) for e in start_emitters]
         n_initial_emitters = length(emitters)
     else
@@ -620,10 +628,12 @@ function simulate(params::DiffusionSMLMConfig;
 
     # Monomer diffusion coefficient per track, drawn once per molecule
     track_D = Dict{Int,Float64}()
-    if !isempty(params.monomer_mobility)
+    # Saved per-track D is a property of the molecule and is kept even if the new mixture is empty
+    if !isempty(params.monomer_mobility) || prior_D !== nothing
         for e in emitters
             track_D[e.track_id] = prior_D !== nothing && haskey(prior_D, e.track_id) ?
-                Float64(prior_D[e.track_id]) : draw_monomer_D(params)
+                Float64(prior_D[e.track_id]) :
+                isempty(params.monomer_mobility) ? params.diff_monomer : draw_monomer_D(params)
         end
     end
 
@@ -769,6 +779,9 @@ function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingE
     for key in ("simulation_type", "simulation_parameters", "camera_framerate", "camera_exposure", "γ", "monomer_D")
         haskey(smld.metadata, key) && (metadata[key] = smld.metadata[key])
     end
+    # A second extraction takes the stored path and returns the same emitters in the same order
+    metadata["final_state"] = final_emitters
+    metadata["last_frame_latest"] = _last_frame_latest(final_emitters)
     return BasicSMLD(final_emitters, smld.camera, 1, smld.n_datasets, metadata)
 end
 
@@ -805,10 +818,18 @@ end
 Deprecated, removed in 0.8.0: use [`extract_end_state`](@ref), which returns the exact end
 state as an SMLD and carries each track's D.
 
-Returns a `Vector` with one emitter per track: the record with the largest timestamp in the
-last frame, photons unchanged, sorted by track_id.
+Returns a `Vector`. For an SMLD of diffusing emitters, one emitter per track: the record with
+the largest timestamp in the last frame, photons unchanged, sorted by track_id. For any other
+SMLD (for example fitted emitters, which have no timestamp), every record in the largest frame,
+as in 0.7.1.
 """
 function extract_final_state(smld::SMLD)
+    Base.depwarn("extract_final_state is deprecated and will be removed in 0.8.0; use extract_end_state(smld), which returns the exact end state as an SMLD and carries each track's D", :extract_final_state; force=true)
+    max_frame = maximum(e -> e.frame, smld.emitters)
+    return filter(e -> e.frame == max_frame, smld.emitters)
+end
+
+function extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
     Base.depwarn("extract_final_state is deprecated and will be removed in 0.8.0; use extract_end_state(smld), which returns the exact end state as an SMLD and carries each track's D", :extract_final_state; force=true)
     return _last_frame_latest(smld.emitters)
 end

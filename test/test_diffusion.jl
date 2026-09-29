@@ -469,6 +469,7 @@ end
 
     @testset "(k) review fixes" begin
         SD = SMLMSim.SMLMData
+        restamp_frame(e) = DiffusingEmitter2D{Float64}(e.x, e.y, e.photons, e.timestamp, 1, e.dataset, e.track_id, e.state, e.partner_id)
         p = static_params(dt=1.25e-3, diff_monomer=0.5, t_max=0.1)
         Random.seed!(21)
         smld, _ = simulate(p; γ=1e4, override_count=5, camera=cam32)
@@ -487,21 +488,34 @@ end
             @test (e.x, e.y, e.photons) == (latest.x, latest.y, latest.photons)
         end
 
-        # ROI filter that leaves k tracks in the last frame
+        # ROI filter that leaves a known set of tracks in the last frame
         # Stopgap (2026-09-29, decision 0032): SMLMData 0.7.0 filter_roi (src/core/filters.jl:130 and :149)
         # dispatches on the concrete Emitter2D/Emitter3D types, so it throws on DiffusingEmitter2D. The fix
         # (hasfield(eltype, :z), or AbstractEmitter2D/3D) is owed in an SMLMData patch release; this hand
         # filter is replaced by SD.filter_roi when that release lands.
-        lastf = [e for e in smld.emitters if e.frame == smld.n_frames]
-        cut = sort([e.x for e in lastf])[length(lastf) ÷ 2]
-        sr = typeof(smld)(filter(e -> e.x <= cut, smld.emitters), smld.camera, smld.n_frames, smld.n_datasets, copy(smld.metadata))  # as @filter does
-        k = length(unique(e.track_id for e in sr.emitters if e.frame == maximum(r.frame for r in sr.emitters)))
-        @test 0 < k
-        @test length(extract_end_state(sr).emitters) == k
+        # x <= 1.5 keeps only tracks 4 and 5 in frame 10 (seed 21, printed by dev/outputs/codex36/disc.jl)
+        sr = typeof(smld)(filter(e -> e.x <= 1.5, smld.emitters), smld.camera, smld.n_frames, smld.n_datasets, copy(smld.metadata))  # as @filter does
+        esr = extract_end_state(sr)
+        @test [e.track_id for e in esr.emitters] == [4, 5]
+        for e in esr.emitters
+            recs = filter(r -> r.frame == 10 && r.track_id == e.track_id, sr.emitters)
+            latest = recs[argmax([r.timestamp for r in recs])]
+            @test restamp_frame(latest) == e
+        end
 
-        # concatenation falls back and does not throw
-        sc = SD.cat_smld([smld, smld])
-        @test length(extract_end_state(sc).emitters) == 5
+        # concatenation with a different last frame: the shifted records are the latest ones
+        # (x + 0.1, timestamp + 1e-6 so they win the per-track latest-record tie)
+        nfl = smld.n_frames
+        shifted = typeof(smld)([e.frame == nfl ? DiffusingEmitter2D{Float64}(e.x + 0.1, e.y, e.photons, e.timestamp + 1e-6, e.frame, e.dataset, e.track_id, e.state, e.partner_id) : e for e in smld.emitters],
+                               smld.camera, nfl, smld.n_datasets, copy(smld.metadata))
+        sc = SD.cat_smld([smld, shifted])
+        esc = extract_end_state(sc)
+        @test length(esc.emitters) == 5
+        for e in esc.emitters
+            recs = filter(r -> r.frame == nfl && r.track_id == e.track_id, smld.emitters)
+            latest = recs[argmax([r.timestamp for r in recs])]
+            @test (e.x, e.timestamp) == (latest.x + 0.1, latest.timestamp + 1e-6)
+        end
 
         # an edit that keeps the record count but changes the last frame falls back
         nf = smld.n_frames
@@ -659,5 +673,68 @@ end
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1.0, Inf)])
         # positional construction without a mixture still works
         @test DiffusionSMLMConfig(1.0, 10.0, 0.1, 0.05, 0.5, 0.2, 0.01, 0.05, 0.01, 10.0, 2, "periodic", 10.0, 0.1) isa DiffusionSMLMConfig
+    end
+
+    @testset "(l) Codex review of #36" begin
+        SD = SMLMSim.SMLMData
+        # 1. continuation restamps photons as gamma * dt when dt changes
+        p1 = static_params(dt=0.01, diff_monomer=0.5)
+        Random.seed!(31)
+        s1, _ = simulate(p1; γ=1e4, override_count=3, camera=cam32)
+        p2 = static_params(dt=0.005, diff_monomer=0.5)
+        s2, _ = simulate(p2; starting_conditions=s1, camera=cam32)
+        @test all(e -> e.photons == 1e4 * 0.005, s2.emitters)
+        for id in 1:3
+            prior = sum(e.photons for e in s1.emitters if e.track_id == id && e.frame == 1)
+            first = sum(e.photons for e in s2.emitters if e.track_id == id && e.frame == 1)
+            @test isapprox(first, prior; rtol=1e-12)
+        end
+        s1d, _ = simulate(p1; override_count=3, camera=cam32)
+        s1e, _ = simulate(p1; starting_conditions=s1d, camera=cam32)
+        prior_ph = Dict(e.track_id => e.photons for e in s1d.emitters)
+        @test all(e -> e.photons == prior_ph[e.track_id], s1e.emitters)
+
+        # 2. an empty new mixture keeps the saved per-track D
+        mix = [(0.5, 0.0), (0.5, 0.1)]
+        pmix = static_params(dt=1.25e-3, t_max=0.05, box_size=5.0, diff_monomer=0.5, monomer_mobility=mix)
+        Random.seed!(32)
+        sm, _ = simulate(pmix; override_count=10, γ=1e4, camera=cam32)
+        pempty = static_params(dt=1.25e-3, t_max=0.05, box_size=5.0, diff_monomer=0.5)
+        @test isempty(pempty.monomer_mobility)
+        start = Dict(e.track_id => e for e in extract_end_state(sm).emitters)
+        sm2, _ = simulate(pempty; starting_conditions=sm, camera=cam32)
+        @test sm2.metadata["monomer_D"] == sm.metadata["monomer_D"]
+        still = [id for (id, D) in sm.metadata["monomer_D"] if D == 0.0 &&
+                 all(e -> e.state == :monomer, filter(e -> e.track_id == id, sm2.emitters))]
+        @test !isempty(still)
+        moved = sum(count(e -> (e.x, e.y) != (start[id].x, start[id].y), filter(e -> e.track_id == id, sm2.emitters)) for id in still)
+        @test moved == 0
+
+        # 3. extract_final_state on fitted emitters is the 0.7.1 largest-frame filter
+        fits = [SD.Emitter2DFit{Float64}(1.0 * i, 2.0, 100.0, 1.0, 0.01, 0.01, 1.0, 0.1; frame=f, track_id=mod1(i, 2), id=i + 10 * f)
+                for f in 1:3 for i in 1:4]
+        sfit = BasicSMLD(fits, cam32, 3, 1)
+        ffit = @test_logs (:warn, r"extract_final_state is deprecated") match_mode=:any extract_final_state(sfit)
+        @test ffit == filter(e -> e.frame == 3, sfit.emitters)
+
+        # 4. extraction is idempotent when dimers reorder tracks
+        pd = static_params(dt=1.25e-3, t_max=0.1, box_size=1.0, diff_monomer=0.5, r_react=0.2, k_off=0.0)
+        Random.seed!(33)
+        sd, _ = simulate(pd; override_count=12, γ=1e4, camera=cam32)
+        e1 = extract_end_state(sd)
+        @test any(e -> e.state == :dimer, e1.emitters)
+        @test !issorted([e.track_id for e in e1.emitters])
+        e2 = extract_end_state(e1)
+        @test e2.emitters == e1.emitters
+
+        # 7. a dimer that names itself as partner is an orphan
+        selfd = [DiffusingEmitter2D{Float64}(1.0, 1.0, 100.0, 0.0, 1, 1, 1, :dimer, 1),
+                 DiffusingEmitter2D{Float64}(1.5, 1.0, 100.0, 0.0, 1, 1, 2, :monomer, nothing)]
+        ss = @test_logs (:warn, r"without a matching dimer partner") match_mode=:any simulate(
+            static_params(dt=1.25e-3, k_off=0.0, r_react=1e-6, t_max=0.02);
+            starting_conditions=selfd, camera=cam32)[1]
+        @test all(e -> e.state == :monomer && e.partner_id === nothing, ss.emitters)
+        @test all(nrec(ss, f) == 2 * 8 for f in 1:ss.n_frames)
+        @test all(length(unique(e.timestamp for e in ss.emitters if e.track_id == id)) == length(ss.emitters) ÷ 2 for id in 1:2)
     end
 end
