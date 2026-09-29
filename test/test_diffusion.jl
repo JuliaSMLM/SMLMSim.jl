@@ -56,7 +56,9 @@ using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, R
     # Calculate expected number of molecules based on density and box size
     expected_n_molecules = round(Int, small_params.density * small_params.box_size^2)
 
-    # Run simulation
+    # Run simulation. Seeded (2026-09-29): unseeded, this 2-molecule run forms a pair in about 1% of runs, which
+    # tripped the partner lookup in "Physical Constraints" below. Seed 32 is one that forms a pair.
+    Random.seed!(32)
     result, info = simulate(small_params)
 
     # Check SimInfo
@@ -245,8 +247,10 @@ using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, R
                 # Check that dimers reference each other correctly
                 for e in dimer_emitters
                     if !isnothing(e.partner_id)
-                        # Find the partner emitter
-                        partner = findfirst(p -> p.track_id == e.partner_id, smld_result.emitters)
+                        # Find the partner's record at the same time. Since v0.7.1 this took the partner's first
+                        # record anywhere in the SMLD, a monomer whenever the pair formed after t = 0.
+                        partner = findfirst(p -> p.track_id == e.partner_id && p.timestamp == e.timestamp,
+                                            smld_result.emitters)
                         if !isnothing(partner)
                             # Partner should have this emitter as its partner
                             @test smld_result.emitters[partner].partner_id == e.track_id
