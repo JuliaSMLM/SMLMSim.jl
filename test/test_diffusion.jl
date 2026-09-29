@@ -865,14 +865,17 @@ end
         pr(pm_) = (r_react = r_react, pair_mobility = pm_, box_size = bx, boundary = "reflecting")
         pp_(pm_) = (r_react = r_react, pair_mobility = pm_, box_size = bx, boundary = "periodic")
         inside(e, nd) = all(v -> 0 <= v <= bx, nd == 2 ? (e.x, e.y) : (e.x, e.y, e.z))
+        s = r_react * (1 + SMLMSim.InteractionDiffusion.UNBIND_MARGIN)
+        n_out = 0  # periodic placements outside the box: shows the no-mirror check is exercised
         for nd in (2, 3)
             mk(x, y, z, id) = nd == 2 ? E2(x, y, id) : E3(x, y, z, id)
             pos(e) = nd == 2 ? [e.x, e.y] : [e.x, e.y, e.z]
             h = bx / 2
-            # anchored (id 1 immobile) near each wall, near a corner, with u pointing out and in; the corner case
-            # u = (-0.7, 0.7) has both the +s*u and -s*u placements outside
+            # a pair near each wall and at a corner, anchored at either member: anchored at id 2 the placed
+            # member would leave the box (on both axes at the corner). The corner case u = (-0.7, 0.7), where
+            # both the +s*u and -s*u placements leave the box, is tested explicitly after the loop.
             cases = [(0.001, h, h, -1.0), (bx - 0.001, h, h, 1.0), (h, 0.001, h, -1.0), (h, bx - 0.001, h, 1.0),
-                     (0.0, 0.0, 0.0, -0.7), (bx, bx, bx, 0.7), (0.0, bx, 0.0, 0.7), (0.001, 0.002, 0.003, -0.7)]
+                     (0.0, bx, 0.0, 0.7)]
             for (x, y, z, c) in cases, sgn in (1.0, -1.0)
                 dx, dy = sgn * c * 0.01, sgn * abs(c) * 0.01 * (c < 0 ? 1 : -1)
                 a, b = mk(x, y, z, 1), mk(x + dx, y + dy, z + sgn * 0.005, 2)
@@ -889,13 +892,20 @@ end
                 r = unbind(a, b, pr(:fixed), 0.3, 0.3)
                 @test inside(r[1], nd) && inside(r[2], nd)
                 @test dist(r[1], r[2]) >= r_react
-                # periodic: same placement as before (anchor untouched, pair midpoint kept)
+                # periodic: same placement as before, never mirrored (anchor ± s*u exactly, even outside
+                # the box; apply_boundary wraps it after the free move), pair midpoint kept
                 r = unbind(a, b, pp_(:fixed), 0.3, 0.3)
                 @test isapprox((pos(r[1]) + pos(r[2])) / 2, (pos(a) + pos(b)) / 2; atol=1e-12)
+                d = pos(b) - pos(a)
+                u = d / sqrt(sum(abs2, d))
                 r = unbind(a, b, pp_(:min), 0.0, 0.3)
-                @test r[1] === a && dist(r[1], r[2]) >= r_react
+                @test r[1] === a && pos(r[2]) == pos(a) + s * u
+                r = unbind(a, b, pp_(:min), 0.3, 0.0)
+                @test r[2] === b && pos(r[1]) == pos(b) - s * u
+                n_out += !inside(r[1], nd)
             end
         end
+        @test n_out > 0
         # explicit corner: anchor at the corner, u = (-0.7, 0.7)/|.|
         a, b = E2(0.0, 0.0, 1), E2(-0.007, 0.007, 2)
         r = unbind(a, b, pr(:min), 0.0, 0.3)

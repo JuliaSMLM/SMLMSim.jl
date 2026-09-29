@@ -15,7 +15,9 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   On dissociation the partners are placed at least `r_react` apart along the pair axis (under
   `pair_mobility = :min` an immobile partner stays put), so a pair does not re-form at the next step
   only because `d_dimer < r_react`; with `d_dimer > r_react` in a periodic box (the defaults) positions
-  are unchanged; near a reflecting wall a member that would leave the box is placed on the other side instead.
+  are unchanged. Near a reflecting wall the placement stays inside the box: a member placed from an
+  immobile partner is mirrored across it on each axis it would leave, and otherwise the pair's midpoint
+  is shifted inward.
   A mobile partner can still diffuse back within `r_react` in its free step and re-form: that is
   geminate re-encounter in the contact model, not a re-capture bug.
 - `dt::Float64`: physics step (s); also sets the sub-steps per frame (motion blur):
@@ -439,7 +441,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     
                     D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
                     D_pair, rot = _pair_motion(params, D1, D2)
-                    if params.pair_mobility == :min && (D1 == 0 || D2 == 0)
+                    if _anchor(params, e1, e2, D1, D2) !== nothing
                         # An immobile partner pins the pair: no translation, rotation or RNG draws
                         d1 = restamp(e1; timestamp=e1.timestamp + dt)
                         d2 = restamp(e2; timestamp=e2.timestamp + dt)
