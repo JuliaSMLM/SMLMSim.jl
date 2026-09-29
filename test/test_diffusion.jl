@@ -622,18 +622,20 @@ end
         @test r1.t_break ≈ 1.25e-3
         @test all(r -> r.bound_fraction == 0.0, filter(r -> r.frame >= 2, rows))
 
-        # linear in the number of records
+        # linear in the number of records. Wall-clock ratios are load-sensitive (the lab machines run other lanes at
+        # load 20-30; a 4x ratio with a bound of 8 measured 10.26 under load), so the size ratio is 16x and the bound
+        # is 64, the geometric middle between linear (16) and quadratic (256), with the minimum of 5 runs each.
         function timing_smld(nf)
             recs = [DiffusingEmitter2D{Float64}(1.0, 1.0, 1.0, (f - 1) * 0.01 + s * 1e-3, f, 1, id, :monomer, nothing)
                     for id in 1:50 for f in 1:nf for s in 0:4]
             BasicSMLD(recs, cam, nf, 1)
         end
-        s100, s400 = timing_smld(100), timing_smld(400)
-        frame_dimer_truth(s100)
-        frame_dimer_truth(s400)
-        t100 = minimum(@elapsed(frame_dimer_truth(s100)) for _ in 1:5)
-        t400 = minimum(@elapsed(frame_dimer_truth(s400)) for _ in 1:5)
-        @test t400 / t100 < 8
+        s_small, s_large = timing_smld(50), timing_smld(800)
+        frame_dimer_truth(s_small)
+        frame_dimer_truth(s_large)
+        t_small = minimum(@elapsed(frame_dimer_truth(s_small)) for _ in 1:5)
+        t_large = minimum(@elapsed(frame_dimer_truth(s_large)) for _ in 1:5)
+        @test t_large / t_small < 64
     end
 
     @testset "monomer_mobility" begin
