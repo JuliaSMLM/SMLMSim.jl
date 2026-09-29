@@ -250,6 +250,7 @@ function analyze_dimer_lifetime(smld::BasicSMLD)
     # Calculate average lifetime
     return isempty(lifetimes) ? 0.0 : mean(lifetimes)
 end
+
 """
     frame_dimer_truth(smld::BasicSMLD)
 
@@ -278,32 +279,38 @@ function frame_dimer_truth(smld::BasicSMLD)
     for (id, idx) in by_track
         sort!(idx, by = i -> smld.emitters[i].timestamp)
         recs = smld.emitters[idx]
-        frames = sort!(unique(e.frame for e in recs))
-        for f in frames
-            n = 0
-            n_bound = 0
-            partner = 0
-            t_form = NaN
-            t_break = NaN
-            for (k, e) in enumerate(recs)
-                e.frame == f || continue
-                n += 1
-                if e.state == :dimer
-                    n_bound += 1
-                    partner = something(e.partner_id, 0)
-                end
-                if k > 1
-                    prev = recs[k-1].state
-                    if isnan(t_form) && e.state == :dimer && prev == :monomer
-                        t_form = Float64(e.timestamp)
-                    elseif isnan(t_break) && e.state == :monomer && prev == :dimer
-                        t_break = Float64(e.timestamp)
-                    end
+        # Records are time sorted, so each frame is one contiguous run
+        n = 0
+        n_bound = 0
+        partner = 0
+        t_form = NaN
+        t_break = NaN
+        for (k, e) in enumerate(recs)
+            if k > 1 && e.frame != recs[k-1].frame
+                push!(rows, (frame=recs[k-1].frame, track_id=id, partner_id=partner,
+                             bound_fraction=n_bound / n, t_form=t_form, t_break=t_break))
+                n = 0
+                n_bound = 0
+                partner = 0
+                t_form = NaN
+                t_break = NaN
+            end
+            n += 1
+            if e.state == :dimer
+                n_bound += 1
+                partner = something(e.partner_id, 0)
+            end
+            if k > 1
+                prev = recs[k-1].state
+                if isnan(t_form) && e.state == :dimer && prev == :monomer
+                    t_form = Float64(e.timestamp)
+                elseif isnan(t_break) && e.state == :monomer && prev == :dimer
+                    t_break = Float64(e.timestamp)
                 end
             end
-            push!(rows, (frame=f, track_id=id, partner_id=partner,
-                         bound_fraction=n_bound / n, t_form=t_form, t_break=t_break))
         end
+        push!(rows, (frame=recs[end].frame, track_id=id, partner_id=partner,
+                     bound_fraction=n_bound / n, t_form=t_form, t_break=t_break))
     end
     sort!(rows, by = r -> (r.frame, r.track_id))
     return rows

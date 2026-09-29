@@ -90,7 +90,7 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     boundary::String = "periodic"   # boundary condition type ("periodic" or "reflecting")
     camera_framerate::Float64 = 10.0 # camera frames per second (Hz)
     camera_exposure::Float64 = 0.1   # camera exposure time per frame (s)
-    monomer_mobility::Vector{Tuple{Float64,Float64}} = []  # optional (fraction, D) mixture
+    monomer_mobility::Vector{Tuple{Float64,Float64}} = Tuple{Float64,Float64}[]  # optional (fraction, D) mixture
 end
 ```
 
@@ -537,6 +537,12 @@ frames, fractions = analyze_dimer_fraction(smld)
 
 # Analyze average dimer lifetime
 lifetime = analyze_dimer_lifetime(smld)
+
+# Per-frame dimer ground truth: rows of (frame, track_id, partner_id, bound_fraction, t_form, t_break)
+truth = frame_dimer_truth(smld)
+
+# Continue a run from its exact end state (each track keeps its D)
+smld2, info2 = simulate(params; starting_conditions=smld)
 
 # Track state changes over time
 state_history = track_state_changes(smld)

@@ -29,6 +29,7 @@ params = DiffusionSMLMConfig(
     boundary = "periodic", # Boundary condition
     ndims = 2,             # 2D simulation
     camera_framerate = frame_rate, # Camera framerate (Hz) - for generating images
+    camera_exposure = 1/frame_rate, # Exposure (s), at most the frame period
 )
 
 println("Simulation parameters:")

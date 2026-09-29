@@ -277,6 +277,10 @@ end
         smld, _ = simulate(static_params(dt=1e-3, exposure=0.005); photons=100.0, override_count=1, camera=cam32)
         @test smld.n_frames == 10
         @test all(nrec(smld, f) == 5 for f in 1:10)
+        for f in 1:10
+            ts = [e.timestamp for e in smld.emitters if e.frame == f]
+            @test ts ≈ (f - 1) * 0.01 .+ (0:4) .* 1e-3 atol=1e-12
+        end
     end
 
     @testset "(b) photons in records" begin
@@ -302,18 +306,47 @@ end
 
     @testset "(d) continuation" begin
         Random.seed!(4)
-        p = static_params(dt=1.25e-3)
+        p = static_params(dt=1.25e-3, diff_monomer=0.5, t_max=0.05)
         smld, _ = simulate(p; photons=100.0, override_count=4, camera=cam32)
+        n_sub = 8
         fs = extract_final_state(smld)
-        @test length(fs) == 4
-        @test sort([e.track_id for e in fs]) == 1:4
-        @test all(e -> e.photons ≈ 100.0, fs)
+        @test fs isa BasicSMLD
+        @test length(fs.emitters) == 4
+        @test sort([e.track_id for e in fs.emitters]) == 1:4
+        @test all(e -> e.photons ≈ 100.0, fs.emitters)
+        # exact end state: one step past the last record, at the next frame's start
+        t_end = smld.n_frames * 8 * p.dt
+        for e in fs.emitters
+            last_rec = last(filter(r -> r.track_id == e.track_id, smld.emitters))
+            @test e.timestamp ≈ t_end
+            @test (e.x, e.y) != (last_rec.x, last_rec.y)
+        end
+        # fallback without metadata: latest record per track at photons * n_sub
+        fb = extract_final_state(BasicSMLD(smld.emitters, smld.camera, smld.n_frames, smld.n_datasets))
+        @test length(fb.emitters) == 4
+        for e in fb.emitters
+            recs = filter(r -> r.frame == smld.n_frames && r.track_id == e.track_id, smld.emitters)
+            latest = recs[argmax([r.timestamp for r in recs])]
+            @test e.timestamp == latest.timestamp && e.x == latest.x && e.y == latest.y
+            @test e.photons ≈ latest.photons * n_sub
+        end
+        # idempotent
+        @test extract_final_state(fs).emitters == fs.emitters
         smld2, _ = simulate(p; starting_conditions=smld, camera=cam32)
         @test all(nrec(smld2, f) == 4 * 8 for f in 1:smld2.n_frames)
         @test all(e -> e.photons ≈ 100.0 / 8, smld2.emitters)
-        smld3, _ = simulate(p; starting_conditions=fs, camera=cam32)
+        @test all(e -> e.frame == 1 ? e.timestamp < 0.01 : true, smld2.emitters)
+        smld3, _ = simulate(p; starting_conditions=fs.emitters, camera=cam32)
         @test all(e -> e.photons ≈ 100.0 / 8, smld3.emitters)
-        @test_throws ArgumentError simulate(p; starting_conditions=[fs[1], fs[1]], camera=cam32)
+        @test_throws ArgumentError simulate(p; starting_conditions=[fs.emitters[1], fs.emitters[1]], camera=cam32)
+        # a Vector cannot carry D
+        pm = static_params(dt=1.25e-3, t_max=0.02, monomer_mobility=[(0.5, 0.0), (0.5, 0.2)])
+        @test_logs (:warn, r"fresh monomer_mobility") simulate(pm; starting_conditions=fs.emitters, camera=cam32)
+        # orphan dimer
+        orphan = [DiffusingEmitter2D{Float64}(1.0, 1.0, 100.0, 0.0, 1, 1, 1, :dimer, 2)]
+        @test_throws ArgumentError simulate(p; starting_conditions=orphan, camera=cam32)
+        # shorter than one frame
+        @test_throws ArgumentError simulate(static_params(dt=1e-3, t_max=0.005); override_count=1, camera=cam32)
     end
 
     @testset "(e) validation" begin
@@ -376,6 +409,19 @@ end
         @test r1.bound_fraction ≈ 1 / 8
         @test r1.t_break ≈ 1.25e-3
         @test all(r -> r.bound_fraction == 0.0, filter(r -> r.frame >= 2, rows))
+
+        # linear in the number of records
+        function timing_smld(nf)
+            recs = [DiffusingEmitter2D{Float64}(1.0, 1.0, 1.0, (f - 1) * 0.01 + s * 1e-3, f, 1, id, :monomer, nothing)
+                    for id in 1:50 for f in 1:nf for s in 0:4]
+            BasicSMLD(recs, cam, nf, 1)
+        end
+        s100, s400 = timing_smld(100), timing_smld(400)
+        frame_dimer_truth(s100)
+        frame_dimer_truth(s400)
+        t100 = minimum(@elapsed(frame_dimer_truth(s100)) for _ in 1:5)
+        t400 = minimum(@elapsed(frame_dimer_truth(s400)) for _ in 1:5)
+        @test t400 / t100 < 8
     end
 
     @testset "monomer_mobility" begin
@@ -398,6 +444,7 @@ end
         # continuation keeps each track's D
         smld2, _ = simulate(p; starting_conditions=smld, camera=IdealCamera(1:200, 1:200, 0.1))
         @test smld2.metadata["monomer_D"] == smld.metadata["monomer_D"]
+        @test length(smld2.metadata["monomer_D"]) == 2000
         # empty mixture: same record structure as before
         p0 = DiffusionSMLMConfig(density=1.0, box_size=5.0, dt=0.01, t_max=0.1,
                                  camera_framerate=10.0, camera_exposure=0.05)
@@ -409,6 +456,9 @@ end
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(0.5, 0.1), (0.4, 0.2)])
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1.2, 0.1), (-0.2, 0.2)])
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1.0, -0.1)])
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(NaN, 0.1)])
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1.0, NaN)])
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1.0, Inf)])
         # positional construction without a mixture still works
         @test DiffusionSMLMConfig(1.0, 10.0, 0.1, 0.05, 0.5, 0.2, 0.01, 0.05, 0.01, 10.0, 2, "periodic", 10.0, 0.1) isa DiffusionSMLMConfig
     end
