@@ -115,7 +115,7 @@ With `pair_mobility = :min` the pair's D is the smaller of its two partners' mon
 `diff_dimer/diff_monomer` when both move. A pair with an immobile partner (D = 0) does not move or
 rotate while bound: the immobile partner keeps its position when the pair forms, and the mobile
 partner is placed `d_dimer` from it.
-On dissociation the partners are placed at least `r_react` apart along the pair axis (an immobile partner stays put), so a pair does not re-form at the next step only because `d_dimer < r_react`; a mobile partner can still diffuse back and re-form (geminate re-encounter).
+On dissociation the partners are placed at least `r_react` apart along the pair axis (under `pair_mobility = :min` an immobile partner stays put; near a reflecting wall a member that would leave the box is placed on the other side), so a pair does not re-form at the next step only because `d_dimer < r_react`; a mobile partner can still diffuse back and re-form (geminate re-encounter).
 
 
 ## Microscope Image Generation

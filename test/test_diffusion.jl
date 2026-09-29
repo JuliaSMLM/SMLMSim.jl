@@ -794,8 +794,8 @@ end
         dist = SMLMSim.InteractionDiffusion.distance
         E2(x, y, id) = DiffusingEmitter2D{Float64}(x, y, 100.0, 0.0, 1, 1, id, :monomer, nothing)
         E3(x, y, z, id) = DiffusingEmitter3D{Float64}(x, y, z, 100.0, 0.0, 1, 1, id, :monomer, nothing)
-        pf = (r_react = 0.05, pair_mobility = :fixed)
-        pm = (r_react = 0.05, pair_mobility = :min)
+        pf = (r_react = 0.05, pair_mobility = :fixed, box_size = 10.0, boundary = "periodic")
+        pm = (r_react = 0.05, pair_mobility = :min, box_size = 10.0, boundary = "periodic")
         for nd in (2, 3)
             mk(x, y, z, id) = nd == 2 ? E2(x, y, id) : E3(x, y, z, id)
             pos(e) = nd == 2 ? [e.x, e.y] : [e.x, e.y, e.z]
@@ -858,5 +858,74 @@ end
             @test n_reformed == 0
             @test n_close == 0
         end
+
+        # Reflecting walls: partners stay apart when a member would leave the box
+        r_react = 0.05
+        bx = 2 * r_react * (1 + 1e-6)
+        pr(pm_) = (r_react = r_react, pair_mobility = pm_, box_size = bx, boundary = "reflecting")
+        pp_(pm_) = (r_react = r_react, pair_mobility = pm_, box_size = bx, boundary = "periodic")
+        inside(e, nd) = all(v -> 0 <= v <= bx, nd == 2 ? (e.x, e.y) : (e.x, e.y, e.z))
+        for nd in (2, 3)
+            mk(x, y, z, id) = nd == 2 ? E2(x, y, id) : E3(x, y, z, id)
+            pos(e) = nd == 2 ? [e.x, e.y] : [e.x, e.y, e.z]
+            h = bx / 2
+            # anchored (id 1 immobile) near each wall, near a corner, with u pointing out and in; the corner case
+            # u = (-0.7, 0.7) has both the +s*u and -s*u placements outside
+            cases = [(0.001, h, h, -1.0), (bx - 0.001, h, h, 1.0), (h, 0.001, h, -1.0), (h, bx - 0.001, h, 1.0),
+                     (0.0, 0.0, 0.0, -0.7), (bx, bx, bx, 0.7), (0.0, bx, 0.0, 0.7), (0.001, 0.002, 0.003, -0.7)]
+            for (x, y, z, c) in cases, sgn in (1.0, -1.0)
+                dx, dy = sgn * c * 0.01, sgn * abs(c) * 0.01 * (c < 0 ? 1 : -1)
+                a, b = mk(x, y, z, 1), mk(x + dx, y + dy, z + sgn * 0.005, 2)
+                (inside(a, nd) && inside(b, nd)) || continue
+                for (D1, D2, id_anchor) in ((0.0, 0.3, 1), (0.3, 0.0, 2))
+                    r = unbind(a, b, pr(:min), D1, D2)
+                    anchor, other = id_anchor == 1 ? (r[1], r[2]) : (r[2], r[1])
+                    a0 = id_anchor == 1 ? a : b
+                    @test pos(anchor) == pos(a0)
+                    @test inside(r[1], nd) && inside(r[2], nd)
+                    @test dist(r[1], r[2]) >= r_react
+                end
+                # symmetric pair near the wall
+                r = unbind(a, b, pr(:fixed), 0.3, 0.3)
+                @test inside(r[1], nd) && inside(r[2], nd)
+                @test dist(r[1], r[2]) >= r_react
+                # periodic: same placement as before (anchor untouched, pair midpoint kept)
+                r = unbind(a, b, pp_(:fixed), 0.3, 0.3)
+                @test isapprox((pos(r[1]) + pos(r[2])) / 2, (pos(a) + pos(b)) / 2; atol=1e-12)
+                r = unbind(a, b, pp_(:min), 0.0, 0.3)
+                @test r[1] === a && dist(r[1], r[2]) >= r_react
+            end
+        end
+        # explicit corner: anchor at the corner, u = (-0.7, 0.7)/|.|
+        a, b = E2(0.0, 0.0, 1), E2(-0.007, 0.007, 2)
+        r = unbind(a, b, pr(:min), 0.0, 0.3)
+        @test r[1] === a && inside(r[2], 2) && dist(r[1], r[2]) >= r_react
+        a, b = E3(0.0, 0.0, 0.0, 1), E3(-0.007, 0.007, -0.007, 2)
+        r = unbind(a, b, pr(:min), 0.0, 0.3)
+        @test r[1] === a && inside(r[2], 3) && dist(r[1], r[2]) >= r_react
+
+        # End to end at a reflecting wall (immobile pair near x = 2)
+        for (label, kw) in ((:min, (pair_mobility = :min, diff_dimer = 0.1, diff_dimer_rot = 0.5)),
+                            (:fixed, (pair_mobility = :fixed, diff_dimer = 0.0, diff_dimer_rot = 0.0)))
+            Random.seed!(2026)
+            p = DiffusionSMLMConfig(box_size=2.0, diff_monomer=0.3, k_off=50.0, r_react=r_react, d_dimer=0.02,
+                dt=0.001, t_max=0.3, camera_framerate=100.0, camera_exposure=0.01, boundary="reflecting",
+                monomer_mobility=[(1.0, 0.0)]; kw...)
+            starts = [E2(1.97, 1.0, 1), E2(1.995, 1.0, 2)]
+            smld, _ = simulate(p; γ=500.0, starting_conditions=starts, camera=cam)
+            r1 = sort([e for e in smld.emitters if e.track_id == 1], by = e -> e.timestamp)
+            r2 = sort([e for e in smld.emitters if e.track_id == 2], by = e -> e.timestamp)
+            k_break = findfirst(k -> r1[k-1].state == :dimer && r1[k].state == :monomer, 2:length(r1))
+            @test k_break !== nothing
+            k_break === nothing && continue
+            k_break += 1
+            @test count(e -> e.state == :dimer, r1[k_break:end]) == 0
+            @test count(k -> hypot(r1[k].x - r2[k].x, r1[k].y - r2[k].y) < r_react, k_break:length(r1)) == 0
+        end
+
+        # Config check: the box must exceed 2 r_react
+        @test_throws ArgumentError DiffusionSMLMConfig(box_size=2 * 0.05, r_react=0.05)
+        @test_throws ArgumentError DiffusionSMLMConfig(box_size=2 * 0.05, r_react=0.05, boundary="reflecting")
+        @test DiffusionSMLMConfig(box_size=2 * 0.05 * (1 + 1e-6), r_react=0.05) isa DiffusionSMLMConfig
     end
 end

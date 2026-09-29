@@ -354,18 +354,62 @@ function dissociate(e::DiffusingEmitter3D{T}, emitters::Vector{<:AbstractDiffusi
     return (m1, m2)
 end
 
+# Relative margin on the separation of freshly dissociated partners, so that they end up
+# strictly beyond `r_react` after rounding (also used by the DiffusionSMLMConfig box check).
+const UNBIND_MARGIN = 1e-9
+
+"""
+    _anchor(params, e1, e2, D1, D2) -> Union{Nothing,Int}
+
+The `track_id` of the pair member that keeps its position, or `nothing` when the pair is not
+anchored. A pair is anchored only when `params.pair_mobility == :min` and one member is immobile
+(`D == 0`); that member is the anchor, and if both are immobile the one with the smaller `track_id`.
+"""
+function _anchor(params, e1, e2, D1::Real, D2::Real)
+    (params.pair_mobility == :min && (D1 == 0 || D2 == 0)) || return nothing
+    return D1 == 0 && (D2 != 0 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
+end
+
+# New positions (tuples) for the two members of `_unbind`; `p1`, `p2` are their coordinates.
+function _unbind_positions(p1::NTuple{N,Float64}, p2::NTuple{N,Float64}, params, anchor, id1) where N
+    s = params.r_react * (1 + UNBIND_MARGIN)
+    d = p2 .- p1
+    n = sqrt(sum(abs2, d))
+    u = n > 0 ? d ./ n : ntuple(k -> k == 1 ? 1.0 : 0.0, N)
+    reflecting = params.boundary == "reflecting"
+    box = params.box_size
+    if anchor !== nothing
+        # Flip the axes on which the placed member would leave a reflecting box
+        function place(a, sign)
+            q = a .+ (sign * s) .* u
+            reflecting || return q
+            return ntuple(k -> 0 <= q[k] <= box ? q[k] : a[k] - (sign * s) * u[k], N)
+        end
+        return anchor == id1 ? (p1, place(p1, 1)) : (place(p2, -1), p2)
+    end
+    c = (p1 .+ p2) ./ 2
+    if reflecting
+        c = ntuple(k -> clamp(c[k], (s / 2) * abs(u[k]), box - (s / 2) * abs(u[k])), N)
+    end
+    return (c .- (s / 2) .* u, c .+ (s / 2) .* u)
+end
+
 """
     _unbind(m1, m2, params, D1, D2)
 
 Place two freshly dissociated monomers at least `params.r_react` apart along their pair axis,
 so that the formation check (`can_dimerize`) cannot re-capture them at the next step only
 because `d_dimer < r_react`. Partners already `r_react` or more apart are returned unchanged.
-Under `pair_mobility = :min` an immobile member (both immobile: the lower `track_id`) keeps its
-position; otherwise the pair midpoint is kept. Draws no random numbers and changes positions only.
+Under `pair_mobility = :min` an immobile member (both immobile: the lower `track_id`, see
+`_anchor`) keeps its position; otherwise the pair midpoint is kept. In a reflecting box a member
+that would leave the box is mirrored across the anchor on each axis it would leave, and a
+symmetric pair's midpoint is shifted inward just far enough that both members are inside, so
+`apply_boundary` cannot fold a member back within `r_react`; this needs `box_size > 2 r_react`.
+Draws no random numbers and changes positions only.
 
 # Arguments
 - `m1, m2`: The monomers returned by `dissociate`
-- `params`: Simulation parameters (`r_react`, `pair_mobility`)
+- `params`: Simulation parameters (`r_react`, `pair_mobility`, `box_size`, `boundary`)
 - `D1, D2::Float64`: Monomer diffusion coefficients of `m1` and `m2`
 
 # Returns
@@ -373,39 +417,22 @@ position; otherwise the pair midpoint is kept. Draws no random numbers and chang
 """
 function _unbind(m1::DiffusingEmitter2D{T}, m2::DiffusingEmitter2D{T}, params, D1::Real, D2::Real) where T <: AbstractFloat
     distance(m1, m2) >= params.r_react && return (m1, m2)
-    s = params.r_react * (1 + 1e-9)
-    dx, dy = m2.x - m1.x, m2.y - m1.y
-    n = sqrt(dx^2 + dy^2)
-    ux, uy = n > 0 ? (dx / n, dy / n) : (1.0, 0.0)
-    mk(e, x, y) = DiffusingEmitter2D{T}(x, y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id)
-    if params.pair_mobility == :min && (D1 == 0 || D2 == 0)
-        if D1 == 0 && (D2 != 0 || m1.track_id < m2.track_id)
-            return (m1, mk(m2, m1.x + s * ux, m1.y + s * uy))
-        else
-            return (mk(m1, m2.x - s * ux, m2.y - s * uy), m2)
-        end
-    end
-    cx, cy = (m1.x + m2.x) / 2, (m1.y + m2.y) / 2
-    return (mk(m1, cx - (s / 2) * ux, cy - (s / 2) * uy), mk(m2, cx + (s / 2) * ux, cy + (s / 2) * uy))
+    anchor = _anchor(params, m1, m2, D1, D2)
+    q1, q2 = _unbind_positions((Float64(m1.x), Float64(m1.y)), (Float64(m2.x), Float64(m2.y)), params, anchor, m1.track_id)
+    mk(e, q) = DiffusingEmitter2D{T}(q[1], q[2], e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id)
+    anchor == m1.track_id && return (m1, mk(m2, q2))
+    anchor == m2.track_id && return (mk(m1, q1), m2)
+    return (mk(m1, q1), mk(m2, q2))
 end
 
 function _unbind(m1::DiffusingEmitter3D{T}, m2::DiffusingEmitter3D{T}, params, D1::Real, D2::Real) where T <: AbstractFloat
     distance(m1, m2) >= params.r_react && return (m1, m2)
-    s = params.r_react * (1 + 1e-9)
-    dx, dy, dz = m2.x - m1.x, m2.y - m1.y, m2.z - m1.z
-    n = sqrt(dx^2 + dy^2 + dz^2)
-    ux, uy, uz = n > 0 ? (dx / n, dy / n, dz / n) : (1.0, 0.0, 0.0)
-    mk(e, x, y, z) = DiffusingEmitter3D{T}(x, y, z, e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id)
-    if params.pair_mobility == :min && (D1 == 0 || D2 == 0)
-        if D1 == 0 && (D2 != 0 || m1.track_id < m2.track_id)
-            return (m1, mk(m2, m1.x + s * ux, m1.y + s * uy, m1.z + s * uz))
-        else
-            return (mk(m1, m2.x - s * ux, m2.y - s * uy, m2.z - s * uz), m2)
-        end
-    end
-    cx, cy, cz = (m1.x + m2.x) / 2, (m1.y + m2.y) / 2, (m1.z + m2.z) / 2
-    return (mk(m1, cx - (s / 2) * ux, cy - (s / 2) * uy, cz - (s / 2) * uz),
-            mk(m2, cx + (s / 2) * ux, cy + (s / 2) * uy, cz + (s / 2) * uz))
+    anchor = _anchor(params, m1, m2, D1, D2)
+    q1, q2 = _unbind_positions((Float64(m1.x), Float64(m1.y), Float64(m1.z)), (Float64(m2.x), Float64(m2.y), Float64(m2.z)), params, anchor, m1.track_id)
+    mk(e, q) = DiffusingEmitter3D{T}(q[1], q[2], q[3], e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id)
+    anchor == m1.track_id && return (m1, mk(m2, q2))
+    anchor == m2.track_id && return (mk(m1, q1), m2)
+    return (mk(m1, q1), mk(m2, q2))
 end
 
 # Diffusion functions

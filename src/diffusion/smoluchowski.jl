@@ -14,7 +14,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `d_dimer::Float64`: monomer separation in dimer (μm)
   On dissociation the partners are placed at least `r_react` apart along the pair axis (under
   `pair_mobility = :min` an immobile partner stays put), so a pair does not re-form at the next step
-  only because `d_dimer < r_react`; with `d_dimer >= r_react` (the defaults) positions are unchanged.
+  only because `d_dimer < r_react`; with `d_dimer > r_react` in a periodic box (the defaults) positions
+  are unchanged; near a reflecting wall a member that would leave the box is placed on the other side instead.
   A mobile partner can still diffuse back within `r_react` in its free step and re-form: that is
   geminate re-encounter in the contact model, not a re-capture bug.
 - `dt::Float64`: physics step (s); also sets the sub-steps per frame (motion blur):
@@ -129,6 +130,9 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         end
         if d_dimer <= 0
             throw(ArgumentError("Dimer separation must be positive"))
+        end
+        if box_size <= 2 * r_react * (1 + UNBIND_MARGIN)
+            throw(ArgumentError("box_size ($box_size) must be greater than 2·r_react ($(2 * r_react)): dissociated partners are placed r_react apart"))
         end
         if dt <= 0
             throw(ArgumentError("Time step must be positive"))
@@ -382,10 +386,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     # Create new dimer pair
                     D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
                     # Under :min an immobile partner keeps its position (both immobile: the lower track_id)
-                    anchor = nothing
-                    if params.pair_mobility == :min && (D1 == 0 || D2 == 0)
-                        anchor = D1 == 0 && (D2 != 0 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
-                    end
+                    anchor = _anchor(params, e1, e2, D1, D2)
                     d1, d2 = dimerize(e1, e2, params.d_dimer; anchor=anchor)
                     if anchor !== nothing
                         # The placed partner never reaches apply_boundary while the pair is pinned
