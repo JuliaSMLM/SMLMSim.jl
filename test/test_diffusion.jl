@@ -488,6 +488,10 @@ end
         end
 
         # ROI filter that leaves k tracks in the last frame
+        # Stopgap (2026-09-29, decision 0032): SMLMData 0.7.0 filter_roi (src/core/filters.jl:130 and :149)
+        # dispatches on the concrete Emitter2D/Emitter3D types, so it throws on DiffusingEmitter2D. The fix
+        # (hasfield(eltype, :z), or AbstractEmitter2D/3D) is owed in an SMLMData patch release; this hand
+        # filter is replaced by SD.filter_roi when that release lands.
         lastf = [e for e in smld.emitters if e.frame == smld.n_frames]
         cut = sort([e.x for e in lastf])[length(lastf) ÷ 2]
         sr = typeof(smld)(filter(e -> e.x <= cut, smld.emitters), smld.camera, smld.n_frames, smld.n_datasets, copy(smld.metadata))  # as @filter does
