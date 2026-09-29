@@ -98,7 +98,8 @@ end
 end
 
 # vis_bound: a row with a partner is visible as a pair when it and its partner's row of this frame both have
-# lit_bound > 0. Runs after all rows are written, O(B^2) over bound rows.
+# lit_bound > 0. Runs after all rows are written: one pass over the N rows, and each of the B bound, lit rows
+# scans the N rows for its partner's row, O(N + B·N).
 function _mark_visible_pairs!(w::SimWorld)
     n = w.n_truth
     rows = w.truth

@@ -665,10 +665,10 @@ end
     T, γ = 0.01, 1e4
     dk = DimerKinetics(k_on=Inf, r_react=0.05, k_off=0.0, D_rot=0.0, d_dimer=0.02)
     fl = two_state(γ, 1e-6, 1e-6)
-    function vis_world(xs, ys; pops=nothing, merge_radius=0.0, mult=(1, 1))
+    function vis_world(xs, ys; pops=nothing, merge_radius=0.0, mult=(1, 1), dkin=dk)
         pops === nothing && (pops = [Population(name=:A, density=0.0, fluor=fl, psf=GaussianPSF(0.05)),
                                      Population(name=:B, density=0.0, fluor=fl, multiplicity=mult[2], psf=GaussianPSF(0.05))])
-        w = SimWorld(StableRNG(7), cam32(), pops; n_sub=4, margin=0.0, dimers=dk, merge_radius)
+        w = SimWorld(StableRNG(7), cam32(), pops; n_sub=4, margin=0.0, dimers=dkin, merge_radius)
         for (k, ps) in enumerate(w.pops)
             _add_emitter!(w, ps, 0.0)
             place!(ps, xs[k:k], ys[k:k])
@@ -704,6 +704,9 @@ end
     f2 = frame!(w, 2)
     @test isapprox(f2[ib].t_bleach, 0.015; atol=1e-12)
     @test f2[ib].m == 0
+    # frame 2: B is lit while bound for 5 ms of the 10 ms exposure, A for all of it; both rows are a visible pair
+    @test isapprox(f2[ib].lit_bound, 0.5; atol=1e-12) && isapprox(f2[ia].lit_bound, 1; atol=1e-12)
+    @test f2[ia].vis_bound && f2[ib].vis_bound
     f3 = frame!(w, 3)
     @test f3[ib].m == 0 && f3[ib].lit_bound == 0
     @test f3[ia].partner == ib && f3[ib].partner == ia
@@ -748,4 +751,49 @@ end
     @test f[ib].lit_bound == 0 && isnan(f[ib].t_bleach)
     @test !f[ia].vis_bound && !f[ib].vis_bound
     @test isapprox(f[ia].lit_bound, 1; atol=1e-12)
+    # (vii) mid-frame formation (finite k_on): bound and lit from t_form to the end of the exposure
+    w = vis_world([1.6, 1.63], [1.6, 1.6]; dkin=DimerKinetics(k_on=300.0, r_react=0.05, k_off=0.0, D_rot=0.0, d_dimer=0.02))
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    k = 1
+    f = frame!(w, k)
+    while isnan(f[ia].t_form) && k < 10
+        k += 1
+        f = frame!(w, k)
+    end
+    tf, ta = f[ia].t_form, (k - 1) * T
+    @test ta < tf < ta + T && f[ib].t_form == tf
+    for r in (f[ia], f[ib])
+        @test r.vis_form && r.vis_bound
+        @test isapprox(r.bound, (ta + T - tf) / T; atol=1e-12) && isapprox(r.lit_bound, (ta + T - tf) / T; atol=1e-12)
+    end
+    # (viii) breakup at 0.0137 s, inside frame 2: bound and lit for 3.7 ms of it; unbound in frame 3. The row's
+    # partner is the one at the end of the exposure, so the breakup frame is not a visible pair
+    w = vis_world([1.6, 1.63], [1.6, 1.6])
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    frame!(w, 1)
+    w.pops[1].t_break_due[1] = 0.0137; w.pops[2].t_break_due[1] = 0.0137
+    f = frame!(w, 2)
+    for r in (f[ia], f[ib])
+        @test isapprox(r.t_break, 0.0137; atol=1e-12)
+        @test isapprox(r.bound, 0.37; atol=1e-9) && isapprox(r.lit_bound, 0.37; atol=1e-9)
+        @test r.partner == 0 && !r.vis_bound && !r.vis_form   # vis_bound follows `partner`, 0 after the break
+    end
+    f = frame!(w, 3)
+    for r in (f[ia], f[ib])
+        @test r.partner == 0 && r.lit_bound == 0 && !r.vis_bound
+    end
+    # (ix) B blinks off for frame 2 and on again for frame 3: not a visible pair in frame 2, again in frame 3;
+    # vis_form only in the formation frame
+    w = vis_world([1.6, 1.63], [1.6, 1.6])
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    f = frame!(w, 1)
+    @test f[ia].vis_bound && f[ib].vis_bound && f[ia].vis_form
+    w.pops[2].state[1] = 2
+    f = frame!(w, 2)
+    @test f[ib].lit_bound == 0 && isapprox(f[ia].lit_bound, 1; atol=1e-12)
+    @test !f[ia].vis_bound && !f[ib].vis_bound
+    w.pops[2].state[1] = 1
+    f = frame!(w, 3)
+    @test isapprox(f[ib].lit_bound, 1; atol=1e-12) && f[ia].vis_bound && f[ib].vis_bound
+    @test !f[ia].vis_form && !f[ib].vis_form
 end

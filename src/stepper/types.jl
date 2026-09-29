@@ -311,7 +311,13 @@ position), `z` its height. `photons` is the emitted total, `lit` the fraction of
 with `m > 0`, `excitation` the presence-weighted mean relative intensity (NaN if never present).
 `t_birth`, `t_bleach` and `t_depart` are event times inside the exposure, else NaN. The
 `partner`, `partner_pop`, `bound`, `t_form`, `t_break`, `lit_bound` and `vis_*` fields are 0,
-NaN or false without dimers. `overlap` is set by `SimWorld(...; merge_radius)`.
+NaN or false without dimers. `partner` is the partner at the end of the exposure (or at removal),
+0 if unbound then. `bound` is the fraction of `T` the emitter is bound, and `lit_bound`
+the fraction of `T` it is lit (state 1 with `m > 0`) while bound, so a member lit for 5 ms of a
+10 ms exposure while bound has `lit_bound = 0.5`. `vis_form` is true in the exposure where the
+pair formed (`t_form` not NaN) when both members were lit at the start of the forming sub-step.
+`vis_bound` is true when this row and its `partner`'s row of the same exposure both have
+`lit_bound > 0`, so a pair that breaks within the exposure is not marked in it. `overlap` is set by `SimWorld(...; merge_radius)`.
 """
 struct FrameTruth
     frame::Int
