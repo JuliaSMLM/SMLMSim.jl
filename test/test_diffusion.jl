@@ -314,6 +314,7 @@ end
         @test length(fs.emitters) == 4
         @test sort([e.track_id for e in fs.emitters]) == 1:4
         @test all(e -> e.photons ≈ 100.0, fs.emitters)
+        @test fs.n_frames == 1 && all(e -> e.frame == 1, fs.emitters)
         # exact end state: one step past the last record, at the next frame's start
         t_end = smld.n_frames * 8 * p.dt
         for e in fs.emitters

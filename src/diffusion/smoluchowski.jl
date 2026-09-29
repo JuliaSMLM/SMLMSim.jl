@@ -653,7 +653,7 @@ each track's D, and extracting twice gives the same result.
 - `smld::BasicSMLD`: SMLD of diffusing emitters from `simulate`
 
 # Returns
-- `BasicSMLD`: One emitter per track, `n_frames = 1`
+- `BasicSMLD`: One emitter per track, `n_frames = 1`, every emitter at `frame = 1`
 
 # Example
 ```julia
@@ -668,7 +668,7 @@ smld_continued, info = simulate(params_new; starting_conditions=extract_final_st
 function extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
     final = get(smld.metadata, "final_state", nothing)
     if final !== nothing
-        final_emitters = final
+        final_emitters = [restamp(e; frame=1) for e in final]
     else
         max_frame = maximum(e -> e.frame, smld.emitters)
 
@@ -683,7 +683,7 @@ function extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusin
             end
         end
 
-        final_emitters = [restamp(latest[id]; photons=latest[id].photons * counts[id])
+        final_emitters = [restamp(latest[id]; photons=latest[id].photons * counts[id], frame=1)
                           for id in sort!(collect(keys(latest)))]
     end
 
