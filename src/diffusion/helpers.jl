@@ -354,6 +354,60 @@ function dissociate(e::DiffusingEmitter3D{T}, emitters::Vector{<:AbstractDiffusi
     return (m1, m2)
 end
 
+"""
+    _unbind(m1, m2, params, D1, D2)
+
+Place two freshly dissociated monomers at least `params.r_react` apart along their pair axis,
+so that the formation check (`can_dimerize`) cannot re-capture them at the next step only
+because `d_dimer < r_react`. Partners already `r_react` or more apart are returned unchanged.
+Under `pair_mobility = :min` an immobile member (both immobile: the lower `track_id`) keeps its
+position; otherwise the pair midpoint is kept. Draws no random numbers and changes positions only.
+
+# Arguments
+- `m1, m2`: The monomers returned by `dissociate`
+- `params`: Simulation parameters (`r_react`, `pair_mobility`)
+- `D1, D2::Float64`: Monomer diffusion coefficients of `m1` and `m2`
+
+# Returns
+- `Tuple`: The two monomers, moved apart if they were closer than `r_react`
+"""
+function _unbind(m1::DiffusingEmitter2D{T}, m2::DiffusingEmitter2D{T}, params, D1::Real, D2::Real) where T <: AbstractFloat
+    distance(m1, m2) >= params.r_react && return (m1, m2)
+    s = params.r_react * (1 + 1e-9)
+    dx, dy = m2.x - m1.x, m2.y - m1.y
+    n = sqrt(dx^2 + dy^2)
+    ux, uy = n > 0 ? (dx / n, dy / n) : (1.0, 0.0)
+    mk(e, x, y) = DiffusingEmitter2D{T}(x, y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id)
+    if params.pair_mobility == :min && (D1 == 0 || D2 == 0)
+        if D1 == 0 && (D2 != 0 || m1.track_id < m2.track_id)
+            return (m1, mk(m2, m1.x + s * ux, m1.y + s * uy))
+        else
+            return (mk(m1, m2.x - s * ux, m2.y - s * uy), m2)
+        end
+    end
+    cx, cy = (m1.x + m2.x) / 2, (m1.y + m2.y) / 2
+    return (mk(m1, cx - (s / 2) * ux, cy - (s / 2) * uy), mk(m2, cx + (s / 2) * ux, cy + (s / 2) * uy))
+end
+
+function _unbind(m1::DiffusingEmitter3D{T}, m2::DiffusingEmitter3D{T}, params, D1::Real, D2::Real) where T <: AbstractFloat
+    distance(m1, m2) >= params.r_react && return (m1, m2)
+    s = params.r_react * (1 + 1e-9)
+    dx, dy, dz = m2.x - m1.x, m2.y - m1.y, m2.z - m1.z
+    n = sqrt(dx^2 + dy^2 + dz^2)
+    ux, uy, uz = n > 0 ? (dx / n, dy / n, dz / n) : (1.0, 0.0, 0.0)
+    mk(e, x, y, z) = DiffusingEmitter3D{T}(x, y, z, e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id)
+    if params.pair_mobility == :min && (D1 == 0 || D2 == 0)
+        if D1 == 0 && (D2 != 0 || m1.track_id < m2.track_id)
+            return (m1, mk(m2, m1.x + s * ux, m1.y + s * uy, m1.z + s * uz))
+        else
+            return (mk(m1, m2.x - s * ux, m2.y - s * uy, m2.z - s * uz), m2)
+        end
+    end
+    cx, cy, cz = (m1.x + m2.x) / 2, (m1.y + m2.y) / 2, (m1.z + m2.z) / 2
+    return (mk(m1, cx - (s / 2) * ux, cy - (s / 2) * uy, cz - (s / 2) * uz),
+            mk(m2, cx + (s / 2) * ux, cy + (s / 2) * uy, cz + (s / 2) * uz))
+end
+
 # Diffusion functions
 """
     diffuse(e::DiffusingEmitter2D, diff_coef::Float64, dt::Float64)

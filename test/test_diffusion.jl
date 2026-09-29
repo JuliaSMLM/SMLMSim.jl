@@ -672,20 +672,21 @@ end
         fx(; kw...) = begin
             Random.seed!(20260929)
             p = DiffusionSMLMConfig(density=40.0, box_size=2.0, diff_monomer=0.3, diff_dimer=0.1, diff_dimer_rot=0.5,
-                k_off=5.0, r_react=0.05, d_dimer=0.03, dt=0.001, t_max=0.05, camera_framerate=100.0,
+                k_off=5.0, r_react=0.05, d_dimer=0.06, dt=0.001, t_max=0.05, camera_framerate=100.0,
                 camera_exposure=0.01; kw...)
             smld, _ = simulate(p; γ=500.0, camera=cam)
             es = smld.emitters
             (length(es), sum(e -> e.x, es), sum(e -> e.y, es), sum(e -> e.photons, es), count(e -> e.state == :dimer, es))
         end
-        # Recorded from 0.7.2 (97880c1) before the change, on Julia 1.13.0. Julia does not promise bitwise-equal
-        # float sums across versions: the same 97880c1 code on Julia 1.10.11 gives x sums of 8213.124175680383
-        # (mixed) and 8280.643606955444 (default) against 8213.209547718594 and 8280.728978993655 here, a
-        # relative difference of 1.04e-5, with identical rand/randn/randexp streams and identical counts. So the
-        # counts (records, photons, dimer records) are compared exactly, the x/y sums at rtol 1e-4 (10x margin),
-        # and the default path against pair_mobility = :fixed exactly within one run.
-        GOLD_MIXED = (8000, 8213.209547718594, 8116.742301806108, 4000.0, 4340)
-        GOLD_DEFAULT = (8000, 8280.728978993655, 8287.913871628487, 4000.0, 5462)
+        # Recorded from 0.7.2 (97880c1) before the change, on Julia 1.13.0, at d_dimer > r_react so that the
+        # unbinding rule (partners placed at least r_react apart) leaves the run unchanged. Julia does not promise
+        # bitwise-equal float sums across versions: the same 97880c1 code on Julia 1.10.11 gives y sums of
+        # 8070.051634051506 (mixed) and 8283.670328471711 (default) against 8070.38335464744 and 8283.7469648201
+        # here, a largest relative difference of 4.1e-5, with identical counts. So the counts (records, photons,
+        # dimer records) are compared exactly, the x/y sums at rtol 1e-4 (2.4x margin), and the default path
+        # against pair_mobility = :fixed exactly within one run.
+        GOLD_MIXED = (8000, 8283.839490125389, 8070.38335464744, 4000.0, 4340)
+        GOLD_DEFAULT = (8000, 8276.434380304116, 8283.7469648201, 4000.0, 5408)
         matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
                              isapprox(r[2], g[2]; rtol=1e-4) && isapprox(r[3], g[3]; rtol=1e-4)
         mob = [(0.5, 0.2), (0.5, 0.0)]
@@ -786,5 +787,76 @@ end
         # Validation
         @test_throws ArgumentError DiffusionSMLMConfig(pair_mobility=:bogus)
         @test_throws ArgumentError DiffusionSMLMConfig(pair_mobility=:min, diff_monomer=0.0)
+    end
+
+    @testset "(m) unbinding separation" begin
+        unbind = SMLMSim.InteractionDiffusion._unbind
+        dist = SMLMSim.InteractionDiffusion.distance
+        E2(x, y, id) = DiffusingEmitter2D{Float64}(x, y, 100.0, 0.0, 1, 1, id, :monomer, nothing)
+        E3(x, y, z, id) = DiffusingEmitter3D{Float64}(x, y, z, 100.0, 0.0, 1, 1, id, :monomer, nothing)
+        pf = (r_react = 0.05, pair_mobility = :fixed)
+        pm = (r_react = 0.05, pair_mobility = :min)
+        for nd in (2, 3)
+            mk(x, y, z, id) = nd == 2 ? E2(x, y, id) : E3(x, y, z, id)
+            pos(e) = nd == 2 ? [e.x, e.y] : [e.x, e.y, e.z]
+            # already apart: returned untouched
+            a, b = mk(1.0, 1.0, 1.0, 1), mk(1.06, 1.0, 1.0, 2)
+            r = unbind(a, b, pf, 0.3, 0.3)
+            @test r[1] === a && r[2] === b
+            r = unbind(a, b, pm, 0.0, 0.3)
+            @test r[1] === a && r[2] === b
+            # symmetric: midpoint and axis kept
+            a, b = mk(1.0, 1.0, 1.0, 1), mk(1.01, 1.02, 1.02, 2)
+            u = (pos(b) - pos(a)) / dist(a, b)
+            for (pp, D1, D2) in ((pf, 0.3, 0.0), (pm, 0.3, 0.2))
+                r = unbind(a, b, pp, D1, D2)
+                @test isapprox((pos(r[1]) + pos(r[2])) / 2, (pos(a) + pos(b)) / 2; atol=1e-12)
+                @test dist(r[1], r[2]) >= 0.05
+                @test isapprox((pos(r[2]) - pos(r[1])) / dist(r[1], r[2]), u; atol=1e-12)
+                @test r[1].state == :monomer && r[1].partner_id === nothing && r[1].photons == 100.0
+            end
+            # anchored: the immobile one stays put bit for bit, the other moves along the axis on its own side
+            for (D1, D2, id_anchor) in ((0.0, 0.3, 1), (0.3, 0.0, 2), (0.0, 0.0, 1))
+                r = unbind(a, b, pm, D1, D2)
+                anchor, other = id_anchor == 1 ? (r[1], r[2]) : (r[2], r[1])
+                a0, o0 = id_anchor == 1 ? (a, b) : (b, a)
+                @test pos(anchor) == pos(a0)
+                @test dist(r[1], r[2]) >= 0.05
+                @test isapprox((pos(other) - pos(anchor)) / dist(r[1], r[2]), (pos(o0) - pos(a0)) / dist(a, b); atol=1e-12)
+            end
+            # both immobile with the lower track_id second: that one is the anchor
+            a2, b2 = mk(1.0, 1.0, 1.0, 5), mk(1.01, 1.0, 1.0, 3)
+            r = unbind(a2, b2, pm, 0.0, 0.0)
+            @test pos(r[2]) == pos(b2) && isapprox(r[1].x, 1.01 - 0.05; atol=1e-8)
+            # coincident partners separate along x
+            c, d = mk(1.0, 1.0, 1.0, 1), mk(1.0, 1.0, 1.0, 2)
+            r = unbind(c, d, pf, 0.3, 0.3)
+            @test dist(r[1], r[2]) >= 0.05 && r[1].y == r[2].y && r[2].x > r[1].x
+            nd == 3 && @test r[1].z == r[2].z
+        end
+
+        # End to end with immobile partners: after the first break the pair never re-forms
+        cam = IdealCamera(1:32, 1:32, 0.078)
+        r_react = 0.05
+        for (label, kw) in ((:min, (pair_mobility = :min, diff_dimer = 0.1, diff_dimer_rot = 0.5)),
+                            (:fixed, (pair_mobility = :fixed, diff_dimer = 0.0, diff_dimer_rot = 0.0)))
+            Random.seed!(2026)
+            p = DiffusionSMLMConfig(box_size=2.0, diff_monomer=0.3, k_off=50.0, r_react=r_react, d_dimer=0.02,
+                dt=0.001, t_max=0.3, camera_framerate=100.0, camera_exposure=0.01,
+                monomer_mobility=[(1.0, 0.0)]; kw...)
+            starts = [E2(1.0, 1.0, 1), E2(1.0 + 0.5 * r_react, 1.0, 2)]
+            smld, _ = simulate(p; γ=500.0, starting_conditions=starts, camera=cam)
+            r1 = sort([e for e in smld.emitters if e.track_id == 1], by = e -> e.timestamp)
+            r2 = sort([e for e in smld.emitters if e.track_id == 2], by = e -> e.timestamp)
+            k_break = findfirst(k -> r1[k-1].state == :dimer && r1[k].state == :monomer, 2:length(r1))
+            @test any(e -> e.state == :dimer, r1)
+            @test k_break !== nothing
+            k_break === nothing && continue
+            k_break += 1
+            n_reformed = count(e -> e.state == :dimer, r1[k_break:end])
+            n_close = count(k -> hypot(r1[k].x - r2[k].x, r1[k].y - r2[k].y) < r_react, k_break:length(r1))
+            @test n_reformed == 0
+            @test n_close == 0
+        end
     end
 end

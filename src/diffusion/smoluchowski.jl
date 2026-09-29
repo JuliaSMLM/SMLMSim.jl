@@ -12,6 +12,11 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `k_off::Float64`: dimer dissociation rate (s⁻¹)
 - `r_react::Float64`: reaction radius (μm)
 - `d_dimer::Float64`: monomer separation in dimer (μm)
+  On dissociation the partners are placed at least `r_react` apart along the pair axis (under
+  `pair_mobility = :min` an immobile partner stays put), so a pair does not re-form at the next step
+  only because `d_dimer < r_react`; with `d_dimer >= r_react` (the defaults) positions are unchanged.
+  A mobile partner can still diffuse back within `r_react` in its free step and re-form: that is
+  geminate re-encounter in the contact model, not a re-capture bug.
 - `dt::Float64`: physics step (s); also sets the sub-steps per frame (motion blur):
   camera_exposure and 1/camera_framerate should be integer multiples of dt (otherwise
   `simulate` rounds to the nearest step count and warns)
@@ -413,6 +418,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
             if should_dissociate(e1, params.k_off, dt)
                 # Find partner and create two new monomers
                 m1, m2 = dissociate(e1, emitters)
+                m1, m2 = _unbind(m1, m2, params, monomer_D(m1.track_id), monomer_D(m2.track_id))
                 
                 # Apply diffusion to each new monomer
                 m1 = diffuse(m1, monomer_D(m1.track_id), dt)
