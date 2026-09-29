@@ -112,9 +112,11 @@ default or `photons` source, or an edited or concatenated SMLD) each molecule ke
 record, as in 0.7.1, with a warning when a γ rate could not be kept. D: a track keeps its saved D and
 mobility class (drawn from a `monomer_mobility` mixture) when its record is the run's own, with a
 warning when the new mixture differs from the run's; every other track draws from the new mixture or
-uses `diff_monomer` at run time, which is never saved, so a later change applies. One limitation: an
-SMLD that was filtered, concatenated or edited resumes from each track's latest record in its last
-frame, which is not the exact end state and carries no per-molecule history beyond that record
+uses `diff_monomer` at run time, which is never saved, so a later change applies. Continuation assumes the
+SMLD comes from one simulation run, or a filtered subset of one; continuing a concatenation of different
+runs is unsupported, and the γ check cannot detect a molecule from another run that happens to carry
+γ·dt. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
+its last frame, which is not the exact end state and carries no per-molecule history beyond that record
 (blinking, bleaching or brightness-jitter state is not rebuilt). `extract_final_state` is deprecated.
 
 Monomers can be given a mixture of mobility populations with
