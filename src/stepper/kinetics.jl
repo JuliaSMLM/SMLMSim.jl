@@ -85,13 +85,13 @@ end
 @noinline _bad_switch(ts, t) =
     throw(ArgumentError("next_switch returned $ts, which is not after t = $t"))
 
-@inline function _next_switch(excitation, t::Float64)
+@inline function _next_switch(excitation::E, t::Float64) where {E}
     ts = Float64(next_switch(excitation, t))
     ts > t || _bad_switch(ts, t)
     return ts
 end
 
-@inline function _excite(excitation, x::Float64, y::Float64, z::Float64, t::Float64)
+@inline function _excite(excitation::E, x::Float64, y::Float64, z::Float64, t::Float64) where {E}
     I = Float64(excitation(x, y, z, t))
     I < 0 && _negative_excitation(I)
     return I
@@ -123,7 +123,7 @@ end
 
 # Advance emitter i over [t0 + τ0, t0 + h): the event loop of one sub-step. Returns the photons
 # emitted and whether the emitter is still present.
-function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, τ0::Float64, excitation)
+function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, τ0::Float64, excitation::E) where {E}
     rng = w.rng
     x, y, z = ps.x[i], ps.y[i], ps.z[i]
     γi = ps.γ[i]
@@ -238,7 +238,7 @@ end
 end
 
 # One sub-step [t0, t0 + h) of every population: kinetics and rendering, births, removal, motion
-function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation, record::Bool)
+function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::Bool) where {E}
     for ps in w.pops
         i = 1
         while i <= ps.n

@@ -14,11 +14,10 @@ using SMLMSim.Stepper
 module Stepper
 
 using Random
-using LinearAlgebra
 using SMLMData: AbstractCamera, IdealCamera, SCMOSCamera
 using MicroscopePSFs: GaussianPSF
 using ..Core: GenericFluor
-using ..CameraImages: RenderBuffer, render_gaussian!, StampTable, render_stamp!
+using ..CameraImages: _uniform_pitch, RenderBuffer, render_gaussian!, StampTable, render_stamp!
 
 include("types.jl")
 include("kinetics.jl")

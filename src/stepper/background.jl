@@ -61,7 +61,7 @@ function BackgroundState(rng::AbstractRNG, m::BackgroundModel, ny::Int, nx::Int,
         iy, wy = zeros(Int, ny), zeros(4, ny)
         g = zeros(0, 0)
     end
-    bs = BackgroundState(m, m.level, m.stretch, m.jitter, m.contrast, m.correlation_time, t0, t0, 0, 0.0, 0.0, zeros(1), P, g, zeros(ny, size(g, 2)), iy, ix, wy, wx)
+    bs = BackgroundState(m.level, m.stretch, m.jitter, m.contrast, m.correlation_time, t0, t0, 0, 0.0, 0.0, zeros(1), P, g, zeros(ny, size(g, 2)), iy, ix, wy, wx)
     _draw_level!(bs.draw, rng, bs.level_src)
     bs.level = bs.draw[1]
     return bs
@@ -124,7 +124,7 @@ size `(ny, nx, n_frames)` and the per-frame level.
   out-of-focus emitters). The models combine: A alone, B alone, or A and B.
 - `frame_time`: s between exposure starts (required); `exposure` (at most `frame_time`) is
   the exposure length; `n_sub` is sub-steps per exposure.
-- `t_burn`: s of unrecorded kinetics before frame 1. Use at least 5 mean residence times of
+- `t_burn`: s of unrecorded kinetics before frame 1. The stretch grid starts at the world's `t0`, so when `t_burn` is not a multiple of `stretch` the first recorded stretch is short. Use at least 5 mean residence times of
   the `oof` populations, since their initial ensemble is stationary only for an infinite budget.
 
 `structured` is the pattern map (zeros for `bg = nothing`); `oof` is the out-of-focus light

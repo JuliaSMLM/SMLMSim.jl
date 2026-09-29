@@ -195,8 +195,7 @@ end
     # rendering at a phase-0 position reproduces the stamp
     img = zeros(20, 20)
     render_stamp!(img, tbl, 10.0 + 0.5 / os, 10.0 + 0.5 / os, zs[3], 100.0)
-    @test isapprox(img[10-r+1:10+r+1, 10-r+1:10+r+1] ./ 100, tbl.stamps[:, :, 1, 3]; atol=1e-12) ||
-          isapprox(img[(11-r):(11+r), (11-r):(11+r)] ./ 100, tbl.stamps[:, :, 1, 3]; atol=1e-12)
+    @test isapprox(img[10-r+1:10+r+1, 10-r+1:10+r+1] ./ 100, tbl.stamps[:, :, 1, 3]; atol=1e-12)
 end
 
 @testset "StampTable/z_range_and_interp" begin

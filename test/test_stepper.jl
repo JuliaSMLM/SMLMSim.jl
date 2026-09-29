@@ -276,6 +276,12 @@ end
     tbl = StampTable(GaussianPSF(0.13), 0.1, range(-0.3, 0.3, length=5); radius=4)
     @test_throws ArgumentError Population(density=1.0, fluor=f1, psf=tbl, z=(0.5, 1.0))
     @test Population(density=1.0, fluor=f1, psf=tbl, z=(-0.2, 0.2)) isa Population
+    @test tbl.pixel_size == 0.1
+    p32 = Population(density=1.0, fluor=f1, psf=GaussianPSF(0.13f0))
+    @test p32.psf.σ == Float64(0.13f0)
+    oofp = Population(layer=:oof, density=1.0, fluor=f1, psf=tbl, z=(-0.2, 0.2))
+    @test_throws ArgumentError SimWorld(StableRNG(1), IdealCamera(1:32, 1:32, 0.2), [oofp]; n_sub=1)
+    @test SimWorld(StableRNG(1), IdealCamera(1:32, 1:32, 0.1), [oofp]; n_sub=1) isa SimWorld
     good = Population(density=1.0, fluor=f1, psf=psf)
     @test SimWorld(StableRNG(1), cam32(), [good]; n_sub=1, background=BackgroundModel(level=1.0)) isa SimWorld
     @test_throws ArgumentError SimWorld(StableRNG(1), cam32(), [good]; n_sub=1, background=BackgroundModel(level=1.0, stretch=0.0))
@@ -329,7 +335,9 @@ end
     @test isapprox(sum(g.expected), GOLDEN_SUM; rtol=1e-12)
 end
 
-function count_allocs(w, exc, nrng, dst, cam, k)
+const_excitation(x, y, z, t) = 2.0
+
+function count_allocs(w, exc::E, nrng, dst, cam, k) where {E}
     return @allocated begin
         step!(w, (k - 1) * 0.01, k * 0.01, exc)
         SMLMSim.scmos_noise!(nrng, copyto!(dst, w.expected), cam)
@@ -351,6 +359,19 @@ end
         total += count_allocs(w, exc, nrng, dst, scam, k)
     end
     @test total == 0
+    # a closure and a named function specialise like a functor
+    for exc2 in (let I = 2.0; (x, y, z, t) -> I end, const_excitation)
+        w2 = rich_world(23)
+        for k in 1:200
+            step!(w2, (k - 1) * 0.01, k * 0.01, exc2)
+        end
+        count_allocs(w2, exc2, nrng, dst, scam, 201)
+        total = 0
+        for k in 202:301
+            total += count_allocs(w2, exc2, nrng, dst, scam, k)
+        end
+        @test total == 0
+    end
 end
 
 @testset "stepper/zero_alloc_level_draw" begin

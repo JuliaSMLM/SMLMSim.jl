@@ -122,7 +122,7 @@ function Population(; name::Symbol=:emitters, layer::Symbol=:signal, density::Re
     mob = Tuple{Float64,Float64}[(Float64(f), Float64(D)) for (f, D) in mobility]
     return Population(name, layer, Float64(density), Float64(lifetime), Float64(birth_rate), mob, fluor,
                       Float64(brightness_sigma), Float64(budget), Int(multiplicity),
-                      (Float64(z[1]), Float64(z[2])), psf)
+                      (Float64(z[1]), Float64(z[2])), psf isa GaussianPSF ? GaussianPSF(Float64(psf.σ)) : psf)
 end
 
 """
@@ -131,7 +131,7 @@ end
 Parameters of the structured background. Built by keyword.
 
 - `level = 0.0`: photons/px/s; a `Real`, or any distribution drawn per stretch with `rand(rng, level)`.
-- `stretch::Float64 = Inf`: s; a new level is drawn at `t0 + k stretch`.
+- `stretch::Float64 = Inf`: s; a new level is drawn at `t0 + k stretch`, counted from the world's `t0`, not from the end of `t_burn`.
 - `jitter::Float64 = 0.0`: sd of the iid per-exposure multiplier `max(0, 1 + jitter ξ)`.
 - `feature_size::Float64 = 0.8`: μm, σ of the pattern's spatial autocorrelation.
 - `contrast::Float64 = 0.0`: sd of log pattern; 0 is flat.
@@ -171,7 +171,6 @@ next_switch(excitation, t::Float64) = Inf
 
 # Runtime state of the structured background (see BackgroundModel)
 mutable struct BackgroundState
-    model::BackgroundModel
     level_src::Any                        # model.level, kept apart: reading it through the parametric model boxes
     stretch::Float64                      # concrete copies of the model's numbers, so reads do not box
     jitter::Float64

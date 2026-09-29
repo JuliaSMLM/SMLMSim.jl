@@ -13,7 +13,9 @@ Generate camera images from SMLD data using the specified PSF model.
 - `dataset::Int=1`: Dataset number to use from SMLD
 - `frames=nothing`: Specific frames to generate (default: all frames in smld.n_frames)
 - `support::Union{Real,Tuple{<:Real,<:Real,<:Real,<:Real}}=Inf`: PSF support region size:
-  - `Inf` (default): Calculate PSF over the entire image (most accurate but slowest)
+  - `Inf` (default): Calculate PSF over the entire image (most accurate but slowest). On the
+    `GaussianPSF` fast path the kernel stops at 8σ + 1 px; the dropped mass is the Gaussian at 8σ,
+    exp(-32) ≈ 1.3e-14 of the peak value
   - `Real`: Circular region with specified radius (in microns) around each emitter
   - `Tuple{<:Real,<:Real,<:Real,<:Real}`: Explicit region as (xmin, xmax, ymin, ymax) in microns
 - `sampling::Int=2`: Supersampling factor for PSF integration (ignored for `GaussianPSF` on
@@ -217,7 +219,7 @@ end
 function _uniform_pitch(edges::AbstractVector)
     length(edges) < 2 && return NaN
     d = (edges[end] - edges[1]) / (length(edges) - 1)
-    ok = all(k -> abs((edges[k+1] - edges[k]) - d) <= 1e-9 * abs(d), 1:length(edges)-1)
+    ok = all(k -> abs((edges[k+1] - edges[k]) - d) <= 1e-6 * abs(d), 1:length(edges)-1)
     return ok ? Float64(d) : NaN
 end
 

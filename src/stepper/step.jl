@@ -1,11 +1,11 @@
 # SimWorld construction, step! and layers
 
 # Kernel half-width in μm of one population (5σ for a Gaussian, the stamp radius for a stamp table)
-_half_width(p::Population, px::Float64) =
-    p.psf isa StampTable ? p.psf.radius * px : 5 * p.psf.σ
+_half_width(p::Population) =
+    p.psf isa StampTable ? p.psf.radius * p.psf.pixel_size : 5 * p.psf.σ
 
-default_margin(pops::AbstractVector{Population}, px::Real) =
-    isempty(pops) ? 0.0 : maximum(p -> _half_width(p, Float64(px)), pops)
+default_margin(pops::AbstractVector{Population}) =
+    isempty(pops) ? 0.0 : maximum(_half_width, pops)
 
 # Pixel geometry of a camera: (ny, nx, px, x0, y0); pixels must be uniform and square
 function _pixel_geometry(camera)
@@ -13,8 +13,7 @@ function _pixel_geometry(camera)
     (length(ex) >= 2 && length(ey) >= 2) || throw(ArgumentError("camera has no pixels"))
     px = Float64(ex[2] - ex[1])
     tol = 1e-6 * px
-    (all(abs(Float64(ex[k+1] - ex[k]) - px) <= tol for k in 1:length(ex)-1) &&
-     all(abs(Float64(ey[k+1] - ey[k]) - px) <= tol for k in 1:length(ey)-1)) ||
+    (isfinite(_uniform_pitch(ex)) && isfinite(_uniform_pitch(ey)) && abs(Float64(ey[2] - ey[1]) - px) <= tol) ||
         throw(ArgumentError("SimWorld needs uniform square pixels"))
     return length(ey) - 1, length(ex) - 1, px, Float64(ex[1]), Float64(ey[1])
 end
@@ -23,7 +22,7 @@ end
 function _concrete_stamp(t::StampTable)
     zs = t.zs
     zr = range(Float64(first(zs)), Float64(last(zs)); length=length(zs))
-    return StampTable{typeof(zr)}(t.stamps, zr, t.radius, t.oversample, t.zinterp)
+    return StampTable{typeof(zr)}(t.stamps, zr, t.radius, t.oversample, t.zinterp, t.pixel_size)
 end
 
 function _pop_state(rng::AbstractRNG, p::Population, px::Float64, box::NTuple{4,Float64}, t0::Float64)
@@ -47,11 +46,15 @@ end
 function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops::AbstractVector{Population};
                   background::Union{Nothing,BackgroundModel}=nothing, n_sub::Integer,
                   boundary::Symbol=:reflecting,
-                  margin::Real=default_margin(pops, _pixel_geometry(camera)[3]), t0::Real=0.0)
+                  margin::Real=default_margin(pops), t0::Real=0.0)
     boundary in (:reflecting, :periodic) || throw(ArgumentError("boundary must be :reflecting or :periodic"))
     n_sub >= 1 || throw(ArgumentError("n_sub must be >= 1"))
     margin >= 0 || throw(ArgumentError("margin must be >= 0"))
     ny, nx, px, x0, y0 = _pixel_geometry(camera)
+    for p in pops
+        p.psf isa StampTable && !isapprox(p.psf.pixel_size, px; rtol=1e-6) &&
+            throw(ArgumentError("population :$(p.name) has a StampTable built at pixel size $(p.psf.pixel_size) μm, the camera's is $px μm"))
+    end
     box = (x0 - margin, x0 + nx * px + margin, y0 - margin, y0 + ny * px + margin)
     t0 = Float64(t0)
     w = SimWorld(rng, camera, px, x0, y0, box, boundary, Int(n_sub), t0, 0, PopState[], nothing,

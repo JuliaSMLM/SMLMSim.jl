@@ -98,6 +98,7 @@ struct StampTable{R<:AbstractRange{Float64}}
     radius::Int
     oversample::Int
     zinterp::Symbol
+    pixel_size::Float64         # μm; the pixel size the stamps were built for
 end
 
 function StampTable(psf::AbstractPSF, pixel_size::Real, zs::AbstractRange{<:Real};
@@ -137,7 +138,7 @@ function StampTable(psf::AbstractPSF, pixel_size::Real, zs::AbstractRange{<:Real
             st ./= sum(st)
         end
     end
-    return StampTable{typeof(zr)}(stamps, zr, r, os, zinterp)
+    return StampTable{typeof(zr)}(stamps, zr, r, os, zinterp, Float64(pixel_size))
 end
 
 """
