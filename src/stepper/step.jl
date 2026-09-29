@@ -75,16 +75,17 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
 end
 
 """
-    layers(world) -> (signal, oof, structured, expected)
+    SMLMSim.layers(world) -> (signal, oof, structured, expected)
 
-The noise-free photon maps of the last [`step!`](@ref), without allocating: the `:signal`
+Public but not exported (the name is generic): call it as `SMLMSim.layers`. The noise-free photon maps of the last [`step!`](@ref), without allocating: the `:signal`
 populations, the `:oof` populations, the structured background and their sum.
 """
 layers(w::SimWorld) = (signal=w.signal, oof=w.oof, structured=w.structured, expected=w.expected)
 
 """
-    step!(world, t_a, t_b, excitation = UniformExcitation()) -> Matrix{Float64}
+    SMLMSim.step!(world, t_a, t_b, excitation = UniformExcitation()) -> Matrix{Float64}
 
+Public but not exported (SciML and Agents.jl also export a `step!`): call it as `SMLMSim.step!`.
 Advance `world` over the exposure `[t_a, t_b)` in `world.n_sub` sub-steps and return
 `world.expected`, the noise-free photons per pixel (the same buffer every call). The world's
 RNG drives kinetics only; add camera noise with a separate call on your own RNG.

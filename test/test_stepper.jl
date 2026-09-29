@@ -51,9 +51,11 @@ end
     @test n > 5
     r = MersenneTwister(2)
     place!(ps, 0.8 .+ 1.6 .* rand(r, n), 0.8 .+ 1.6 .* rand(r, n))
-    step!(w, 0.0, 0.01)
+    SMLMSim.step!(w, 0.0, 0.01)
     @test isapprox(sum(w.signal), n * 1000.0 * 0.01; rtol=2e-6)
-    @test w.expected === layers(w).expected
+    @test w.expected === SMLMSim.layers(w).expected
+    # generic names stay unexported (SciML and Agents.jl export a step!)
+    @test !Base.isexported(SMLMSim, :step!) && !Base.isexported(SMLMSim, :layers)
     @test sum(w.oof) == 0
 end
 
@@ -66,7 +68,7 @@ end
         exc = (x, y, z, t) -> I
         t = 0.0
         for k in 1:10
-            step!(w, t, t + 0.01, exc)
+            SMLMSim.step!(w, t, t + 0.01, exc)
             t += 0.01
             if k in (2, 4, 6, 8, 10)
                 p = exp(-1000.0 * I * t / B)
@@ -80,7 +82,7 @@ end
     N0 = w.pops[1].n
     t = 0.0
     for k in 1:10
-        step!(w, t, t + 0.01)
+        SMLMSim.step!(w, t, t + 0.01)
         t += 0.01
         if k in (2, 5, 10)
             p = exp(-1000.0 * t / B)
@@ -96,11 +98,11 @@ end
         pop = Population(density=400.0, fluor=two_state(1000.0, k_off, k_on), psf=GaussianPSF(0.13))
         w = SimWorld(StableRNG(5), cam32(), [pop]; n_sub=2)
         exc = (x, y, z, t) -> I
-        step!(w, 0.0, 0.3, exc)      # relax to the stationary state at this intensity
+        SMLMSim.step!(w, 0.0, 0.3, exc)      # relax to the stationary state at this intensity
         t = 0.3
         fr = Float64[]
         for _ in 1:12
-            step!(w, t, t + 0.1, exc)
+            SMLMSim.step!(w, t, t + 0.1, exc)
             t += 0.1
             ps = w.pops[1]
             push!(fr, count(==(1), ps.state[1:ps.n]) / ps.n)
@@ -118,7 +120,7 @@ end
     t = 0.0
     counts = Float64[]
     for _ in 1:1500
-        step!(w, t, t + 0.5)
+        SMLMSim.step!(w, t, t + 0.5)
         t += 0.5
         push!(counts, w.pops[1].n)
     end
@@ -135,7 +137,7 @@ end
     f = count(==(0.5), ps.D[1:n]) / n
     @test abs(f - 0.6) <= 3 * sqrt(0.6 * 0.4 / n)
     x0, y0, D = ps.x[1:n], ps.y[1:n], ps.D[1:n]
-    step!(w, 0.0, 0.1)
+    SMLMSim.step!(w, 0.0, 0.1)
     @test ps.n == n
     for Dc in (0.5, 0.1)
         sel = [i for i in 1:n if D[i] == Dc && 2.0 < x0[i] < 9.0 && 2.0 < y0[i] < 9.0]
@@ -151,7 +153,7 @@ end
         xmin, xmax, ymin, ymax = w.box
         t = 0.0
         for _ in 1:5
-            step!(w, t, t + 0.5)
+            SMLMSim.step!(w, t, t + 0.5)
             t += 0.5
         end
         ps = w.pops[1]
@@ -177,17 +179,17 @@ end
     pop = Population(density=300.0, fluor=one_state(1000.0), budget=B, psf=GaussianPSF(0.13))
     w = SimWorld(StableRNG(9), cam32(), [pop]; n_sub=4)
     N0 = w.pops[1].n
-    step!(w, 0.0, 0.01)
+    SMLMSim.step!(w, 0.0, 0.01)
     @test w.n_gap == 0
-    step!(w, 0.05, 0.06)      # gap of 0.04 s advanced unrecorded
+    SMLMSim.step!(w, 0.05, 0.06)      # gap of 0.04 s advanced unrecorded
     h = (0.06 - 0.05) / 4
     @test w.n_gap == ceil(Int, (0.05 - 0.01) / h)
     @test w.t == 0.06 && w.frame == 2
     p = exp(-1000.0 * 0.06 / B)
     @test abs(w.pops[1].n / N0 - p) <= 3 * sqrt(p * (1 - p) / N0)
-    @test_throws ArgumentError step!(w, 0.05, 0.07)     # earlier than world time
-    @test_throws ArgumentError step!(w, 0.06, 0.06)     # t_b <= t_a
-    @test_throws ArgumentError step!(w, 0.06, 0.05)
+    @test_throws ArgumentError SMLMSim.step!(w, 0.05, 0.07)     # earlier than world time
+    @test_throws ArgumentError SMLMSim.step!(w, 0.06, 0.06)     # t_b <= t_a
+    @test_throws ArgumentError SMLMSim.step!(w, 0.06, 0.05)
 end
 
 @testset "stepper/contiguous_time" begin
@@ -197,7 +199,7 @@ end
     ok = true
     gaps0 = true
     for k in 1:10_000
-        step!(w, (k - 1) * T, (k - 1) * T + T)
+        SMLMSim.step!(w, (k - 1) * T, (k - 1) * T + T)
         gaps0 &= w.n_gap == 0
     end
     @test gaps0
@@ -207,7 +209,7 @@ end
                    background=BackgroundModel(level=Uniform(1.0, 100.0), stretch=200T))
     lv = Float64[]
     for k in 1:1000
-        step!(bgw, (k - 1) * T, (k - 1) * T + T)
+        SMLMSim.step!(bgw, (k - 1) * T, (k - 1) * T + T)
         push!(lv, bgw.expected[1, 1])
     end
     changes = [k for k in 2:1000 if !isapprox(lv[k], lv[k-1]; rtol=1e-9)]
@@ -228,7 +230,7 @@ end
     place!(ps, 0.8 .+ 1.6 .* rand(r, n), 0.8 .+ 1.6 .* rand(r, n))
     budget0 = copy(po.budget[1:po.n])
     for k in 1:5
-        step!(w, (k - 1) * 0.01, k * 0.01, exc)
+        SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01, exc)
         @test all(iszero, w.oof)
     end
     @test po.budget[1:po.n] == budget0
@@ -244,7 +246,7 @@ end
         ps = w.pops[1]
         _add_emitter!(w, ps, 0.0)
         place!(ps, [1.6], [1.6])
-        step!(w, ta, tb, SwitchExc(ts, declared))
+        SMLMSim.step!(w, ta, tb, SwitchExc(ts, declared))
         te = declared ? ts : 0.005      # undeclared: the switch acts from the next sub-step start
         @test isapprox(sum(w.signal), 1000.0 * (1 * (te - ta) + 3 * (tb - te)); rtol=1e-12)
     end
@@ -257,7 +259,7 @@ end
     w = SimWorld(StableRNG(14), cam32(), [pop]; n_sub=8)
     tot = Float64[]
     for k in 1:2000
-        step!(w, (k - 1) * T, k * T)
+        SMLMSim.step!(w, (k - 1) * T, k * T)
         push!(tot, sum(w.signal))
     end
     A_fov = 3.2^2
@@ -323,14 +325,14 @@ end
 @testset "stepper/determinism" begin
     a, b = rich_world(21), rich_world(21)
     for k in 1:50
-        ea = copy(step!(a, (k - 1) * 0.01, k * 0.01))
-        eb = step!(b, (k - 1) * 0.01, k * 0.01)
+        ea = copy(SMLMSim.step!(a, (k - 1) * 0.01, k * 0.01))
+        eb = SMLMSim.step!(b, (k - 1) * 0.01, k * 0.01)
         @test ea == eb
     end
     @test a.pops[1].x[1:a.pops[1].n] == b.pops[1].x[1:b.pops[1].n]
     g = rich_world(22)
     for k in 1:20
-        step!(g, (k - 1) * 0.01, k * 0.01)
+        SMLMSim.step!(g, (k - 1) * 0.01, k * 0.01)
     end
     @test isapprox(sum(g.expected), GOLDEN_SUM; rtol=1e-12)
 end
@@ -339,7 +341,7 @@ const_excitation(x, y, z, t) = 2.0
 
 function count_allocs(w, exc::E, nrng, dst, cam, k) where {E}
     return @allocated begin
-        step!(w, (k - 1) * 0.01, k * 0.01, exc)
+        SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01, exc)
         SMLMSim.scmos_noise!(nrng, copyto!(dst, w.expected), cam)
     end
 end
@@ -351,7 +353,7 @@ end
     nrng = StableRNG(99)
     dst = zeros(32, 32)
     for k in 1:200
-        step!(w, (k - 1) * 0.01, k * 0.01, exc)
+        SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01, exc)
     end
     count_allocs(w, exc, nrng, dst, scam, 201)
     total = 0
@@ -363,7 +365,7 @@ end
     for exc2 in (let I = 2.0; (x, y, z, t) -> I end, const_excitation)
         w2 = rich_world(23)
         for k in 1:200
-            step!(w2, (k - 1) * 0.01, k * 0.01, exc2)
+            SMLMSim.step!(w2, (k - 1) * 0.01, k * 0.01, exc2)
         end
         count_allocs(w2, exc2, nrng, dst, scam, 201)
         total = 0
@@ -379,11 +381,11 @@ end
     w = SimWorld(StableRNG(24), cam32(), Population[]; n_sub=1,
                  background=BackgroundModel(level=Uniform(1.0, 100.0), stretch=0.05, contrast=0.3))
     for k in 1:20
-        step!(w, (k - 1) * 0.01, k * 0.01)
+        SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01)
     end
     total = 0
     for k in 21:120
-        total += @allocated step!(w, (k - 1) * 0.01, k * 0.01)
+        total += @allocated SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01)
     end
     @test total == 0
 end

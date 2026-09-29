@@ -5,7 +5,7 @@ CurrentModule = SMLMSim
 # Stepper: closed-loop simulation and background models
 
 The stepper advances a [`SimWorld`](@ref) one camera exposure at a time. Each call to
-[`step!`](@ref) returns the noise-free expected photons per pixel; camera noise is a separate
+[`SMLMSim.step!`](@ref) returns the noise-free expected photons per pixel; camera noise is a separate
 call on the caller's own random number generator. The same machinery builds background movies
 with [`gen_background`](@ref).
 
@@ -46,15 +46,16 @@ noise_rng = Random.Xoshiro(2)
 T = 0.01
 adu = zeros(128, 128)
 for k in 1:100
-    expected = step!(world, (k - 1) * T, k * T)
+    expected = SMLMSim.step!(world, (k - 1) * T, k * T)
     scmos_noise!(noise_rng, copyto!(adu, expected), camera)
 end
 ```
 
-`layers(world)` returns the `signal`, `oof`, `structured` and `expected` maps of the last step
+`SMLMSim.layers(world)` returns the `signal`, `oof`, `structured` and `expected` maps of the last step
 without allocating. The excitation is a callable `(x, y, z, t) -> Float64` given as the fourth
-argument of `step!`; [`UniformExcitation`](@ref) is the default and [`next_switch`](@ref)
-declares its discontinuities.
+argument of `SMLMSim.step!`; [`UniformExcitation`](@ref) is the default and [`next_switch`](@ref)
+declares its discontinuities. `step!` and `layers` are public but not exported, because the
+names are generic (SciML and Agents.jl export a `step!`); write `SMLMSim.step!` and `SMLMSim.layers`.
 
 ## Background models
 
