@@ -22,9 +22,10 @@ using ..CameraImages: _uniform_pitch, RenderBuffer, render_gaussian!, StampTable
 include("types.jl")
 include("kinetics.jl")
 include("background.jl")
+include("truth.jl")
 include("step.jl")
 
 export Population, BackgroundModel, SimWorld, UniformExcitation, EvanescentExcitation
-export next_switch, gen_background  # step! and layers are public, not exported (generic names)
+export FrameTruth, frame_truth, next_switch, gen_background  # step! and layers are public, not exported (generic names)
 
 end # module

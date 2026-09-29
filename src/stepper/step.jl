@@ -39,17 +39,19 @@ function _pop_state(rng::AbstractRNG, p::Population, px::Float64, box::NTuple{4,
                   isg ? nothing : _concrete_stamp(p.psf),
                   0, zeros(Int, cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(Int32, cap), zeros(UInt8, cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
-                  zeros(cap), Inf)
+                  zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
+                  zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), Inf)
     return ps, n0, A
 end
 
 function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops::AbstractVector{Population};
                   background::Union{Nothing,BackgroundModel}=nothing, n_sub::Integer,
                   boundary::Symbol=:reflecting,
-                  margin::Real=default_margin(pops), t0::Real=0.0)
+                  margin::Real=default_margin(pops), t0::Real=0.0, merge_radius::Real=0.0)
     boundary in (:reflecting, :periodic) || throw(ArgumentError("boundary must be :reflecting or :periodic"))
     n_sub >= 1 || throw(ArgumentError("n_sub must be >= 1"))
     margin >= 0 || throw(ArgumentError("margin must be >= 0"))
+    merge_radius >= 0 || throw(ArgumentError("merge_radius must be >= 0"))
     ny, nx, px, x0, y0 = _pixel_geometry(camera)
     for p in pops
         p.psf isa StampTable && !isapprox(p.psf.pixel_size, px; rtol=1e-6) &&
@@ -61,7 +63,7 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
                  zeros(ny, nx), zeros(ny, nx), zeros(ny, nx), zeros(ny, nx), 0,
                  RenderBuffer(maximum((p.psf isa StampTable ? p.psf.radius : ceil(Int, 5 * p.psf.σ / px) + 1
                                        for p in pops); init=0)),
-                 0)
+                 0, FrameTruth[], 0, Float64(merge_radius), Bool[], t0, t0)
     for p in pops
         ps, n0, A = _pop_state(rng, p, px, box, t0)
         push!(w.pops, ps)
@@ -71,6 +73,7 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
         ps.t_next_birth = p.birth_rate > 0 ? t0 + randexp(rng) / (p.birth_rate * A) : Inf
     end
     background === nothing || (w.bg = BackgroundState(rng, background, ny, nx, px, t0))
+    resize!(w.truth, max(1, 2 * sum(ps -> length(ps.x), w.pops; init=0)))
     return w
 end
 
@@ -123,9 +126,12 @@ function step!(w::SimWorld, t_a::Real, t_b::Real, excitation::E=UniformExcitatio
     fill!(w.signal, 0.0)
     fill!(w.oof, 0.0)
     w.bg === nothing || _update_background!(w, w.bg, t_a, t_b)
+    w.t_a, w.t_b = t_a, t_b
+    _begin_truth!(w)
     for k in 1:w.n_sub
         _substep!(w, t_a + (k - 1) * h, h, excitation, true)
     end
+    _finish_truth!(w)
     w.t = t_b
     w.frame += 1
     @. w.expected = w.signal + w.oof + w.structured

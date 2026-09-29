@@ -232,6 +232,44 @@ mutable struct BackgroundState
     wx::Matrix{Float64}
 end
 
+"""
+    FrameTruth
+
+One row of [`frame_truth`](@ref): what one emitter did during the last exposure `[t_a, t_b)`,
+`T = t_b - t_a`. `frame` is the exposure number, `id` the emitter, `pop` its index into
+`world.pops`, `m` the fluorophores left at the end of presence. `x`, `y` (μm) are the
+photon-weighted mean position (the presence-weighted mean if no photons, else the reference
+position), `z` its height. `photons` is the emitted total, `lit` the fraction of `T` in state 1
+with `m > 0`, `excitation` the presence-weighted mean relative intensity (NaN if never present).
+`t_birth`, `t_bleach` and `t_depart` are event times inside the exposure, else NaN. The
+`partner`, `partner_pop`, `bound`, `t_form`, `t_break`, `lit_bound` and `vis_*` fields are 0,
+NaN or false without dimers. `overlap` is set by `SimWorld(...; merge_radius)`.
+"""
+struct FrameTruth
+    frame::Int
+    id::Int
+    pop::Int32
+    m::Int32
+    x::Float64
+    y::Float64
+    z::Float64
+    photons::Float64
+    lit::Float64
+    excitation::Float64
+    t_birth::Float64
+    t_bleach::Float64
+    t_depart::Float64
+    partner::Int
+    partner_pop::Int32
+    bound::Float64
+    t_form::Float64
+    t_break::Float64
+    lit_bound::Float64
+    vis_form::Bool
+    vis_bound::Bool
+    overlap::Bool
+end
+
 # Emitters of one Population (struct of arrays, capacity-preallocated, swap-remove).
 mutable struct PopState
     p::Population
@@ -254,6 +292,12 @@ mutable struct PopState
     t_depart::Vector{Float64}
     t_birth::Vector{Float64}
     lj::Vector{Float64}                   # log-brightness multiplier X_i (brightness_jitter)
+    xr::Vector{Float64}; yr::Vector{Float64}          # frame accumulators (see R9): reference position,
+    sx::Vector{Float64}; sy::Vector{Float64}          # photon-weighted offsets,
+    sxp::Vector{Float64}; syp::Vector{Float64}        # presence-weighted offsets,
+    sph::Vector{Float64}                              # photons,
+    t_present::Vector{Float64}; t_lit::Vector{Float64}; sI::Vector{Float64}
+    t_bleach_f::Vector{Float64}
     t_next_birth::Float64
 end
 
@@ -273,6 +317,8 @@ separate call on the caller's own RNG.
   stamp table), so light from emitters outside the field of view enters correctly. `margin = 0`
   puts the walls at the field-of-view edge.
 - `t0`: start time in s.
+- `merge_radius`: μm; when > 0, truth rows of `:signal` emitters closer than this that are not partners
+  get `overlap = true`.
 
 Pixels must be uniform and square. Initial emitters are the steady ensemble only for
 `multiplicity = 1`, `budget = Inf` and excitation 1; otherwise start the first exposure at
@@ -299,4 +345,10 @@ mutable struct SimWorld{R<:AbstractRNG,C<:AbstractCamera}
     n_gap::Int
     buf::RenderBuffer
     id_counter::Int
+    truth::Vector{FrameTruth}             # rows of the last step!, valid to n_truth
+    n_truth::Int
+    merge_radius::Float64
+    overlap_scratch::Vector{Bool}
+    t_a::Float64                          # the recorded exposure
+    t_b::Float64
 end
