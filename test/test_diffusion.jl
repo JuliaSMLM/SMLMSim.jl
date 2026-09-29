@@ -244,21 +244,20 @@ using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, R
                 # Get dimers
                 dimer_emitters = filter(e -> e.state == :dimer, smld_result.emitters)
 
-                # Check that dimers reference each other correctly
+                # Check that dimers reference each other correctly: a bound pair exists, and every dimer
+                # record names a partner whose record at the same time exists and names it back
+                @test !isempty(dimer_emitters)
+                n_bad_partner = 0
                 for e in dimer_emitters
-                    if !isnothing(e.partner_id)
-                        # Find the partner's record at the same time. Since v0.7.1 this took the partner's first
-                        # record anywhere in the SMLD, a monomer whenever the pair formed after t = 0.
-                        partner = findfirst(p -> p.track_id == e.partner_id && p.timestamp == e.timestamp,
-                                            smld_result.emitters)
-                        if !isnothing(partner)
-                            # Partner should have this emitter as its partner
-                            @test smld_result.emitters[partner].partner_id == e.track_id
-                            # Partner should also be a dimer
-                            @test smld_result.emitters[partner].state == :dimer
-                        end
-                    end
+                    # Find the partner's record at the same time. Since v0.7.1 this took the partner's first
+                    # record anywhere in the SMLD, a monomer whenever the pair formed after t = 0.
+                    partner = isnothing(e.partner_id) ? nothing :
+                        findfirst(p -> p.track_id == e.partner_id && p.timestamp == e.timestamp, smld_result.emitters)
+                    ok = !isnothing(partner) && smld_result.emitters[partner].partner_id == e.track_id &&
+                         smld_result.emitters[partner].state == :dimer
+                    ok || (n_bad_partner += 1)
                 end
+                @test n_bad_partner == 0
             end
         end
     end
@@ -765,7 +764,8 @@ end
             @test smld3.metadata["monomer_class"] == cls
             if nd == 2
                 rows = frame_dimer_truth(smld)
-                @test all(r -> r.mixed == (r.partner_id != 0 && cls[r.track_id] != cls[r.partner_id]), rows)
+                Dm = smld.metadata["monomer_D"]
+                @test all(r -> r.mixed == (r.partner_id != 0 && ((Dm[r.track_id] == 0) ⊻ (Dm[r.partner_id] == 0))), rows)
                 @test any(r -> r.mixed, rows)
             end
         end
@@ -1039,5 +1039,117 @@ end
         @test all(e -> e.state == :monomer && e.partner_id === nothing, ss.emitters)
         @test all(nrec(ss, f) == 2 * 8 for f in 1:ss.n_frames)
         @test all(length(unique(e.timestamp for e in ss.emitters if e.track_id == id)) == length(ss.emitters) ÷ 2 for id in 1:2)
+    end
+    @testset "(m) Codex review of #37" begin
+        ID = SMLMSim.InteractionDiffusion
+        e2(x, y, id, st, pid) = DiffusingEmitter2D{Float64}(x, y, 100.0, 0.0, 1, 1, id, st, pid)
+        e3(x, y, z, id, st, pid) = DiffusingEmitter3D{Float64}(x, y, z, 100.0, 0.0, 1, 1, id, st, pid)
+        start(es, D) = BasicSMLD(es, cam32, 1, 1, Dict{String,Any}("monomer_D" => D))
+        sep(a, b) = sqrt(sum(abs2, (a.x - b.x, a.y - b.y, (a isa DiffusingEmitter3D ? a.z - b.z : 0.0))))
+        mi(d, L) = d - L * round(d / L)
+        sep_mi(a, b, L) = sqrt(mi(a.x - b.x, L)^2 + mi(a.y - b.y, L)^2)
+
+        # B1. mixed means exactly one partner immobile (saved per-track D, else the class's D in the saved config)
+        pair = [e2(1.0, 1.0, 1, :dimer, 2), e2(1.03, 1.0, 2, :dimer, 1)]
+        function mixed_rows(Ds; legacy=false)
+            md = Dict{String,Any}("monomer_class" => Dict(1 => 1, 2 => 2))
+            if legacy
+                md["simulation_parameters"] = DiffusionSMLMConfig(monomer_mobility=[(0.5, Ds[1]), (0.5, Ds[2])])
+            else
+                md["monomer_D"] = Dict(1 => Ds[1], 2 => Ds[2])
+            end
+            return [r.mixed for r in frame_dimer_truth(BasicSMLD(pair, cam32, 1, 1, md))]
+        end
+        for legacy in (false, true)
+            @test mixed_rows((0.1, 0.3); legacy) == [false, false]
+            @test mixed_rows((0.0, 0.0); legacy) == [false, false]
+            @test mixed_rows((0.0, 0.3); legacy) == [true, true]
+        end
+
+        # B2. an empty new mixture keeps the saved classes, and recovers them from the saved D when absent
+        base(; kw...) = DiffusionSMLMConfig(; density=40.0, box_size=2.0, diff_monomer=0.3, r_react=0.05, d_dimer=0.03,
+            dt=0.001, t_max=0.02, camera_framerate=100.0, camera_exposure=0.01, pair_mobility=:min, kw...)
+        Random.seed!(41)
+        sm, _ = simulate(base(monomer_mobility=[(0.5, 0.3), (0.5, 0.0)]); γ=500.0, camera=cam32)
+        cls = sm.metadata["monomer_class"]
+        @test sort(unique(values(cls))) == [1, 2]
+        se, _ = simulate(base(); starting_conditions=extract_end_state(sm), γ=500.0, camera=cam32)
+        @test se.metadata["monomer_class"] == cls
+        @test se.metadata["monomer_D"] == sm.metadata["monomer_D"]
+        old = extract_end_state(sm)
+        delete!(old.metadata, "monomer_class")
+        so, _ = simulate(base(); starting_conditions=old, γ=500.0, camera=cam32)
+        @test so.metadata["monomer_class"] == cls
+
+        # B3. an anchored pair keeps its bond length at a reflecting wall (formation, persistence, dissociation,
+        # continuation), and its minimum-image bond length under periodic boundaries
+        wall(; kw...) = DiffusionSMLMConfig(; density=1.0, box_size=2.0, diff_monomer=0.3, diff_dimer=0.1, r_react=0.01,
+            d_dimer=0.04, k_off=0.0, dt=0.001, t_max=0.05, camera_framerate=100.0, camera_exposure=0.01,
+            pair_mobility=:min, kw...)
+        D = Dict(1 => 0.0, 2 => 0.3)
+        bonds(s) = [(a, b) for a in s.emitters for b in s.emitters
+                    if a.track_id == 1 && b.track_id == 2 && a.timestamp == b.timestamp && a.state == :dimer]
+        for (es, nd) in (([e2(0.01, 1.0, 1, :monomer, nothing), e2(0.005, 1.0, 2, :monomer, nothing)], 2),
+                         ([e3(0.01, 1.0, 1.0, 1, :monomer, nothing), e3(0.005, 1.0, 1.0, 2, :monomer, nothing)], 3))
+            Random.seed!(42)
+            sw, _ = simulate(wall(ndims=nd, boundary="reflecting"); starting_conditions=start(es, D), γ=500.0, camera=cam32)
+            bw = bonds(sw)
+            @test length(bw) >= 40
+            @test all(((a, b),) -> isapprox(sep(a, b), 0.04; rtol=1e-12) && a.x == 0.01 && 0 <= b.x <= 2.0, bw)
+            sc, _ = simulate(wall(ndims=nd, boundary="reflecting"); starting_conditions=sw, γ=500.0, camera=cam32)
+            @test all(((a, b),) -> isapprox(sep(a, b), 0.04; rtol=1e-12) && a.x == 0.01, bonds(sc))
+            @test length(bonds(sc)) == length(sc.emitters) ÷ 2
+        end
+        Random.seed!(43)
+        sd, _ = simulate(wall(boundary="reflecting", k_off=50.0, t_max=0.2);
+                         starting_conditions=start([e2(0.01, 1.0, 1, :monomer, nothing), e2(0.005, 1.0, 2, :monomer, nothing)], D),
+                         γ=500.0, camera=cam32)
+        @test any(e -> e.track_id == 2 && e.state == :monomer && e.timestamp > 0, sd.emitters)
+        @test all(((a, b),) -> isapprox(sep(a, b), 0.04; rtol=1e-12) && a.x == 0.01, bonds(sd))
+        @test all(e -> 0 <= e.x <= 2.0 && 0 <= e.y <= 2.0, sd.emitters)
+        Random.seed!(44)
+        sp, _ = simulate(wall(boundary="periodic");
+                         starting_conditions=start([e2(0.01, 1.0, 1, :monomer, nothing), e2(0.005, 1.0, 2, :monomer, nothing)], D),
+                         γ=500.0, camera=cam32)
+        @test all(((a, b),) -> isapprox(sep_mi(a, b, 2.0), 0.04; rtol=1e-12) && 0 <= b.x < 2.0, bonds(sp))
+        @test length(bonds(sp)) >= 40
+
+        # B4. :min moves a pair at min(D1, D2) x diff_dimer/diff_monomer: partners at diff_monomer move at diff_dimer
+        pm = DiffusionSMLMConfig(diff_monomer=0.4, diff_dimer=0.1, diff_dimer_rot=0.5, pair_mobility=:min)
+        @test all(ID._pair_motion(pm, 0.4, 0.4) .≈ (0.1, 0.5))
+
+        # #36 should-fix 1: an invalid saved dt throws instead of dividing by it
+        pa = static_params(dt=0.01, diff_monomer=0.5)
+        pb = static_params(dt=0.005, diff_monomer=0.5)
+        Random.seed!(45)
+        s1, _ = simulate(pa; γ=1e4, override_count=3, camera=cam32)
+        for bad in (0.0, -0.01, NaN, Inf)
+            sb = deepcopy(s1)
+            delete!(sb.metadata, "γ")
+            sb.metadata["dt"] = bad
+            @test_throws ArgumentError simulate(pb; starting_conditions=sb, camera=cam32)
+        end
+        # #36 should-fix 3: photons varying in time within a track and zero-photon records (the latest record's
+        # photons carry the rate), a capped exposure, and a seeded same-dt continuation without the saved γ
+        recs = [DiffusingEmitter2D{Float64}(e.x, e.y, e.track_id == 3 && e.frame == s1.n_frames ? 0.0 : e.photons * e.frame,
+                                            e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id) for e in s1.emitters]
+        sv = BasicSMLD(recs, s1.camera, s1.n_frames, 1, Dict{String,Any}("dt" => 0.01))
+        latest = Dict(e.track_id => e.photons for e in extract_end_state(sv).emitters)
+        @test latest[3] == 0.0 && latest[1] == 100.0 * s1.n_frames
+        svc, _ = simulate(pb; starting_conditions=sv, camera=cam32)
+        @test all(e -> e.photons == latest[e.track_id] * (0.005 / 0.01), svc.emitters)
+        pcap(dt) = static_params(dt=dt, exposure=0.02, diff_monomer=0.5)
+        Random.seed!(46)
+        sk, _ = simulate(pcap(0.005); γ=1e4, override_count=3, camera=cam32)
+        @test nrec(sk, 1) == 3 * 2
+        sk2, _ = simulate(pcap(0.0025); starting_conditions=sk, camera=cam32)
+        @test nrec(sk2, 1) == 3 * 4
+        @test all(e -> e.photons == 1e4 * 0.0025, sk2.emitters)
+        @test isapprox(sum(e.photons for e in sk2.emitters if e.frame == 1), sum(e.photons for e in sk.emitters if e.frame == 1); rtol=1e-12)
+        s1n = deepcopy(s1)
+        delete!(s1n.metadata, "γ")
+        Random.seed!(47); a, _ = simulate(pa; starting_conditions=s1, camera=cam32)
+        Random.seed!(47); b, _ = simulate(pa; starting_conditions=s1n, camera=cam32)
+        @test a.emitters == b.emitters
     end
 end

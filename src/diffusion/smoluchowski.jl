@@ -36,15 +36,17 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   Empty (default) means every monomer uses `diff_monomer`. Under `pair_mobility = :fixed`
   dimers always use `diff_dimer`.
   The drawn values are stored in `smld.metadata["monomer_D"]` (track_id => D), and each
-  molecule's population index in `smld.metadata["monomer_class"]` (track_id => Int; 1 when empty).
+  molecule's population index in `smld.metadata["monomer_class"]` (track_id => Int; 1 when empty,
+  unless an SMLD `starting_conditions` carries the class).
 - `pair_mobility::Symbol`: how a bound pair diffuses. `:fixed` (default, the 0.7 behaviour):
-  every pair diffuses with `diff_dimer` and rotates with `diff_dimer_rot`. `:min`: the pair's D is
-  the smaller of the two partners' monomer D (from `monomer_mobility`, or `diff_monomer`), times
-  `diff_dimer/diff_monomer` when both partners move, and the rotation scales with it
-  (`diff_dimer_rot * D_pair/diff_dimer`). If either partner is immobile (D == 0) the pair has D = 0
-  and no rotation, so it stays put while bound; on formation the immobile partner keeps its position
-  and the other is placed `d_dimer` from it. `:min` requires `diff_monomer > 0`. Stored in
-  `smld.metadata["pair_mobility"]`.
+  every pair diffuses with `diff_dimer` and rotates with `diff_dimer_rot`. `:min`: a pair moves at
+  `min(D1, D2) × diff_dimer/diff_monomer`, with `D1`, `D2` the partners' monomer D (from
+  `monomer_mobility`, or `diff_monomer`), so two partners at `diff_monomer` move at `diff_dimer` (as
+  under `:fixed`) and a pair with an immobile partner does not move; the rotation scales the same way
+  (`diff_dimer_rot × D_pair/diff_dimer`). On formation an immobile partner keeps its position and the
+  other is placed `d_dimer` from it (in a reflecting box, mirrored across the immobile partner on each
+  axis it would leave, so the bond stays `d_dimer` long); if both are immobile the lower `track_id`
+  stays. `:min` requires `diff_monomer > 0`. Stored in `smld.metadata["pair_mobility"]`.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
 `n_sub` records of a frame (`substeps_per_frame`) carries `γ·dt`, so a frame holds `γ·n_sub·dt`
@@ -248,7 +250,8 @@ Translational and rotational diffusion coefficients of a bound pair whose partne
 monomer coefficients `D1` and `D2`. `:fixed` gives `(diff_dimer, diff_dimer_rot)`. `:min` gives
 `(0, 0)` when either partner is immobile (the pair is anchored), otherwise
 `D = min(D1, D2) * diff_dimer / diff_monomer` and `D_rot = diff_dimer_rot * D / diff_dimer`
-(`0` when `diff_dimer == 0`). Internal.
+(`0` when `diff_dimer == 0`): two partners at `diff_monomer` give `(diff_dimer, diff_dimer_rot)`,
+as under `:fixed`. Internal.
 """
 function _pair_motion(params::DiffusionSMLMConfig, D1::Real, D2::Real)
     params.pair_mobility == :min || return params.diff_dimer, params.diff_dimer_rot
@@ -394,9 +397,9 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     if anchor !== nothing
                         # The placed partner never reaches apply_boundary while the pair is pinned
                         if anchor == d1.track_id
-                            d2 = apply_boundary(d2, params.box_size, params.boundary)
+                            d2 = _place_in_box(d2, d1, params.box_size, params.boundary)
                         else
-                            d1 = apply_boundary(d1, params.box_size, params.boundary)
+                            d1 = _place_in_box(d1, d2, params.box_size, params.boundary)
                         end
                     end
                     push!(new_emitters, d1, d2)
@@ -639,6 +642,7 @@ function simulate(params::DiffusionSMLMConfig;
     prior_class = nothing
     prior_γ = nothing
     prior_dt = nothing
+    sim_params = nothing
     γ_val = γ_new
     if starting_conditions !== nothing
         # Extract emitters from starting_conditions
@@ -653,6 +657,8 @@ function simulate(params::DiffusionSMLMConfig;
             # The saved dt snapshot; older SMLDs only have the (mutable) config, which may have been edited since
             sim_params = get(start_smld.metadata, "simulation_parameters", nothing)
             prior_dt = get(start_smld.metadata, "dt", sim_params isa DiffusionSMLMConfig ? sim_params.dt : nothing)
+            prior_dt === nothing || (prior_dt isa Real && isfinite(prior_dt) && prior_dt > 0) ||
+                throw(ArgumentError("starting_conditions metadata \"dt\" (or simulation_parameters.dt) must be finite and > 0, got $prior_dt"))
         else
             # Already a vector of emitters
             start_emitters = starting_conditions
@@ -722,11 +728,14 @@ function simulate(params::DiffusionSMLMConfig;
             end
         end
     else
-        # Saved per-track D is a property of the molecule and is kept even if the new mixture is empty
+        # Saved per-track D and class are properties of the molecule and are kept even if the new mixture is
+        # empty; without a saved class, it is recovered from the saved D against the source run's mixture
+        prior_mix = sim_params isa DiffusionSMLMConfig ? sim_params.monomer_mobility : Tuple{Float64,Float64}[]
         for e in emitters
-            track_class[e.track_id] = 1
-            prior_D === nothing ||
-                (track_D[e.track_id] = haskey(prior_D, e.track_id) ? Float64(prior_D[e.track_id]) : params.diff_monomer)
+            id = e.track_id
+            prior_D === nothing || (track_D[id] = haskey(prior_D, id) ? Float64(prior_D[id]) : params.diff_monomer)
+            track_class[id] = prior_class !== nothing && haskey(prior_class, id) ? Int(prior_class[id]) :
+                haskey(track_D, id) ? something(findfirst(c -> c[2] == track_D[id], prior_mix), 1) : 1
         end
     end
 
