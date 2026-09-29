@@ -1243,6 +1243,15 @@ end
         mi(x, L) = x - L * round(x / L)
         unit(v) = (n = sqrt(sum(abs2, v)); n > 0 ? v ./ n : ntuple(k -> k == 1 ? 1.0 : 0.0, length(v)))
         rng = Random.Xoshiro(20260929)
+        # successive reflections off lo and hi until inside (the rule's wording, not _fold's formula)
+        function fold(x, lo, hi)
+            hi <= lo && return lo
+            while !(lo <= x <= hi)
+                x = x < lo ? 2lo - x : 2hi - x
+            end
+            return x
+        end
+        @test fold(-0.05, 0.4, 0.6) ≈ 0.45 && ID._fold(-0.05, 0.4, 0.6) ≈ 0.45
         near(T, L) = (r = rand(rng); x = r < 1/3 ? 0.05L * rand(rng) : r < 2/3 ? L - 0.05L * rand(rng) : L * rand(rng);
                       clamp(T(x), zero(T), top(T, L)))
         inside(p, T, L) = all(c -> 0 <= c <= L, p)
@@ -1335,8 +1344,7 @@ end
                     (p1, p2) == (r1, r2) || push!(fails, "$tg: bound pair inside moved")
                 elseif all(k -> d * abs(u[k]) <= L, 1:N)
                     tally(:bound_fit)
-                    # the center folds into [h, L - h] per axis as often as it crosses (a triangle wave); orientation kept
-                    fold(x, lo, hi) = hi <= lo ? lo : (wd = hi - lo; y = mod(x - lo, 2wd); lo + (y <= wd ? y : 2wd - y))
+                    # the center reflects off [h, L - h] per axis, once per crossing, until inside; orientation kept
                     c = ntuple(k -> fold((r1[k] + r2[k]) / 2, d / 2 * abs(u[k]), L - d / 2 * abs(u[k])), N)
                     btol = tol + 4 * sqrt(N) * eps(T) * d
                     all(k -> abs(p1[k] - (c[k] - d / 2 * u[k])) <= btol && abs(p2[k] - (c[k] + d / 2 * u[k])) <= btol, 1:N) ||
@@ -1406,5 +1414,18 @@ end
         n, s = nwarn(:fixed)
         @test n == 1 && any(e -> e.state == :dimer, s.emitters)
         @test nwarn(:min)[1] == 0
+        # Codex on 326b0ab: the warning does not depend on what the camera records (two D = 0 monomers bind and move
+        # after the only recorded step), and formation alone warns when it moves an immobile member (no diff_dimer
+        # or diff_dimer_rot)
+        two = [DiffusingEmitter2D{Float64}(0.4, 0.5, 1.0, 0.0, 1, 1, 1, :monomer, nothing),
+               DiffusingEmitter2D{Float64}(0.41, 0.5, 1.0, 0.0, 1, 1, 2, :monomer, nothing)]
+        for (Dd, Dr, exposure) in ((0.1, 0.5, 0.001), (0.0, 0.0, 0.01))
+            c = DiffusionSMLMConfig(box_size=1.0, diff_monomer=0.0, r_react=0.1, d_dimer=0.05, diff_dimer=Dd,
+                                    diff_dimer_rot=Dr, k_off=0.0, dt=0.001, t_max=0.01, camera_framerate=100.0,
+                                    camera_exposure=exposure)
+            Random.seed!(63)
+            logs, s = Test.collect_test_logs(() -> simulate(c; starting_conditions=two, γ=1e3)[1])
+            @test count(l -> occursin("use pair_mobility = :min", string(l.message)), logs) == 1
+        end
     end
 end
