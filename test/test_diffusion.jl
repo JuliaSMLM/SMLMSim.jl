@@ -680,7 +680,7 @@ end
         @test DiffusionSMLMConfig(1.0, 10.0, 0.1, 0.05, 0.5, 0.2, 0.01, 0.05, 0.01, 10.0, 2, "periodic", 10.0, 0.1) isa DiffusionSMLMConfig
     end
 
-    @testset "(l) pair mobility" begin
+    @testset "(o) pair mobility" begin
         cam = IdealCamera(1:32, 1:32, 0.078)
         fx(; kw...) = begin
             Random.seed!(20260929)
@@ -691,15 +691,18 @@ end
             es = smld.emitters
             (length(es), sum(e -> e.x, es), sum(e -> e.y, es), sum(e -> e.photons, es), count(e -> e.state == :dimer, es))
         end
-        # Recorded from 0.7.2 (97880c1) before the change, on Julia 1.13.0, at d_dimer > r_react so that the
-        # unbinding rule (partners placed at least r_react apart) leaves the run unchanged. Julia does not promise
-        # bitwise-equal float sums across versions: the same 97880c1 code on Julia 1.10.11 gives y sums of
-        # 8070.051634051506 (mixed) and 8283.670328471711 (default) against 8070.38335464744 and 8283.7469648201
-        # here, a largest relative difference of 4.1e-5, with identical counts. So the counts (records, photons,
-        # dimer records) are compared exactly, the x/y sums at rtol 1e-4 (2.4x margin), and the default path
-        # against pair_mobility = :fixed exactly within one run.
-        GOLD_MIXED = (8000, 8283.839490125389, 8070.38335464744, 4000.0, 4340)
-        GOLD_DEFAULT = (8000, 8276.434380304116, 8283.7469648201, 4000.0, 5408)
+        # At d_dimer > r_react, so that the unbinding rule (partners placed at least r_react apart) leaves the run
+        # unchanged: #37 alone gives these values. Recorded on Julia 1.13.0 after #37's periodic straddle fix (a bound
+        # pair straddling the boundary used to jump by half the box and now moves by one step); with that fix reverted
+        # the run gives 0.7.2's values exactly, (8283.839490125389, 8070.38335464744, 4340) mixed and
+        # (8276.434380304116, 8283.7469648201, 5408) default. The default sums moved by -72.0 (x) and +8.0 (y) to
+        # within rounding, whole half-boxes (box 2), with the counts unchanged; in the mixed run the corrected
+        # positions change a later reaction, so its dimer records go from 4340 to 4368. Julia does not promise
+        # bitwise-equal float sums across versions: 0.7.2 on Julia 1.10.11 differed from 1.13.0 by at most 4.1e-5
+        # relative in these sums, with identical counts. So the counts (records, photons, dimer records) are compared
+        # exactly, the x/y sums at rtol 1e-4, and the default path exactly against pair_mobility = :fixed in one run.
+        GOLD_MIXED = (8000, 8320.62946819797, 8056.226513683971, 4000.0, 4368)
+        GOLD_DEFAULT = (8000, 8204.434380304117, 8291.7469648201, 4000.0, 5408)
         matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
                              isapprox(r[2], g[2]; rtol=1e-4) && isapprox(r[3], g[3]; rtol=1e-4)
         mob = [(0.5, 0.2), (0.5, 0.0)]
@@ -967,20 +970,18 @@ end
         s1e, _ = simulate(p1; starting_conditions=s1d, camera=cam32)
         prior_ph = Dict(e.track_id => e.photons for e in s1d.emitters)
         @test all(e -> e.photons == prior_ph[e.track_id], s1e.emitters)
-        # 1b. no saved γ or dt (0.7.1 output, heterogeneous brightness): each track keeps its own rate
+        # 1b. no saved γ or dt (0.7.1 output, heterogeneous brightness): photons per record kept, as in 0.7.1
         frame1(s, id) = sum(e.photons for e in s.emitters if e.track_id == id && e.frame == 1)
         no_rate(s) = BasicSMLD(s.emitters, s.camera, s.n_frames, s.n_datasets,
-                             Dict(k => v for (k, v) in s.metadata if k ∉ ("γ", "dt", "final_state", "last_frame_latest")))
+                             Dict(k => v for (k, v) in s.metadata if k ∉ ("γ", "dt", "rate_source", "final_state", "last_frame_latest")))
         het = [SMLMSim.InteractionDiffusion.restamp(e; photons=100.0 * e.track_id) for e in extract_end_state(s1).emitters]
         Random.seed!(33)
         sh, _ = simulate(p1; starting_conditions=het, camera=cam32)
         @test !haskey(sh.metadata, "γ")
         for (src, pnew) in ((no_rate(s1), p2), (sh, p2), (no_rate(s2), p1))
-            prior_dt = src.metadata["simulation_parameters"].dt
             ref = Dict(e.track_id => e.photons for e in extract_end_state(src).emitters)
             sc, _ = simulate(pnew; starting_conditions=src, camera=cam32)
-            @test all(e -> e.photons == ref[e.track_id] * (pnew.dt / prior_dt), sc.emitters)
-            @test all(id -> isapprox(frame1(sc, id), frame1(src, id); rtol=1e-12), 1:3)
+            @test all(e -> e.photons == ref[e.track_id], sc.emitters)
         end
         # 1c. dt changed in place on the same config object, and increasing dt with a saved γ
         pin = static_params(dt=0.01, diff_monomer=0.5)
@@ -1001,7 +1002,7 @@ end
         pempty = static_params(dt=1.25e-3, t_max=0.05, box_size=5.0, diff_monomer=0.5)
         @test isempty(pempty.monomer_mobility)
         start = Dict(e.track_id => e for e in extract_end_state(sm).emitters)
-        sm2, _ = simulate(pempty; starting_conditions=sm, camera=cam32)
+        sm2, _ = @test_logs (:warn, r"saved D") match_mode=:any simulate(pempty; starting_conditions=sm, camera=cam32)
         @test sm2.metadata["monomer_D"] == sm.metadata["monomer_D"]
         still = [id for (id, D) in sm.metadata["monomer_D"] if D == 0.0 &&
                  all(e -> e.state == :monomer, filter(e -> e.track_id == id, sm2.emitters))]
@@ -1036,7 +1037,7 @@ end
         @test all(nrec(ss, f) == 2 * 8 for f in 1:ss.n_frames)
         @test all(length(unique(e.timestamp for e in ss.emitters if e.track_id == id)) == length(ss.emitters) ÷ 2 for id in 1:2)
     end
-    @testset "(m) Codex review of #37" begin
+    @testset "(p) Codex review of #37" begin
         ID = SMLMSim.InteractionDiffusion
         e2(x, y, id, st, pid) = DiffusingEmitter2D{Float64}(x, y, 100.0, 0.0, 1, 1, id, st, pid)
         e3(x, y, z, id, st, pid) = DiffusingEmitter3D{Float64}(x, y, z, 100.0, 0.0, 1, 1, id, st, pid)
@@ -1061,6 +1062,11 @@ end
             @test mixed_rows((0.0, 0.0); legacy) == [false, false]
             @test mixed_rows((0.0, 0.3); legacy) == [true, true]
         end
+        # a track without a saved D moves at the run's diff_monomer (#36's continuation rule)
+        partial(Dm) = [r.mixed for r in frame_dimer_truth(BasicSMLD(pair, cam32, 1, 1, Dict{String,Any}(
+            "monomer_D" => Dict(1 => 0.0), "simulation_parameters" => DiffusionSMLMConfig(diff_monomer=Dm))))]
+        @test partial(0.3) == [true, true]
+        @test partial(0.0) == [false, false]
 
         # B2. an empty new mixture keeps the saved classes, and recovers them from the saved D when absent
         base(; kw...) = DiffusionSMLMConfig(; density=40.0, box_size=2.0, diff_monomer=0.3, r_react=0.05, d_dimer=0.03,
@@ -1113,27 +1119,35 @@ end
         # B4. :min moves a pair at min(D1, D2) x diff_dimer/diff_monomer: partners at diff_monomer move at diff_dimer
         pm = DiffusionSMLMConfig(diff_monomer=0.4, diff_dimer=0.1, diff_dimer_rot=0.5, pair_mobility=:min)
         @test all(ID._pair_motion(pm, 0.4, 0.4) .≈ (0.1, 0.5))
+        # ... except that with diff_dimer = 0 a :min pair does not rotate, while :fixed rotates with diff_dimer_rot
+        p0(mode) = DiffusionSMLMConfig(diff_monomer=0.4, diff_dimer=0.0, diff_dimer_rot=0.5, pair_mobility=mode)
+        @test ID._pair_motion(p0(:min), 0.4, 0.4) == (0.0, 0.0)
+        @test ID._pair_motion(p0(:fixed), 0.4, 0.4) == (0.0, 0.5)
+        # a tiny positive D is mobile; duplicate populations recover the first matching class and keep D
+        @test mixed_rows((0.0, 1e-300); legacy=false) == [true, true]
+        @test mixed_rows((1e-300, 1e-300); legacy=false) == [false, false]
+        Random.seed!(48)
+        sdup, _ = simulate(base(monomer_mobility=[(0.3, 0.1), (0.7, 0.1)]); γ=500.0, camera=cam32)
+        old = extract_end_state(sdup)
+        delete!(old.metadata, "monomer_class")
+        sdc, _ = simulate(base(); starting_conditions=old, γ=500.0, camera=cam32)
+        @test all(==(1), values(sdc.metadata["monomer_class"]))
+        @test sdc.metadata["monomer_D"] == sdup.metadata["monomer_D"]
 
-        # #36 should-fix 1: an invalid saved dt throws instead of dividing by it
+        # #36 should-fix 3: photons varying in time within a track and zero-photon records (a source without a
+        # saved rate keeps the latest record's photons), a capped exposure, and a seeded same-dt continuation
+        # without the saved γ
         pa = static_params(dt=0.01, diff_monomer=0.5)
         pb = static_params(dt=0.005, diff_monomer=0.5)
         Random.seed!(45)
         s1, _ = simulate(pa; γ=1e4, override_count=3, camera=cam32)
-        for bad in (0.0, -0.01, NaN, Inf)
-            sb = deepcopy(s1)
-            delete!(sb.metadata, "γ")
-            sb.metadata["dt"] = bad
-            @test_throws ArgumentError simulate(pb; starting_conditions=sb, camera=cam32)
-        end
-        # #36 should-fix 3: photons varying in time within a track and zero-photon records (the latest record's
-        # photons carry the rate), a capped exposure, and a seeded same-dt continuation without the saved γ
         recs = [DiffusingEmitter2D{Float64}(e.x, e.y, e.track_id == 3 && e.frame == s1.n_frames ? 0.0 : e.photons * e.frame,
                                             e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id) for e in s1.emitters]
         sv = BasicSMLD(recs, s1.camera, s1.n_frames, 1, Dict{String,Any}("dt" => 0.01))
         latest = Dict(e.track_id => e.photons for e in extract_end_state(sv).emitters)
         @test latest[3] == 0.0 && latest[1] == 100.0 * s1.n_frames
         svc, _ = simulate(pb; starting_conditions=sv, camera=cam32)
-        @test all(e -> e.photons == latest[e.track_id] * (0.005 / 0.01), svc.emitters)
+        @test all(e -> e.photons == latest[e.track_id], svc.emitters)
         pcap(dt) = static_params(dt=dt, exposure=0.02, diff_monomer=0.5)
         Random.seed!(46)
         sk, _ = simulate(pcap(0.005); γ=1e4, override_count=3, camera=cam32)
@@ -1195,5 +1209,395 @@ end
                                              dt=0.001, t_max=0.05, camera_framerate=100.0, camera_exposure=0.01);
                          γ=500.0, camera=cam32)
         @test all(e -> 0 <= e.x <= 0.08 && 0 <= e.y <= 0.08, st.emitters)
+    end
+
+    @testset "(m) main reviewer of #36" begin
+        pa = static_params(dt=0.01, diff_monomer=0.5)
+        pb = static_params(dt=0.001, diff_monomer=0.5)
+        # B2. default and photons= sources keep their photons per record at a new dt, as in 0.7.1, over two hops;
+        # the stored γ is the kept photons over the new dt
+        Random.seed!(41)
+        sd, _ = simulate(pa; override_count=3, camera=cam32)
+        sp, _ = @test_logs (:warn, r"photons is ignored") match_mode=:any simulate(
+            pa; photons=200.0, override_count=3, camera=cam32)
+        for (src, p, source) in ((sd, 1000.0, "default"), (sp, 200.0, "photons"))
+            @test src.metadata["rate_source"] == source
+            h1, _ = simulate(pb; starting_conditions=src, camera=cam32)
+            h2, _ = simulate(pa; starting_conditions=h1, camera=cam32)
+            for (h, q) in ((h1, pb), (h2, pa))
+                @test all(e -> e.photons == p, h.emitters)
+                @test h.metadata["γ"] == p / q.dt
+                @test h.metadata["rate_source"] == source
+            end
+        end
+        # a γ source keeps its rate at a new dt; an explicit γ on a continuation makes a γ source
+        Random.seed!(42)
+        sg, _ = simulate(pa; γ=1e4, override_count=3, camera=cam32)
+        @test sg.metadata["rate_source"] == "γ"
+        hg, _ = simulate(pb; starting_conditions=sg, camera=cam32)
+        @test all(e -> e.photons == 1e4 * pb.dt, hg.emitters)
+        @test hg.metadata["γ"] == 1e4 && hg.metadata["rate_source"] == "γ"
+        hx, _ = simulate(pb; starting_conditions=sd, γ=2e4, camera=cam32)
+        @test all(e -> e.photons == 2e4 * pb.dt, hx.emitters)
+        @test hx.metadata["rate_source"] == "γ"
+
+        # B1. a run without a mixture stores no per-track D, so a changed diff_monomer applies at every hop
+        pm(D) = static_params(dt=1.25e-3, t_max=0.05, diff_monomer=D, r_react=1e-6)
+        Random.seed!(43)
+        r1, _ = simulate(pm(0.5); override_count=3, camera=cam32)
+        r2, _ = simulate(pm(0.5); starting_conditions=r1, camera=cam32)
+        @test isempty(r2.metadata["monomer_D"])
+        r3, _ = simulate(pm(0.0); starting_conditions=r2, camera=cam32)
+        @test all(id -> length(unique((e.x, e.y) for e in r3.emitters if e.track_id == id)) == 1, 1:3)
+        r4, _ = simulate(pm(0.5); starting_conditions=r3, camera=cam32)
+        @test all(id -> length(unique((e.x, e.y) for e in r4.emitters if e.track_id == id)) > 1, 1:3)
+
+        # a saved D that overrides a changed diff_monomer or mixture warns; the same config does not
+        pmix(mix; D=0.5) = static_params(dt=1.25e-3, t_max=0.02, diff_monomer=D, monomer_mobility=mix)
+        Random.seed!(44)
+        sm, _ = simulate(pmix([(0.5, 0.0), (0.5, 0.1)]); override_count=6, camera=cam32)
+        @test_logs simulate(pmix([(0.5, 0.0), (0.5, 0.1)]); starting_conditions=sm, camera=cam32)
+        @test_logs (:warn, r"saved D") match_mode=:any simulate(
+            pmix(Tuple{Float64,Float64}[]); starting_conditions=sm, camera=cam32)
+        @test_logs (:warn, r"saved D") match_mode=:any simulate(
+            pmix([(1.0, 0.2)]); starting_conditions=sm, camera=cam32)
+    end
+
+    @testset "(n) continuation rule" begin
+        # dev/outputs/continuation-rule.md: brightness, D and dt over mixed sources, partial D and two hops
+        restamp = SMLMSim.InteractionDiffusion.restamp
+        recs(s, id) = filter(e -> e.track_id == id, s.emitters)
+        moved(s, id) = length(unique((e.x, e.y) for e in recs(s, id))) > 1
+        cfg(; dt=0.005, D=0.3, mix=Tuple{Float64,Float64}[]) = static_params(dt=dt, t_max=0.02, box_size=5.0,
+            diff_monomer=D, monomer_mobility=mix, r_react=1e-6)
+        go(c; kw...) = simulate(c; override_count=4, camera=cam32, kw...)[1]
+        mixA = [(0.5, 0.0), (0.5, 0.2)]
+        Random.seed!(50)
+        # (γ keyword of the source run or nothing, its config, its output)
+        # two sources at dt 0.0025, so a concatenation's colliding ids resume the other run's records
+        srcs = [(1e4, cfg(), go(cfg(); γ=1e4)), (2e4, cfg(dt=0.0025, mix=mixA), go(cfg(dt=0.0025, mix=mixA); γ=2e4)),
+                (nothing, cfg(), go(cfg())), (nothing, cfg(dt=0.0025, mix=mixA), go(cfg(dt=0.0025, mix=mixA))),
+                (nothing, cfg(), @test_logs((:warn, r"deprecated"), match_mode=:any, go(cfg(); photons=300.0)))]
+        wrap(es, s) = BasicSMLD(es, s.camera, s.n_frames, 1, copy(s.metadata))
+        shift(es, k) = [DiffusingEmitter2D{Float64}(e.x, e.y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id + k,
+                                                    e.state, e.partner_id) for e in es]
+        # (name, input SMLD); the metadata is always the first run's
+        function inputs(a, b)
+            s = a[3]
+            last_f = s.n_frames
+            edited = [e.track_id == 1 && e.frame == last_f ? restamp(e; photons=2 * e.photons) : e for e in s.emitters]
+            return [("single", wrap(s.emitters, s)),
+                    ("filtered", wrap(filter(e -> e.track_id <= 2, s.emitters), s)),
+                    ("cut", wrap(filter(e -> e.frame < last_f, s.emitters), s)),
+                    ("edited", wrap(edited, s)),
+                    ("concat distinct", wrap(vcat(s.emitters, shift(b[3].emitters, 100)), s)),
+                    ("concat colliding", wrap(vcat(s.emitters, b[3].emitters), s))]
+        end
+        configs = [cfg(dt=0.0025, D=0.3), cfg(dt=0.0025, mix=[(0.5, 0.05), (0.5, 0.4)]),
+                   cfg(dt=0.0025, mix=[(0.9, 0.0), (0.1, 0.2)])]
+        fails = String[]
+        nrun = ntie = 0
+        for a in srcs, b in srcs, (name, X) in inputs(a, b), c in configs
+            name in ("single", "filtered", "cut", "edited") && b !== srcs[1] && continue
+            name == "concat distinct" && a === b && continue   # identical positions would dimerize
+            nrun += 1
+            γa, ca, sa = a
+            # resumed tracks and the photons of each one's latest record in the last frame
+            lastf = maximum(e -> e.frame, X.emitters)
+            R, ts = Dict{Int,Float64}(), Dict{Int,Float64}()
+            for e in X.emitters
+                e.frame == lastf || continue
+                (!haskey(ts, e.track_id) || e.timestamp > ts[e.track_id]) && (ts[e.track_id] = e.timestamp; R[e.track_id] = e.photons)
+            end
+            # two last-frame records of one track at one timestamp: unknown provenance
+            lastrecs = [(e.track_id, e.timestamp) for e in X.emitters if e.frame == lastf]
+            tie = length(unique(lastrecs)) < length(lastrecs)
+            restampγ = !tie && γa !== nothing && all(p -> p == γa * ca.dt, values(R))
+            savedA = sa.metadata["monomer_D"]
+            keep(t) = !tie && haskey(savedA, t)
+            source = restampγ ? "γ" : !tie && sa.metadata["rate_source"] == "default" ? "default" : "photons"
+            logs, s1 = Test.collect_test_logs(() -> simulate(c; starting_conditions=X, camera=cam32)[1])
+            warned(r) = any(l -> occursin(r, string(l.message)), logs)
+            _, s2 = Test.collect_test_logs(() -> simulate(cfg(dt=0.005, D=0.0); starting_conditions=s1, camera=cam32)[1])
+            tag = "$(name) γ=$(γa) mix=$(ca.monomer_mobility) -> $(c.monomer_mobility)"
+            md1, md2 = s1.metadata["monomer_D"], s2.metadata["monomer_D"]
+            # every resumed molecule, and only those, in both hops
+            Set(e.track_id for e in s1.emitters) == Set(e.track_id for e in s2.emitters) == Set(keys(R)) ||
+                push!(fails, "$tag: resumed tracks")
+            s1.metadata["rate_source"] == source || push!(fails, "$tag: rate_source")
+            for t in keys(R)
+                # brightness, hop 1 and hop 2
+                all(e -> e.photons == (restampγ ? γa * c.dt : R[t]), recs(s1, t)) || push!(fails, "$tag: brightness hop 1, track $t")
+                all(e -> e.photons == (restampγ ? γa * 0.005 : R[t]), recs(s2, t)) || push!(fails, "$tag: brightness hop 2, track $t")
+                # D, hop 1
+                if keep(t)
+                    get(md1, t, NaN) == savedA[t] || push!(fails, "$tag: saved D kept, track $t")
+                elseif isempty(c.monomer_mobility)
+                    (!haskey(md1, t) && moved(s1, t)) || push!(fails, "$tag: run-time diff_monomer, track $t")
+                else
+                    get(md1, t, NaN) in last.(c.monomer_mobility) || push!(fails, "$tag: fresh draw, track $t")
+                end
+                # D, hop 2 at diff_monomer = 0: a saved or drawn D is kept, a run-time one is never saved
+                if haskey(md1, t)
+                    get(md2, t, NaN) == md1[t] || push!(fails, "$tag: hop 2 keeps D, track $t")
+                else
+                    (!haskey(md2, t) && !moved(s2, t)) || push!(fails, "$tag: hop 2 run-time D, track $t")
+                end
+            end
+            warned(r"not every resumed molecule carries") == (!tie && γa !== nothing && !restampγ) || push!(fails, "$tag: brightness warning")
+            warned(r"same timestamp") == tie || push!(fails, "$tag: provenance warning")
+            ntie += tie
+            warned(r"differs from the source run's") == (any(keep, keys(R)) && c.monomer_mobility != ca.monomer_mobility) ||
+                push!(fails, "$tag: mixture warning")
+        end
+        @test nrun == 5 * 4 * 3 + (25 * 2 - 5) * 3
+        @test ntie >= 25 * 3   # every colliding concatenation of these sources ties at a frame-boundary timestamp
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 20))
+
+        # a non-String rate_source reads as "photons"; a γ source without a saved dt keeps its photons, with the warning
+        s = srcs[1][3]
+        X = wrap(s.emitters, s)
+        X.metadata["rate_source"] = :γ
+        sx = simulate(cfg(dt=0.0025); starting_conditions=X, camera=cam32)[1]
+        @test sx.metadata["rate_source"] == "photons" && all(e -> e.photons == 1e4 * 0.005, sx.emitters)
+        X = wrap(s.emitters, s)
+        delete!(X.metadata, "dt")
+        sx = @test_logs (:warn, r"not every resumed molecule carries") match_mode=:any simulate(cfg(dt=0.0025); starting_conditions=X, camera=cam32)[1]
+        @test all(e -> e.photons == 1e4 * 0.005, sx.emitters)
+        # guard (passes on 65e3f6f too): an SMLD converted to Float32 keeps its γ rate and its saved D, without a warning
+        Random.seed!(51)
+        s = go(cfg(mix=mixA); γ=1234.567)
+        f32 = [DiffusingEmitter2D{Float32}(e.x, e.y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state,
+                                           e.partner_id) for e in s.emitters]
+        X = wrap(f32, s)
+        @test all(e -> e.photons != 1234.567 * 0.005, X.emitters)
+        sx = @test_logs simulate(cfg(dt=0.0025, mix=mixA); starting_conditions=X, camera=cam32)[1]
+        @test all(e -> e.photons == Float32(1234.567 * 0.0025), sx.emitters)
+        @test sx.metadata["monomer_D"] == s.metadata["monomer_D"] && sx.metadata["rate_source"] == "γ"
+    end
+
+    @testset "(r) main reviewer of #36 on 65e3f6f..a0d0af5" begin
+        # dev/outputs/continuation-rule.md, the Provenance and D sentences (#37)
+        cfg(; dt=0.005, mix=[(0.5, 0.0), (0.5, 0.2)]) = static_params(dt=dt, t_max=0.02, box_size=5.0,
+            diff_monomer=0.3, monomer_mobility=mix, r_react=1e-6)
+        wrap(es, s) = BasicSMLD(es, s.camera, s.n_frames, 1, copy(s.metadata))
+        Random.seed!(60)
+        s, _ = simulate(cfg(); γ=1e4, override_count=4, camera=cam32)
+        # SHOULD-1: a run concatenated with itself (two last-frame records of a track at one timestamp) has unknown
+        # provenance: no γ, rate source, saved D or class, one warning; each molecule keeps its photons per record
+        X = wrap(vcat(s.emitters, s.emitters), s)
+        x = @test_logs (:warn, r"same timestamp") extract_end_state(X)
+        @test !any(k -> haskey(x.metadata, k), ("γ", "rate_source", "monomer_D", "monomer_class"))
+        @test length(x.emitters) == 4
+        sx = @test_logs (:warn, r"same timestamp") match_mode=:any simulate(cfg(dt=0.0025); starting_conditions=X, camera=cam32)[1]
+        @test sx.metadata["rate_source"] == "photons" && all(e -> e.photons == 1e4 * 0.005, sx.emitters)
+        # NOTE: a time-cut subset of one run keeps each track's saved D, without a warning
+        cut = wrap(filter(e -> e.frame < s.n_frames, s.emitters), s)
+        sc = @test_logs simulate(cfg(); starting_conditions=cut, camera=cam32)[1]
+        @test sc.metadata["monomer_D"] == s.metadata["monomer_D"]
+        # NOTE: the mixture warning's advice names γ, which the Vector path needs to keep a γ rate
+        @test_logs (:warn, r"and γ, to keep a γ rate") match_mode=:any simulate(cfg(mix=[(1.0, 0.1)]); starting_conditions=s, camera=cam32)
+        # NIT: the extract's metadata holds copies; editing it leaves the source unchanged
+        x = extract_end_state(s)
+        id = first(keys(s.metadata["monomer_D"]))
+        D0, cl0, mix0 = s.metadata["monomer_D"][id], s.metadata["monomer_class"][id], copy(s.metadata["monomer_mobility"])
+        x.metadata["monomer_D"][id] = -1.0
+        x.metadata["monomer_class"][id] = 99
+        push!(x.metadata["monomer_mobility"], (0.0, 9.9))
+        @test s.metadata["monomer_D"][id] == D0 && s.metadata["monomer_class"][id] == cl0 && s.metadata["monomer_mobility"] == mix0
+        # ... simulation_parameters included
+        D1 = s.metadata["simulation_parameters"].diff_monomer
+        x.metadata["simulation_parameters"].diff_monomer = 9.0
+        @test s.metadata["simulation_parameters"].diff_monomer == D1
+        # Claude reviewer's HOLD on c7770fc: SMLMData's cat_smld and merge_smld keys mean unknown provenance, without a
+        # tie (B runs a frame longer, so its records alone make the last frame, at A's rate and with A's track ids)
+        Random.seed!(61)
+        sb, _ = simulate(cfg(); γ=1e4, override_count=4, camera=cam32)
+        Random.seed!(62)
+        sl, _ = simulate(static_params(dt=0.005, t_max=0.03, box_size=5.0, diff_monomer=0.3, monomer_mobility=[(0.5, 0.0), (0.5, 0.2)],
+                                       r_react=1e-6); γ=1e4, override_count=4, camera=cam32)
+        for C in (SMLMSim.SMLMData.cat_smld([sb, sl]), SMLMSim.SMLMData.merge_smld([sb, sl]))
+            x = @test_logs (:warn, r"provenance unknown") extract_end_state(C)
+            @test !any(k -> haskey(x.metadata, k), ("γ", "rate_source", "monomer_D", "monomer_class"))
+            sx = @test_logs (:warn, r"provenance unknown") match_mode=:any simulate(cfg(dt=0.0025); starting_conditions=C, camera=cam32)[1]
+            @test sx.metadata["rate_source"] == "photons" && all(e -> e.photons == 1e4 * 0.005, sx.emitters)
+        end
+    end
+
+    @testset "(q) placement rule" begin
+        # dev/outputs/placement-rule.md, #37: an anchored pair, and a mobile pair in a reflecting box, at formation
+        # and while bound; random anchors near walls and corners, 2D and 3D, Float32 and Float64, boxes 0.8 d to 100
+        ID = SMLMSim.InteractionDiffusion
+        top(T, L) = T(L) <= L ? T(L) : prevfloat(T(L))
+        pos(e) = e isa DiffusingEmitter3D ? (Float64(e.x), Float64(e.y), Float64(e.z)) : (Float64(e.x), Float64(e.y))
+        mk(T, p, id, st, pid) = length(p) == 3 ? DiffusingEmitter3D{T}(p[1], p[2], p[3], 100.0, 0.0, 1, 1, id, st, pid) :
+                                                 DiffusingEmitter2D{T}(p[1], p[2], 100.0, 0.0, 1, 1, id, st, pid)
+        mi(x, L) = x - L * round(x / L)
+        unit(v) = (n = sqrt(sum(abs2, v)); n > 0 ? v ./ n : ntuple(k -> k == 1 ? 1.0 : 0.0, length(v)))
+        rng = Random.Xoshiro(20260929)
+        near(T, L) = (r = rand(rng); x = r < 1/3 ? 0.05L * rand(rng) : r < 2/3 ? L - 0.05L * rand(rng) : L * rand(rng);
+                      clamp(T(x), zero(T), top(T, L)))
+        inside(p, T, L) = all(c -> 0 <= c <= L, p)
+        fails = String[]
+        counts = Dict{Symbol,Int}()
+        tally(k) = (counts[k] = get(counts, k, 0) + 1)
+        for trial in 1:6000
+            T = rand(rng, (Float32, Float64)); N = rand(rng, (2, 3)); refl = rand(rng, Bool)
+            d = rand(rng, (0.05, 0.3, 0.8)); L = 0.8d * (100 / 0.8d)^rand(rng)
+            rr = rand(rng, (0.5, 2.0)) * d
+            tol = 4 * sqrt(N) * eps(T) * max(1.0, L)
+            prm = DiffusionSMLMConfig(ndims=N, box_size=L, boundary=refl ? "reflecting" : "periodic", d_dimer=d,
+                                      r_react=rr, diff_monomer=0.3, diff_dimer=0.1, diff_dimer_rot=0.5, k_off=0.0,
+                                      pair_mobility=:min)
+            tg = "trial $trial T=$T N=$N $(refl ? "refl" : "per") d=$d L=$(round(L, sigdigits=4))"
+            a = ntuple(_ -> near(T, L), N)
+            v = unit(Tuple(randn(rng, N)))
+            ρ = 0.999 * rr * rand(rng)
+            b = ntuple(k -> clamp(T(a[k] + ρ * v[k]), zero(T), top(T, L)), N)
+            case = rand(rng, (:anchored, :both_immobile, :mobile, :bound))
+            if case in (:anchored, :both_immobile)
+                # the anchor keeps its position; the other is placed d from it along their axis, or keeps its own
+                ida, idb = case == :both_immobile ? (1, 2) : rand(rng, Bool) ? (1, 2) : (2, 1)
+                D = Dict(ida => 0.0, idb => case == :both_immobile ? 0.0 : 0.3)
+                es = [mk(T, a, ida, :monomer, nothing), mk(T, b, idb, :monomer, nothing)]
+                ida > idb && reverse!(es)
+                out = Dict(e.track_id => e for e in ID.update_system(es, prm, 0.001; track_D=D))
+                A, B = out[ida], out[idb]
+                A.state == B.state == :dimer && A.partner_id == idb && B.partner_id == ida || push!(fails, "$tg: states")
+                pos(A) == Float64.(a) || push!(fails, "$tg: anchor moved")
+                q = pos(B)
+                inside(q, T, L) || push!(fails, "$tg: outside $q")
+                u = unit(Float64.(b) .- Float64.(a))
+                # the fit is decided against the physical box [0, L]
+                fits = refl ? all(k -> 0 <= a[k] + d * u[k] <= L || 0 <= a[k] - d * u[k] <= L, 1:N) :
+                              all(k -> d * abs(u[k]) <= L / 2, 1:N)
+                off = refl ? q .- Float64.(a) : mi.(q .- Float64.(a), L)
+                if fits
+                    tally(:anchored_fit)
+                    abs(sqrt(sum(abs2, off)) - d) <= tol || push!(fails, "$tg: bond $(sqrt(sum(abs2, off)))")
+                    all(k -> abs(abs(off[k]) - d * abs(u[k])) <= tol, 1:N) || push!(fails, "$tg: not along the axis")
+                else
+                    tally(:anchored_fallback)
+                    q == Float64.(b) || push!(fails, "$tg: fallback moved the partner")
+                    L < 2d || push!(fails, "$tg: fallback with box >= 2d")
+                end
+            elseif case == :mobile
+                # two mobile partners form a pair; reflecting: whole inside, d apart, midpoint shifted just enough
+                es = [mk(T, a, 1, :monomer, nothing), mk(T, b, 2, :monomer, nothing)]
+                out = ID.update_system(es, prm, 0.001; track_D=Dict(1 => 0.3, 2 => 0.3))
+                p1, p2 = pos(out[1]), pos(out[2])
+                ref1, ref2 = ID.dimerize(es[1], es[2], d)
+                if !refl
+                    tally(:mobile_periodic)
+                    (p1, p2) == (pos(ref1), pos(ref2)) || push!(fails, "$tg: periodic formation changed from 0.7.1")
+                    continue
+                end
+                inside(p1, T, L) && inside(p2, T, L) || push!(fails, "$tg: mobile outside")
+                u = unit(Float64.(b) .- Float64.(a))
+                if all(k -> d * abs(u[k]) <= L, 1:N)
+                    tally(:mobile_fit)
+                    abs(sqrt(sum(abs2, p2 .- p1)) - d) <= tol || push!(fails, "$tg: mobile bond")
+                    mid = (Float64.(a) .+ Float64.(b)) ./ 2
+                    all(k -> abs((p1[k] + p2[k]) / 2 - clamp(mid[k], d / 2 * abs(u[k]), L - d / 2 * abs(u[k]))) <= tol, 1:N) ||
+                        push!(fails, "$tg: mobile midpoint")
+                else
+                    tally(:mobile_fallback)
+                    L < d || push!(fails, "$tg: mobile fallback with box >= d")
+                end
+            else
+                # a bound mobile pair near a wall moves as a rigid body in a reflecting box
+                refl || continue
+                c = ntuple(_ -> near(T, L), N)
+                w = unit(Tuple(randn(rng, N)))
+                q1 = ntuple(k -> T(c[k] - d / 2 * w[k]), N); q2 = ntuple(k -> T(c[k] + d / 2 * w[k]), N)
+                (inside(q1, T, L) && inside(q2, T, L)) || continue
+                es = [mk(T, q1, 1, :dimer, 2), mk(T, q2, 2, :dimer, 1)]
+                pb = DiffusionSMLMConfig(ndims=N, box_size=L, boundary="reflecting", d_dimer=d, r_react=rr, diff_monomer=0.3,
+                                         diff_dimer=0.5 * L^2, diff_dimer_rot=0.5, k_off=0.0)
+                Random.seed!(trial)
+                out = ID.update_system(es, pb, 0.001; track_D=Dict(1 => 0.3, 2 => 0.3))
+                p1, p2 = pos(out[1]), pos(out[2])
+                inside(p1, T, L) && inside(p2, T, L) || push!(fails, "$tg: bound outside")
+                # the proposed step (update_system draws the dissociation rand() first, then diffuse_dimer)
+                Random.seed!(trial); rand()
+                r1, r2 = pos.(ID.diffuse_dimer(es[1], es[2], pb.diff_dimer, pb.diff_dimer_rot, d, 0.001))
+                u = unit(r2 .- r1)
+                if inside(r1, T, L) && inside(r2, T, L)
+                    tally(:bound_inside)
+                    (p1, p2) == (r1, r2) || push!(fails, "$tg: bound pair inside moved")
+                elseif all(k -> d * abs(u[k]) <= L, 1:N)
+                    tally(:bound_fit)
+                    # the center folds into [h, L - h] per axis as often as it crosses (a triangle wave); orientation kept
+                    fold(x, lo, hi) = hi <= lo ? lo : (wd = hi - lo; y = mod(x - lo, 2wd); lo + (y <= wd ? y : 2wd - y))
+                    c = ntuple(k -> fold((r1[k] + r2[k]) / 2, d / 2 * abs(u[k]), L - d / 2 * abs(u[k])), N)
+                    btol = tol + 4 * sqrt(N) * eps(T) * d
+                    all(k -> abs(p1[k] - (c[k] - d / 2 * u[k])) <= btol && abs(p2[k] - (c[k] + d / 2 * u[k])) <= btol, 1:N) ||
+                        push!(fails, "$tg: bound center or orientation")
+                    abs(sqrt(sum(abs2, p2 .- p1)) - d) <= btol || push!(fails, "$tg: bound bond $(sqrt(sum(abs2, p2 .- p1)))")
+                else
+                    tally(:bound_fallback)
+                end
+            end
+        end
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 20))
+        @test all(k -> get(counts, k, 0) > 20, (:anchored_fit, :anchored_fallback, :mobile_fit, :mobile_periodic, :bound_fit,
+                                                 :bound_inside))
+
+        # the reviewer's corner and Codex's box narrower than 2 d_dimer
+        for (a, b) in (((0.01, 0.01), (0.005, 0.005)), ((0.01, 0.01, 0.01), (0.005, 0.005, 0.005)))
+            prm = DiffusionSMLMConfig(ndims=length(a), box_size=2.0, boundary="reflecting", d_dimer=0.04, r_react=0.01,
+                                      diff_monomer=0.3, k_off=0.0, pair_mobility=:min)
+            out = ID.update_system([mk(Float64, a, 1, :monomer, nothing), mk(Float64, b, 2, :monomer, nothing)], prm, 0.001;
+                                   track_D=Dict(1 => 0.0, 2 => 0.3))
+            @test pos(out[1]) == a && isapprox(sqrt(sum(abs2, pos(out[2]) .- a)), 0.04; rtol=1e-12)
+            @test all(c -> 0 <= c <= 2.0, pos(out[2]))
+        end
+        prm = DiffusionSMLMConfig(box_size=1.0, boundary="reflecting", d_dimer=0.8, r_react=0.05, diff_monomer=0.3,
+                                  k_off=0.0, pair_mobility=:min)
+        out = ID.update_system([mk(Float64, (0.4, 0.1), 1, :monomer, nothing), mk(Float64, (0.39, 0.1), 2, :monomer, nothing)],
+                               prm, 0.001; track_D=Dict(1 => 0.0, 2 => 0.3))
+        @test pos(out[1]) == (0.4, 0.1) && pos(out[2]) == (0.39, 0.1) && out[2].state == :dimer
+
+        # reviews of c7770fc. Codex B1: the fit is decided against [0, box], not the Float32 top of the box
+        for N in (2, 3), Ds in ((0.0, 0.3), (0.0, 0.0))
+            prm = DiffusionSMLMConfig(ndims=N, box_size=0.1, boundary="reflecting", d_dimer=0.05, r_react=0.02,
+                                      diff_monomer=0.3, k_off=0.0, pair_mobility=:min)
+            a = ntuple(k -> k == 1 ? prevfloat(0.05f0) : 0.05f0, N); b = ntuple(k -> k == 1 ? 0.04f0 : 0.05f0, N)
+            out = ID.update_system([mk(Float32, a, 1, :monomer, nothing), mk(Float32, b, 2, :monomer, nothing)], prm, 0.001;
+                                   track_D=Dict(1 => Ds[1], 2 => Ds[2]))
+            @test pos(out[1]) == Float64.(a) && all(c -> 0 <= c <= 0.1, pos(out[2]))
+            @test isapprox(sqrt(sum(abs2, pos(out[2]) .- Float64.(a))), 0.05; atol=1e-6)
+        end
+        # Codex B2: the bound center folds as often as it crosses: proposed ends (0.45, 1.25) in a unit box give (0.05, 0.85)
+        prm = DiffusionSMLMConfig(box_size=1.0, boundary="reflecting", d_dimer=0.8, r_react=0.05, diff_monomer=0.3, k_off=0.0)
+        q1, q2 = ID._move_pair(mk(Float64, (0.45, 0.5), 1, :dimer, 2), mk(Float64, (1.25, 0.5), 2, :dimer, 1), prm)
+        @test all(isapprox.(pos(q1), (0.05, 0.5); atol=1e-12)) && all(isapprox.(pos(q2), (0.85, 0.5); atol=1e-12))
+        # Claude: a bound pair straddling the periodic boundary moves by one step, not to the middle of the box
+        prm = DiffusionSMLMConfig(box_size=10.0, boundary="periodic", d_dimer=0.05, r_react=0.01, diff_monomer=0.3,
+                                  diff_dimer=0.01, diff_dimer_rot=0.5, k_off=0.0)
+        es = [mk(Float64, (9.99, 5.0), 1, :dimer, 2), mk(Float64, (0.04, 5.0), 2, :dimer, 1)]
+        out = Dict(e.track_id => e for e in ID.update_system(es, prm, 0.001))
+        for e in es
+            @test all(abs.(mi.(pos(out[e.track_id]) .- pos(e), 10.0)) .< 0.1) && all(c -> 0 <= c <= 10.0, pos(out[e.track_id]))
+        end
+        @test isapprox(sqrt(sum(abs2, mi.(pos(out[2]) .- pos(out[1]), 10.0))), 0.05; atol=1e-12)
+        # Claude: apply_boundary ends inside the box in Float32 (Float32(0.1) lies above 0.1)
+        for bnd in ("reflecting", "periodic"), p in ((0.1f0, 0.05f0), (0.1f0, 0.05f0, 0.1f0))
+            @test all(c -> 0 <= c <= 0.1, pos(ID.apply_boundary(mk(Float32, p, 1, :monomer, nothing), 0.1, bnd)))
+        end
+        # item 9: under :fixed, one warning per run when a bound pair has an immobile member, pointing to :min
+        cfgw(pm) = DiffusionSMLMConfig(density=50.0, box_size=1.0, diff_monomer=0.3, monomer_mobility=[(1.0, 0.0)],
+                                       diff_dimer=0.1, r_react=0.2, d_dimer=0.05, k_off=0.0, dt=0.001, t_max=0.02,
+                                       camera_framerate=100.0, camera_exposure=0.01, pair_mobility=pm)
+        function nwarn(pm)
+            Random.seed!(63)
+            logs, s = Test.collect_test_logs(() -> simulate(cfgw(pm); γ=1e3)[1])
+            return count(l -> occursin("use pair_mobility = :min", string(l.message)), logs), s
+        end
+        n, s = nwarn(:fixed)
+        @test n == 1 && any(e -> e.state == :dimer, s.emitters)
+        @test nwarn(:min)[1] == 0
     end
 end

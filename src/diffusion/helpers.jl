@@ -661,26 +661,107 @@ function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, dif
     return (d1, d2)
 end
 
-# The partner placed `d_dimer` from an anchor that keeps its position. In a reflecting box it is
-# mirrored across the anchor on each axis it would leave, so the bond length stays exact (reflecting
-# the point at the wall would shorten it); a box narrower than the bond falls back to
-# `apply_boundary`, which also wraps under periodic boundaries. Internal.
-function _place_in_box(e::DiffusingEmitter2D{T}, a::DiffusingEmitter2D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
-    if boundary == "reflecting"
-        fl(q, p) = 0 <= q <= box_size ? q : 2p - q
-        e = DiffusingEmitter2D{T}(fl(e.x, a.x), fl(e.y, a.y), e.photons, e.timestamp, e.frame, e.dataset,
-                                  e.track_id, e.state, e.partner_id)
-    end
-    return apply_boundary(e, box_size, boundary)
+# Rigid-pair placement (dev/outputs/placement-rule.md), shared by pair formation and bound motion.
+# Positions are computed in Float64 from the partners' coordinates and returned in the coordinate
+# type T, inside [0, _top(T, box)] on every axis. Internal.
+
+# The largest value of T that is <= box, and x converted to T and clamped into [0, that value]
+_top(::Type{T}, box::Float64) where {T<:AbstractFloat} = T(box) <= box ? T(box) : prevfloat(T(box))
+_inbox(::Type{T}, x::Float64, box::Float64) where {T<:AbstractFloat} = clamp(T(x), zero(T), _top(T, box))
+
+_coords(e::DiffusingEmitter2D) = (e.x, e.y)
+_coords(e::DiffusingEmitter3D) = (e.x, e.y, e.z)
+_pos(e::AbstractDiffusingEmitter) = Float64.(_coords(e))
+_at(e::DiffusingEmitter2D{T}, p::NTuple{2,T}) where {T} =
+    DiffusingEmitter2D{T}(p[1], p[2], e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id)
+_at(e::DiffusingEmitter3D{T}, p::NTuple{3,T}) where {T} =
+    DiffusingEmitter3D{T}(p[1], p[2], p[3], e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state,
+                          e.partner_id)
+_inside(e::AbstractDiffusingEmitter, box::Float64) = all(c -> 0 <= c <= box, _coords(e))
+
+# `e` at the minimum image of its offset from `ref` under periodic boundaries, so a pair's center and
+# axis are those of its bond, not of its wrapped coordinates; unchanged under reflecting boundaries
+function _near(e::AbstractDiffusingEmitter, ref::AbstractDiffusingEmitter, params::DiffusionSMLMConfig)
+    params.boundary == "periodic" || return e
+    L = params.box_size
+    return _at(e, map((c, r) -> typeof(c)(c - L * round((c - r) / L)), _coords(e), _coords(ref)))
 end
 
-function _place_in_box(e::DiffusingEmitter3D{T}, a::DiffusingEmitter3D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
-    if boundary == "reflecting"
-        fl(q, p) = 0 <= q <= box_size ? q : 2p - q
-        e = DiffusingEmitter3D{T}(fl(e.x, a.x), fl(e.y, a.y), fl(e.z, a.z), e.photons, e.timestamp, e.frame,
-                                  e.dataset, e.track_id, e.state, e.partner_id)
+# x folded into [lo, hi] as often as it crosses either end (a triangle wave); lo when hi <= lo
+function _fold(x::Float64, lo::Float64, hi::Float64)
+    hi <= lo && return lo
+    w = hi - lo
+    y = mod(x - lo, 2w)
+    return lo + (y <= w ? y : 2w - y)
+end
+
+# Unit vector from p to q; (1, 0, ...) when they coincide
+function _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N}
+    v = q .- p
+    n = sqrt(sum(abs2, v))
+    return n > 0 ? v ./ n : ntuple(k -> k == 1 ? 1.0 : 0.0, Val(N))
+end
+
+# The point `s` from the fixed point `a` along `u`. Reflecting: each axis that would leave the box
+# [0, box] is mirrored across `a`, and `ok` is false when some axis fits neither way. Periodic: wrapped,
+# and `ok` is false unless every s|u_k| <= box/2, so the offset is its own minimum image.
+function _place_from(a::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box::Float64, reflecting::Bool,
+                     ::Type{T}) where {N,T<:AbstractFloat}
+    fits(x) = 0 <= x <= box
+    ok = all(ntuple(k -> reflecting ? fits(a[k] + s * u[k]) || fits(a[k] - s * u[k]) : s * abs(u[k]) <= box / 2, Val(N)))
+    q = ntuple(Val(N)) do k
+        x = a[k] + s * u[k]
+        _inbox(T, reflecting ? (fits(x) ? x : a[k] - s * u[k]) : mod(x, box), box)
     end
-    return apply_boundary(e, box_size, boundary)
+    return ok, q
+end
+
+# Two points `s` apart along `u`, centered on `c`, in a reflecting box [0, box]: the center keeps
+# (s/2)|u_k| from each wall, clamped there when placing, or folded into that interval as often as it
+# crosses when moving (`reflect = true`); `ok` is false when some s|u_k| exceeds the box.
+function _place_centered(c::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box::Float64,
+                         ::Type{T}; reflect::Bool=false) where {N,T<:AbstractFloat}
+    h = ntuple(k -> (s / 2) * abs(u[k]), Val(N))
+    ok = all(ntuple(k -> 2h[k] <= box, Val(N)))
+    m = ntuple(k -> reflect ? _fold(c[k], h[k], box - h[k]) : clamp(c[k], h[k], box - h[k]), Val(N))
+    return ok, ntuple(k -> _inbox(T, m[k] - (s / 2) * u[k], box), Val(N)), ntuple(k -> _inbox(T, m[k] + (s / 2) * u[k], box), Val(N))
+end
+
+# A pair just formed from monomers `e1`, `e2` (`d1`, `d2` from `dimerize`), by the placement rule: an
+# anchored pair keeps the anchor and places the other partner `d_dimer` from it, or leaves it where it
+# was when that cannot fit; a mobile pair in a reflecting box with an end outside moves to its midpoint
+# shifted inward just enough (each end reflected on its own when it cannot fit); a mobile pair under
+# periodic boundaries is left as in 0.7.1. Internal.
+function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
+                     params::DiffusionSMLMConfig) where {E<:AbstractDiffusingEmitter}
+    T = typeof(d1.x)
+    box, reflecting = params.box_size, params.boundary == "reflecting"
+    if anchor !== nothing
+        fixed, mover = anchor == e1.track_id ? (e1, e2) : (e2, e1)
+        a = _pos(fixed)
+        ok, q = _place_from(a, _axis(a, _pos(mover)), params.d_dimer, box, reflecting, T)
+        p = ok ? q : _coords(mover)
+        return anchor == e1.track_id ? (d1, _at(d2, p)) : (_at(d1, p), d2)
+    end
+    (!reflecting || (_inside(d1, box) && _inside(d2, box))) && return d1, d2
+    p1, p2 = _pos(e1), _pos(e2)
+    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, T)
+    ok && return _at(d1, q1), _at(d2, q2)
+    return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
+end
+
+# A mobile pair after a bound step (`d1`, `d2` from `diffuse_dimer` of the partner's minimum image,
+# `_near`): in a reflecting box with an end outside, its center folds off the walls moved in by each
+# end's half-extent, keeping orientation and bond length (each end reflected on its own when it cannot
+# fit); under periodic boundaries each end is wrapped. Internal.
+function _move_pair(d1::E, d2::E, params::DiffusionSMLMConfig) where {E<:AbstractDiffusingEmitter}
+    box = params.box_size
+    params.boundary == "reflecting" || return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
+    _inside(d1, box) && _inside(d2, box) && return d1, d2
+    p1, p2 = _pos(d1), _pos(d2)
+    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, typeof(d1.x); reflect=true)
+    ok && return _at(d1, q1), _at(d2, q2)
+    return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
 end
 
 """
@@ -734,6 +815,9 @@ function apply_boundary(e::DiffusingEmitter2D{T}, box_size::Float64, boundary::S
         end
     end
     
+    # Inside [0, box_size] in T: a Float32 coordinate can round past the wall
+    new_x, new_y = _inbox(T, Float64(new_x), box_size), _inbox(T, Float64(new_y), box_size)
+
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y
         return DiffusingEmitter2D{T}(
@@ -793,6 +877,10 @@ function apply_boundary(e::DiffusingEmitter3D{T}, box_size::Float64, boundary::S
         end
     end
     
+    # Inside [0, box_size] in T: a Float32 coordinate can round past the wall
+    new_x, new_y, new_z = _inbox(T, Float64(new_x), box_size), _inbox(T, Float64(new_y), box_size),
+                          _inbox(T, Float64(new_z), box_size)
+
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y || new_z != e.z
         return DiffusingEmitter3D{T}(
@@ -821,9 +909,12 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 - `camera::AbstractCamera`: Camera model for imaging
 - `params::DiffusionSMLMConfig`: Simulation parameters, stored as `metadata["simulation_parameters"]`; its `dt`
   is also stored as `metadata["dt"]`, a snapshot that later edits of the mutable config do not change
-- `track_D::Dict{Int,Float64}`: Per-track monomer diffusion coefficients, stored as `metadata["monomer_D"]`
+- `track_D::Dict{Int,Float64}`: Per-track monomer diffusion coefficients, stored as `metadata["monomer_D"]`; the
+  config's mixture is stored as `metadata["monomer_mobility"]`, a copy that later edits of the config do not change
 - `track_class::Dict{Int,Int}`: Per-track mobility class (index into `monomer_mobility`), stored as `metadata["monomer_class"]`
 - `γ::Union{Nothing,Real}=nothing`: Emission rate, photons/s, stored as `metadata["γ"]`; no key when `nothing`
+- `rate_source::Union{Nothing,String}=nothing`: How the rate was set (`"γ"`, `"photons"` or `"default"`), stored as
+  `metadata["rate_source"]`; no key when `nothing`
 - `n_frames::Union{Nothing,Int}=nothing`: Frame count of the movie; the largest frame present when `nothing`
 
 # Returns
@@ -832,7 +923,8 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::DiffusionSMLMConfig;
                      track_D::Dict{Int,Float64}=Dict{Int,Float64}(),
                      track_class::Dict{Int,Int}=Dict{Int,Int}(),
-                     γ::Union{Nothing,Real}=nothing, n_frames::Union{Nothing,Int}=nothing)
+                     γ::Union{Nothing,Real}=nothing, rate_source::Union{Nothing,String}=nothing,
+                     n_frames::Union{Nothing,Int}=nothing)
     # Determine max frame number
     max_frame = n_frames !== nothing ? n_frames : isempty(emitters) ? 0 : maximum(e -> e.frame, emitters)
     
@@ -846,9 +938,11 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
         "n_substeps" => substeps_per_frame(params)[1],
         "monomer_D" => track_D,
         "monomer_class" => track_class,
+        "monomer_mobility" => copy(params.monomer_mobility),
         "pair_mobility" => params.pair_mobility
     )
     γ === nothing || (metadata["γ"] = γ)
+    rate_source === nothing || (metadata["rate_source"] = rate_source)
     
     # Create SMLD object
     return BasicSMLD(
