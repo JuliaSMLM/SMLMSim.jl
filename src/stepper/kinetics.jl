@@ -15,7 +15,7 @@ _capacity(n0::Integer) = n0 + ceil(Int, 10 * sqrt(n0)) + 64
 
 function _grow!(ps::PopState, cap::Int)
     for v in (ps.id, ps.x, ps.y, ps.z, ps.D, ps.γ, ps.m, ps.state, ps.clock, ps.budget,
-              ps.t_depart, ps.t_birth)
+              ps.t_depart, ps.t_birth, ps.lj)
         resize!(v, cap)
     end
     return ps
@@ -63,6 +63,7 @@ function _add_emitter!(w::SimWorld, ps::PopState, t_birth::Float64)
     ps.budget[i] = isfinite(p.budget) ? p.budget * randexp(rng) : Inf
     ps.t_depart[i] = isfinite(p.lifetime) ? t_birth + p.lifetime * randexp(rng) : Inf
     ps.t_birth[i] = t_birth
+    ps.lj[i] = p.brightness_jitter > 0 ? p.brightness_jitter * randn(rng) : 0.0
     return i
 end
 
@@ -73,7 +74,7 @@ function _remove!(ps::PopState, i::Int)
         ps.id[i] = ps.id[j]; ps.x[i] = ps.x[j]; ps.y[i] = ps.y[j]; ps.z[i] = ps.z[j]
         ps.D[i] = ps.D[j]; ps.γ[i] = ps.γ[j]; ps.m[i] = ps.m[j]; ps.state[i] = ps.state[j]
         ps.clock[i] = ps.clock[j]; ps.budget[i] = ps.budget[j]; ps.t_depart[i] = ps.t_depart[j]
-        ps.t_birth[i] = ps.t_birth[j]
+        ps.t_birth[i] = ps.t_birth[j]; ps.lj[i] = ps.lj[j]
     end
     ps.n = j - 1
     return nothing
@@ -126,7 +127,7 @@ end
 function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, τ0::Float64, excitation::E) where {E}
     rng = w.rng
     x, y, z = ps.x[i], ps.y[i], ps.z[i]
-    γi = ps.γ[i]
+    γi = ps.p.brightness_jitter > 0 ? ps.γ[i] * exp(ps.lj[i]) : ps.γ[i]
     bmean = ps.p.budget
     tdep = ps.t_depart[i]
     s = Int(ps.state[i])
@@ -263,6 +264,20 @@ function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::
             end
         end
         _move!(w, ps, h)
+        ps.p.brightness_jitter > 0 && _jitter!(w, ps, h)
+    end
+    return nothing
+end
+
+# Advance every emitter's log-brightness multiplier by h: the exact OU (AR(1)) step
+function _jitter!(w::SimWorld, ps::PopState, h::Float64)
+    s = ps.p.brightness_jitter
+    τ = ps.p.jitter_time
+    a = exp(-h / τ)
+    b = s * sqrt(-expm1(-2h / τ))
+    rng = w.rng
+    @inbounds for i in 1:ps.n
+        ps.lj[i] = a * ps.lj[i] + b * randn(rng)
     end
     return nothing
 end

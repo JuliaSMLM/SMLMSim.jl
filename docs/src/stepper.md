@@ -53,8 +53,10 @@ end
 
 `SMLMSim.layers(world)` returns the `signal`, `oof`, `structured` and `expected` maps of the last step
 without allocating. The excitation is a callable `(x, y, z, t) -> Float64` given as the fourth
-argument of `SMLMSim.step!`; [`UniformExcitation`](@ref) is the default and [`next_switch`](@ref)
-declares its discontinuities. `step!` and `layers` are public but not exported, because the
+argument of `SMLMSim.step!`; [`UniformExcitation`](@ref) is the default,
+[`EvanescentExcitation`](@ref) gives a TIRF falloff with height, and [`next_switch`](@ref)
+declares an excitation's discontinuities. A `Population`'s `brightness_jitter` adds frame-to-frame
+brightness fluctuation (an Ornstein-Uhlenbeck process in log brightness). `step!` and `layers` are public but not exported, because the
 names are generic (SciML and Agents.jl export a `step!`); write `SMLMSim.step!` and `SMLMSim.layers`.
 
 ## Background models
@@ -92,6 +94,7 @@ Population
 BackgroundModel
 SimWorld
 UniformExcitation
+EvanescentExcitation
 step!
 layers
 next_switch

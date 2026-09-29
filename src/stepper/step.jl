@@ -39,7 +39,7 @@ function _pop_state(rng::AbstractRNG, p::Population, px::Float64, box::NTuple{4,
                   isg ? nothing : _concrete_stamp(p.psf),
                   0, zeros(Int, cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(Int32, cap), zeros(UInt8, cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
-                  Inf)
+                  zeros(cap), Inf)
     return ps, n0, A
 end
 

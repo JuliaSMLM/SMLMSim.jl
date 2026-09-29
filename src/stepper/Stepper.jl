@@ -24,7 +24,7 @@ include("kinetics.jl")
 include("background.jl")
 include("step.jl")
 
-export Population, BackgroundModel, SimWorld, UniformExcitation
+export Population, BackgroundModel, SimWorld, UniformExcitation, EvanescentExcitation
 export next_switch, gen_background  # step! and layers are public, not exported (generic names)
 
 end # module

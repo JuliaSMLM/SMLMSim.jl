@@ -26,7 +26,7 @@ end
 
 """
     Population(; name, layer, density, lifetime, birth_rate, mobility, fluor,
-               brightness_sigma, budget, multiplicity, z, psf)
+               brightness_sigma, budget, multiplicity, z, psf, brightness_jitter, jitter_time)
 
 One kind of emitter in a [`SimWorld`](@ref): in-focus diffusers, immobile clusters,
 out-of-focus (OOF) emitters or haze. Built by keyword. Units are μm, s and photons; rates
@@ -48,6 +48,14 @@ are per second.
 - `z::Tuple{Float64,Float64} = (0.0, 0.0)`: emitter height ~ U(z[1], z[2]) μm from focus. The
   excitation function reads it.
 - `psf` (required): a `GaussianPSF` with fixed σ (μm) or a `StampTable` whose z range covers `z`.
+- `brightness_jitter::Float64 = 0.0`, `jitter_time::Float64 = 0.01` (s): frame-to-frame brightness
+  fluctuation. Emitter i emits at `γ_i exp(X_i(t))`, where `X_i` is an Ornstein-Uhlenbeck process with
+  mean 0, stationary sd `brightness_jitter` and correlation time `jitter_time`. It is drawn stationary at
+  birth and held over each sub-step, like motion and excitation. The median rate stays `γ_i`; the mean
+  rises by `exp(brightness_jitter^2/2)`. It scales emission only, not the CTMC rates, and the budget
+  is spent by emitted photons, so bleaching follows it. With `brightness_jitter = 0` nothing is drawn.
+  Real one-molecule movies show a within-track sd of log photons of 0.37-0.48 per 10 ms frame, against
+  0.24 without jitter (`PPIDetect/dev/output/t15/sim_vs_real.md`).
 
 # Conventions
 `z > 0` points into the sample. A far out-of-focus population uses `layer = :oof`, a blinking
@@ -73,9 +81,11 @@ struct Population
     multiplicity::Int
     z::Tuple{Float64,Float64}
     psf::Union{GaussianPSF{Float64},StampTable}
+    brightness_jitter::Float64
+    jitter_time::Float64
 
     function Population(name, layer, density, lifetime, birth_rate, mobility, fluor,
-                        brightness_sigma, budget, multiplicity, z, psf)
+                        brightness_sigma, budget, multiplicity, z, psf, brightness_jitter, jitter_time)
         layer in (:signal, :oof) || throw(ArgumentError("layer must be :signal or :oof, got :$layer"))
         density >= 0 || throw(ArgumentError("density must be >= 0"))
         lifetime > 0 || throw(ArgumentError("lifetime must be > 0"))
@@ -83,6 +93,9 @@ struct Population
         birth_rate >= 0 || throw(ArgumentError("birth_rate must be >= 0"))
         brightness_sigma >= 0 || throw(ArgumentError("brightness_sigma must be >= 0"))
         multiplicity >= 1 || throw(ArgumentError("multiplicity must be >= 1"))
+        (isfinite(brightness_jitter) && brightness_jitter >= 0) ||
+            throw(ArgumentError("brightness_jitter must be finite and >= 0"))
+        jitter_time > 0 || throw(ArgumentError("jitter_time must be > 0"))
         z[1] <= z[2] || throw(ArgumentError("z must satisfy z[1] <= z[2]"))
         isempty(mobility) && throw(ArgumentError("mobility must not be empty"))
         for (f, D) in mobility
@@ -110,7 +123,7 @@ struct Population
                 throw(ArgumentError("the StampTable's z range $zlo..$zhi does not cover z = $z"))
         end
         return new(name, layer, density, lifetime, birth_rate, mobility, fluor,
-                   brightness_sigma, budget, multiplicity, z, psf)
+                   brightness_sigma, budget, multiplicity, z, psf, brightness_jitter, jitter_time)
     end
 end
 
@@ -118,11 +131,13 @@ function Population(; name::Symbol=:emitters, layer::Symbol=:signal, density::Re
                     lifetime::Real=Inf,
                     birth_rate::Real=isfinite(lifetime) ? density / lifetime : 0.0,
                     mobility=[(1.0, 0.0)], fluor::GenericFluor, brightness_sigma::Real=0.0,
-                    budget::Real=Inf, multiplicity::Integer=1, z=(0.0, 0.0), psf)
+                    budget::Real=Inf, multiplicity::Integer=1, z=(0.0, 0.0), psf,
+                    brightness_jitter::Real=0.0, jitter_time::Real=0.01)
     mob = Tuple{Float64,Float64}[(Float64(f), Float64(D)) for (f, D) in mobility]
     return Population(name, layer, Float64(density), Float64(lifetime), Float64(birth_rate), mob, fluor,
                       Float64(brightness_sigma), Float64(budget), Int(multiplicity),
-                      (Float64(z[1]), Float64(z[2])), psf isa GaussianPSF ? GaussianPSF(Float64(psf.σ)) : psf)
+                      (Float64(z[1]), Float64(z[2])), psf isa GaussianPSF ? GaussianPSF(Float64(psf.σ)) : psf,
+                      Float64(brightness_jitter), Float64(jitter_time))
 end
 
 """
@@ -157,6 +172,32 @@ populations whose `fluor.γ` and `fluor.q` are calibrated at intensity 1.
 struct UniformExcitation end
 
 (::UniformExcitation)(x::Float64, y::Float64, z::Float64, t::Float64) = 1.0
+
+"""
+    EvanescentExcitation(; depth = 0.1, stray = 0.0)
+
+TIRF excitation: relative intensity `I(z) = stray + (1 - stray) exp(-max(z, 0)/depth)`, 1 at the
+glass. `z` is the emitter's height (the [`Population`](@ref) convention, z > 0 into the sample); the
+focal plane is at the glass, so z <= 0 gets 1. `depth` (μm, > 0) is the 1/e intensity depth, about
+0.08-0.3 μm; `stray` (in [0, 1]) is the fraction of the glass intensity that is propagating
+(scattered) light and reaches every height. It applies to every population, `:oof` included, so a
+population calibrated under [`UniformExcitation`](@ref) needs its γ rescaled. Like every excitation it
+scales emission and the state-1 exit rate.
+"""
+struct EvanescentExcitation
+    depth::Float64
+    stray::Float64
+    function EvanescentExcitation(depth::Real, stray::Real)
+        depth > 0 || throw(ArgumentError("depth must be > 0, got $depth"))
+        0 <= stray <= 1 || throw(ArgumentError("stray must be in [0, 1], got $stray"))
+        return new(Float64(depth), Float64(stray))
+    end
+end
+
+EvanescentExcitation(; depth::Real=0.1, stray::Real=0.0) = EvanescentExcitation(depth, stray)
+
+(e::EvanescentExcitation)(x::Float64, y::Float64, z::Float64, t::Float64) =
+    e.stray + (1 - e.stray) * exp(-max(z, 0.0) / e.depth)
 
 """
     next_switch(excitation, t) -> Float64
@@ -212,6 +253,7 @@ mutable struct PopState
     budget::Vector{Float64}
     t_depart::Vector{Float64}
     t_birth::Vector{Float64}
+    lj::Vector{Float64}                   # log-brightness multiplier X_i (brightness_jitter)
     t_next_birth::Float64
 end
 
