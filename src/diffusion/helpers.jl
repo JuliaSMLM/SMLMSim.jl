@@ -561,6 +561,28 @@ function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, dif
     return (d1, d2)
 end
 
+# The partner placed `d_dimer` from an anchor that keeps its position. In a reflecting box it is
+# mirrored across the anchor on each axis it would leave, so the bond length stays exact (reflecting
+# the point at the wall would shorten it); a box narrower than the bond falls back to
+# `apply_boundary`, which also wraps under periodic boundaries. Internal.
+function _place_in_box(e::DiffusingEmitter2D{T}, a::DiffusingEmitter2D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
+    if boundary == "reflecting"
+        fl(q, p) = 0 <= q <= box_size ? q : 2p - q
+        e = DiffusingEmitter2D{T}(fl(e.x, a.x), fl(e.y, a.y), e.photons, e.timestamp, e.frame, e.dataset,
+                                  e.track_id, e.state, e.partner_id)
+    end
+    return apply_boundary(e, box_size, boundary)
+end
+
+function _place_in_box(e::DiffusingEmitter3D{T}, a::DiffusingEmitter3D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
+    if boundary == "reflecting"
+        fl(q, p) = 0 <= q <= box_size ? q : 2p - q
+        e = DiffusingEmitter3D{T}(fl(e.x, a.x), fl(e.y, a.y), fl(e.z, a.z), e.photons, e.timestamp, e.frame,
+                                  e.dataset, e.track_id, e.state, e.partner_id)
+    end
+    return apply_boundary(e, box_size, boundary)
+end
+
 """
     apply_boundary(e::AbstractDiffusingEmitter, box_size::Float64, boundary::String)
 

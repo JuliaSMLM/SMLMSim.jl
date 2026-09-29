@@ -264,9 +264,11 @@ one row per (frame, track_id) present, sorted by (frame, track_id).
 - `t_form::Float64`: timestamp of the first record in the frame that is `:dimer` while the
   track's previous record (in time, across frames) was `:monomer`; `NaN` if none
 - `t_break::Float64`: the same for `:monomer` after `:dimer`
-- `mixed::Bool`: `true` when the row's `partner_id` is nonzero and the track and its partner have
-  different mobility classes in `smld.metadata["monomer_class"]` (the `monomer_mobility` component
-  each was drawn from); `false` when unbound or when `"monomer_class"` is absent
+- `mixed::Bool`: `true` when the row's `partner_id` is nonzero and exactly one of the track and its
+  partner is immobile (monomer D == 0), read from `smld.metadata["monomer_D"]`, or for an SMLD without
+  a track there from its `"monomer_class"` and the `monomer_mobility` of `"simulation_parameters"`;
+  `false` when unbound or when neither D is known. Two mobile partners with different D, or two
+  immobile ones, are not mixed.
 
 This is sub-step resolution. With exposure shorter than the frame period, a change that
 happens during the gap between exposures shows at the next frame's first record.
@@ -277,9 +279,17 @@ function frame_dimer_truth(smld::BasicSMLD)
         push!(get!(by_track, e.track_id, Int[]), i)
     end
 
+    Dsaved = get(smld.metadata, "monomer_D", nothing)
     class = get(smld.metadata, "monomer_class", nothing)
-    is_mixed(id, partner) = class !== nothing && partner != 0 && haskey(class, id) &&
-                            haskey(class, partner) && class[id] != class[partner]
+    cfg = get(smld.metadata, "simulation_parameters", nothing)
+    mix = cfg isa DiffusionSMLMConfig ? cfg.monomer_mobility : Tuple{Float64,Float64}[]
+    D_of(id) = Dsaved !== nothing && haskey(Dsaved, id) ? Float64(Dsaved[id]) :
+               class !== nothing && haskey(class, id) && 1 <= class[id] <= length(mix) ? mix[class[id]][2] : nothing
+    function is_mixed(id, partner)
+        partner == 0 && return false
+        D1, D2 = D_of(id), D_of(partner)
+        return D1 !== nothing && D2 !== nothing && ((D1 == 0) ⊻ (D2 == 0))
+    end
 
     rows = NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break, :mixed),
                       Tuple{Int,Int,Int,Float64,Float64,Float64,Bool}}[]
