@@ -319,7 +319,7 @@ end
         p = static_params(dt=1.25e-3, diff_monomer=0.5, t_max=0.05)
         smld, _ = simulate(p; γ=1e4, override_count=4, camera=cam32)
         n_sub = 8
-        fs = extract_final_state(smld)
+        fs = extract_end_state(smld)
         @test fs isa BasicSMLD
         @test length(fs.emitters) == 4
         @test sort([e.track_id for e in fs.emitters]) == 1:4
@@ -334,7 +334,7 @@ end
             @test (e.x, e.y) != (last_rec.x, last_rec.y)
         end
         # fallback without metadata: latest record per track, photons unchanged
-        fb = extract_final_state(BasicSMLD(smld.emitters, smld.camera, smld.n_frames, smld.n_datasets))
+        fb = extract_end_state(BasicSMLD(smld.emitters, smld.camera, smld.n_frames, smld.n_datasets))
         @test length(fb.emitters) == 4
         for e in fb.emitters
             recs = filter(r -> r.frame == smld.n_frames && r.track_id == e.track_id, smld.emitters)
@@ -343,7 +343,7 @@ end
             @test e.photons == latest.photons
         end
         # idempotent
-        @test extract_final_state(fs).emitters == fs.emitters
+        @test extract_end_state(fs).emitters == fs.emitters
         smld2, _ = simulate(p; starting_conditions=smld, camera=cam32)
         @test all(nrec(smld2, f) == 4 * 8 for f in 1:smld2.n_frames)
         @test all(e -> e.photons ≈ 12.5, smld2.emitters)
@@ -354,24 +354,117 @@ end
         smld3, _ = simulate(p; starting_conditions=fs.emitters, camera=cam32)
         @test all(e -> e.photons ≈ 1e4 * p.dt, smld3.emitters)
         @test fb.emitters[1].photons ≈ 12.5
-        @test_throws ArgumentError simulate(p; photons=100.0, override_count=1, camera=cam32)
+        @test_throws ArgumentError simulate(p; photons=100.0, γ=1e4, override_count=1, camera=cam32)
         @test_throws ArgumentError simulate(p; γ=-1.0, override_count=1, camera=cam32)
         @test_throws ArgumentError simulate(p; γ=NaN, override_count=1, camera=cam32)
-        @test_throws ArgumentError simulate(p; starting_conditions=[fs.emitters[1], fs.emitters[1]], camera=cam32)
+        # repeated track_id in a Vector: latest record per track, with a warning
+        e1 = fs.emitters[1]
+        older = DiffusingEmitter2D{Float64}(e1.x + 0.1, e1.y, e1.photons, e1.timestamp - 0.01, 1, 1, e1.track_id, :monomer, nothing)
+        smldd = @test_logs (:warn, r"deduplicated to the latest record per track") match_mode=:any simulate(
+            p; starting_conditions=[older, e1, fs.emitters[2]], override_count=1, camera=cam32)[1]
+        @test length(unique(e.track_id for e in smldd.emitters)) == 2
+        @test all(nrec(smldd, f) == 2 * 8 for f in 1:smldd.n_frames)
         # a Vector cannot carry D
         pm = static_params(dt=1.25e-3, t_max=0.02, monomer_mobility=[(0.5, 0.0), (0.5, 0.2)])
         @test_logs (:warn, r"fresh monomer_mobility") simulate(pm; starting_conditions=fs.emitters, camera=cam32)
-        # orphan dimer
-        orphan = [DiffusingEmitter2D{Float64}(1.0, 1.0, 100.0, 0.0, 1, 1, 1, :dimer, 2)]
-        @test_throws ArgumentError simulate(p; starting_conditions=orphan, camera=cam32)
-        # shorter than one frame
-        @test_throws ArgumentError simulate(static_params(dt=1e-3, t_max=0.005); override_count=1, camera=cam32)
+        # orphan and asymmetric dimers become monomers, with a warning
+        orphan = [DiffusingEmitter2D{Float64}(1.0, 1.0, 100.0, 0.0, 1, 1, 1, :dimer, 2),
+                  DiffusingEmitter2D{Float64}(1.5, 1.0, 100.0, 0.0, 1, 1, 3, :dimer, 4),
+                  DiffusingEmitter2D{Float64}(1.53, 1.0, 100.0, 0.0, 1, 1, 4, :monomer, nothing)]
+        smldo = @test_logs (:warn, r"without a matching dimer partner") match_mode=:any simulate(
+            static_params(dt=1.25e-3, k_off=0.0, r_react=1e-6, t_max=0.02);
+            starting_conditions=orphan, camera=cam32)[1]
+        @test all(nrec(smldo, f) == 3 * 8 for f in 1:smldo.n_frames)
+        @test all(e -> e.state == :monomer && e.partner_id === nothing, smldo.emitters)
+        # shorter than one frame: one frame, with a warning
+        smlds = @test_logs (:warn, r"shorter than one frame period") match_mode=:any simulate(
+            static_params(dt=1e-3, t_max=0.005); override_count=1, camera=cam32)[1]
+        @test smlds.n_frames == 1 && nrec(smlds, 1) == 10
     end
 
-    @testset "(e) validation" begin
-        @test_throws ArgumentError simulate(static_params(dt=0.003); override_count=1, camera=cam32)
-        @test_throws ArgumentError simulate(static_params(dt=0.003, exposure=0.009); override_count=1, camera=cam32)
-        @test_throws ArgumentError simulate(static_params(dt=1e-3, exposure=0.02); override_count=1, camera=cam32)
+    @testset "(e) timing warnings" begin
+        # exposure 4.4 ms with dt = 1 ms: round(4.4) = 4 sub-steps (effective exposure 4 ms)
+        smld = @test_logs (:warn, r"camera_exposure=0.0044 is not an integer multiple") match_mode=:any simulate(
+            static_params(dt=1e-3, exposure=0.0044); override_count=1, camera=cam32)[1]
+        @test smld.n_frames == 10 && all(nrec(smld, f) == 4 for f in 1:smld.n_frames)
+        # frame period 10 ms is not a multiple of 3 ms: 3 steps per frame; exposure 9 ms -> 3 sub-steps
+        smld = @test_logs (:warn, r"frame period.*not an integer multiple") match_mode=:any simulate(
+            static_params(dt=0.003, exposure=0.009); override_count=1, camera=cam32)[1]
+        @test all(nrec(smld, f) == 3 for f in 1:smld.n_frames)
+        # exposure longer than the frame period is capped at the frame period
+        smld = @test_logs (:warn, r"capping the exposure at the frame period") match_mode=:any simulate(
+            static_params(dt=1e-3, exposure=0.02); override_count=1, camera=cam32)[1]
+        @test all(nrec(smld, f) == 10 for f in 1:smld.n_frames)
+    end
+
+    @testset "(h) photons deprecation and defaults" begin
+        p = static_params(dt=1.25e-3, diff_monomer=0.3, t_max=0.05)
+        cam = cam32
+        Random.seed!(11)
+        sp, _ = @test_logs (:warn, r"photons keyword is deprecated") match_mode=:any simulate(
+            p; photons=100.0, override_count=3, camera=cam)
+        @test all(e -> e.photons == 100.0, sp.emitters)
+        @test sp.metadata["γ"] ≈ 100.0 / p.dt
+        Random.seed!(11)
+        sg, _ = simulate(p; γ=100.0 / p.dt, override_count=3, camera=cam)
+        @test [e.photons for e in sg.emitters] ≈ [e.photons for e in sp.emitters]
+        @test [(e.x, e.y, e.track_id) for e in sg.emitters] == [(e.x, e.y, e.track_id) for e in sp.emitters]
+        # no keyword: 1000 photons per record, as in 0.7
+        sd, _ = simulate(p; override_count=3, camera=cam)
+        @test all(e -> e.photons == 1000.0, sd.emitters)
+        @test sd.metadata["γ"] ≈ 1000.0 / p.dt
+        # both keywords
+        @test_throws ArgumentError simulate(p; photons=100.0, γ=1e4, override_count=1, camera=cam)
+        # Vector starting conditions keep their own photons, also with the deprecated photons keyword
+        st = [DiffusingEmitter2D{Float64}(1.0, 1.0, 77.0, 0.0, 1, 1, 1, :monomer, nothing)]
+        sv, _ = simulate(p; starting_conditions=st, camera=cam)
+        @test all(e -> e.photons == 77.0, sv.emitters)
+        sv, _ = simulate(p; starting_conditions=st, photons=5.0, camera=cam)
+        @test all(e -> e.photons == 77.0, sv.emitters)
+        sv, _ = simulate(p; starting_conditions=st, γ=2e4, camera=cam)
+        @test all(e -> e.photons ≈ 2e4 * p.dt, sv.emitters)
+        # SMLD continuation keeps photons and γ
+        sc, _ = simulate(p; starting_conditions=sp, camera=cam)
+        @test all(e -> e.photons == 100.0, sc.emitters)
+        @test sc.metadata["γ"] ≈ 100.0 / p.dt
+    end
+
+    @testset "(i) initialize_emitters" begin
+        p = static_params(dt=1.25e-3)
+        em = @test_logs (:warn, r"positional photons argument is deprecated") match_mode=:any SMLMSim.InteractionDiffusion.initialize_emitters(p, 1000.0; override_count=3)
+        @test length(em) == 3 && all(e -> e.photons == 1000.0, em)
+        em = SMLMSim.InteractionDiffusion.initialize_emitters(p; γ=1e4, override_count=3)
+        @test all(e -> e.photons ≈ 1e4 * p.dt, em)
+        em = SMLMSim.InteractionDiffusion.initialize_emitters(p; override_count=2)
+        @test all(e -> e.photons == 1000.0, em)
+        @test_throws ArgumentError SMLMSim.InteractionDiffusion.initialize_emitters(p, 1000.0; γ=1e4)
+    end
+
+    @testset "(j) final-state functions" begin
+        p = static_params(dt=1.25e-3, diff_monomer=0.5, t_max=0.05)
+        Random.seed!(12)
+        smld, _ = simulate(p; γ=1e4, override_count=4, camera=cam32)
+        fv = @test_logs (:warn, r"extract_final_state is deprecated") match_mode=:any extract_final_state(smld)
+        @test fv isa Vector
+        @test [e.track_id for e in fv] == 1:4
+        for e in fv
+            recs = filter(r -> r.frame == smld.n_frames && r.track_id == e.track_id, smld.emitters)
+            latest = recs[argmax([r.timestamp for r in recs])]
+            @test e == latest
+        end
+        es = extract_end_state(smld)
+        @test es isa BasicSMLD && es.n_frames == 1
+        @test extract_end_state(es).emitters == es.emitters
+        @test es.metadata["γ"] == 1e4
+        # the Vector still works as starting_conditions
+        sv, _ = simulate(p; starting_conditions=fv, camera=cam32)
+        @test all(nrec(sv, f) == 4 * 8 for f in 1:sv.n_frames)
+        # continuation from the SMLD keeps D and γ
+        pm = static_params(dt=1.25e-3, t_max=0.02, monomer_mobility=[(0.5, 0.0), (0.5, 0.2)])
+        sm, _ = simulate(pm; γ=3e4, override_count=6, camera=cam32)
+        sm2, _ = simulate(pm; starting_conditions=sm, camera=cam32)
+        @test sm2.metadata["monomer_D"] == sm.metadata["monomer_D"]
+        @test sm2.metadata["γ"] == 3e4
     end
 
     @testset "(f) motion blur" begin

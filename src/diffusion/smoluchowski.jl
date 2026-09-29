@@ -13,9 +13,10 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `r_react::Float64`: reaction radius (μm)
 - `d_dimer::Float64`: monomer separation in dimer (μm)
 - `dt::Float64`: physics step (s); also sets the sub-steps per frame (motion blur):
-  camera_exposure and 1/camera_framerate must be integer multiples of dt
+  camera_exposure and 1/camera_framerate should be integer multiples of dt (otherwise
+  `simulate` rounds to the nearest step count and warns)
 - `t_max::Float64`: total simulation time (s); rounded down to whole frame periods
-  (`t_max` shorter than one frame period throws in `simulate`)
+  (`t_max` shorter than one frame period simulates one frame, with a warning)
 - `ndims::Int`: number of dimensions (2 or 3)
 - `boundary::String`: boundary condition type ("periodic" or "reflecting")
 - `camera_framerate::Float64`: camera frames per second (Hz)
@@ -29,7 +30,7 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
 `n_sub = camera_exposure/dt` records of a frame carries `γ·dt`, so a frame holds
-`γ·camera_exposure` photons.
+`γ·camera_exposure` photons. There is no field for γ; it is a keyword of `simulate`.
 
 # Examples
 ```julia
@@ -149,7 +150,7 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     end
 end
 
-# Positional construction without a mobility mixture (pre-0.8 signature)
+# Positional construction without a mobility mixture (the 0.7 signature)
 DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
                     k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
                     camera_framerate, camera_exposure) =
@@ -158,24 +159,27 @@ DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
                         camera_framerate, camera_exposure, Tuple{Float64,Float64}[])
 
 """
-    substeps_per_frame(params::DiffusionSMLMConfig) -> (n_sub, steps_per_frame)
+    substeps_per_frame(params::DiffusionSMLMConfig; warn=true) -> (n_sub, steps_per_frame)
 
 Number of physics steps `dt` inside one exposure (`n_sub`) and in one frame period
-(`steps_per_frame`). Internal. Throws `ArgumentError` unless `camera_exposure` and
-`1/camera_framerate` are integer multiples of `dt` and the exposure does not exceed
-the frame period.
+(`steps_per_frame`). Internal. Timing that is not an integer multiple of `dt` is rounded
+to the nearest step count, and an exposure longer than the frame period is capped at the
+frame period; each case warns (once) with the rule applied.
 """
-function substeps_per_frame(params::DiffusionSMLMConfig)
+function substeps_per_frame(params::DiffusionSMLMConfig; warn::Bool=true)
     r_sub = params.camera_exposure / params.dt
     r_frame = 1 / (params.camera_framerate * params.dt)
-    n_sub = round(Int, r_sub)
-    steps_per_frame = round(Int, r_frame)
-    if abs(r_sub - n_sub) > 1e-9 * max(1, r_sub) ||
-       abs(r_frame - steps_per_frame) > 1e-9 * max(1, r_frame) ||
-       n_sub < 1 || n_sub > steps_per_frame
-        throw(ArgumentError("dt=$(params.dt), camera_exposure=$(params.camera_exposure), " *
-            "camera_framerate=$(params.camera_framerate): camera_exposure and 1/camera_framerate " *
-            "must be integer multiples of dt (and exposure no longer than the frame period)"))
+    n_sub = max(1, round(Int, r_sub))
+    steps_per_frame = max(1, round(Int, r_frame))
+    if warn && abs(r_sub - n_sub) > 1e-9 * max(1, r_sub)
+        @warn "camera_exposure=$(params.camera_exposure) is not an integer multiple of dt=$(params.dt); using n_sub=$n_sub sub-steps per frame (effective exposure $(n_sub * params.dt) s)" maxlog=1
+    end
+    if warn && abs(r_frame - steps_per_frame) > 1e-9 * max(1, r_frame)
+        @warn "the frame period 1/camera_framerate=$(1 / params.camera_framerate) is not an integer multiple of dt=$(params.dt); using $steps_per_frame steps per frame (effective frame period $(steps_per_frame * params.dt) s)" maxlog=1
+    end
+    if n_sub > steps_per_frame
+        warn && @warn "camera_exposure=$(params.camera_exposure) is longer than the frame period 1/camera_framerate=$(1 / params.camera_framerate); capping the exposure at the frame period ($steps_per_frame sub-steps); use camera_exposure ≤ 1/camera_framerate" maxlog=1
+        n_sub = steps_per_frame
     end
     return n_sub, steps_per_frame
 end
@@ -198,20 +202,42 @@ function draw_monomer_D(params::DiffusionSMLMConfig)
 end
 
 """
-    initialize_emitters(params::DiffusionSMLMConfig, γ::Float64=1e4; override_count::Union{Nothing, Int}=nothing)
+    initialize_emitters(params::DiffusionSMLMConfig, photons::Union{Nothing,Real}=nothing;
+                        γ=nothing, override_count::Union{Nothing, Int}=nothing)
 
 Create initial emitter positions for the simulation.
 
 # Arguments
 - `params::DiffusionSMLMConfig`: Simulation parameters
-- `γ::Float64=1e4`: Emission rate, photons/s; each emitter starts with `γ·dt` photons
-  (the photons of one sub-step), so a frame holds γ·camera_exposure photons
+- `photons`: Deprecated (removed in 0.8.0). Photons per emitter record, as in 0.7.
+  Pass `γ` instead.
+
+# Keyword Arguments
+- `γ`: Emission rate, photons/s; each emitter carries `γ·dt` photons (the photons of one
+  sub-step), so a frame holds γ·camera_exposure photons. Passing both `photons` and `γ`
+  throws `ArgumentError`. With neither, each emitter carries 1000.0 photons.
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Vector of initialized emitters
 """
-function initialize_emitters(params::DiffusionSMLMConfig, γ::Float64=1e4; override_count::Union{Nothing, Int}=nothing)
+function initialize_emitters(params::DiffusionSMLMConfig, photons::Union{Nothing,Real}=nothing;
+                             γ::Union{Nothing,Real}=nothing, override_count::Union{Nothing, Int}=nothing)
+    photons !== nothing && γ !== nothing &&
+        throw(ArgumentError("pass γ or the deprecated positional photons, not both"))
+    if photons !== nothing
+        Base.depwarn("the positional photons argument is deprecated and will be removed in 0.8.0; pass the keyword γ (photons/s)", :initialize_emitters; force=true)
+        per_record = Float64(photons)
+    elseif γ !== nothing
+        per_record = Float64(γ) * params.dt
+    else
+        per_record = 1000.0
+    end
+    return build_emitters(params, per_record, override_count)
+end
+
+# Emitters at random positions, each carrying `photons` per record. Internal.
+function build_emitters(params::DiffusionSMLMConfig, photons::Float64, override_count::Union{Nothing, Int})
     # Calculate number of molecules
     n_molecules = if override_count !== nothing
         override_count
@@ -231,7 +257,7 @@ function initialize_emitters(params::DiffusionSMLMConfig, γ::Float64=1e4; overr
             # Create emitter with initial properties
             emitters[i] = DiffusingEmitter2D{Float64}(
                 x, y,                      # Position
-                γ * params.dt,                   # Photons (one sub-step)
+                photons,                   # Photons per record
                 0.0,                       # Initial timestamp
                 1,                         # Initial frame
                 1,                         # Dataset
@@ -252,7 +278,7 @@ function initialize_emitters(params::DiffusionSMLMConfig, γ::Float64=1e4; overr
             # Create emitter with initial properties
             emitters[i] = DiffusingEmitter3D{Float64}(
                 x, y, z,                   # Position
-                γ * params.dt,                   # Photons (one sub-step)
+                photons,                   # Photons per record
                 0.0,                       # Initial timestamp
                 1,                         # Initial frame
                 1,                         # Dataset
@@ -387,8 +413,8 @@ restamp(e::DiffusingEmitter3D{T}; photons=e.photons, timestamp=e.timestamp, fram
     add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, n_sub)
 
 Record the current emitters as one sub-step record of camera frame `frame_num`.
-Live emitters carry `γ·dt` photons, so each record does too and the `n_sub` records of a
-frame sum to `γ·camera_exposure`.
+Each record carries the live emitter's photons (`γ·dt` for a rate `γ`), so the `n_sub`
+records of a frame sum to `γ·camera_exposure`. Internal.
 
 # Arguments
 - `camera_emitters::Vector{<:AbstractDiffusingEmitter}`: Collection of emitters for camera frames
@@ -412,6 +438,7 @@ end
     simulate(params::DiffusionSMLMConfig;
              starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
              γ::Union{Nothing, Real}=nothing,
+             photons::Union{Nothing, Real}=nothing,
              override_count::Union{Nothing, Int}=nothing,
              kwargs...)
 
@@ -422,19 +449,30 @@ with emitters that have both frame number and timestamp information.
 - `params::DiffusionSMLMConfig`: Simulation parameters
 
 # Keyword Arguments
-- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing`: Optional starting emitters
-  (an SMLD carries each track's D and exact end state forward; a Vector gets fresh D draws
-  and must have one record per track_id)
+- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing`: Optional starting emitters.
+  An SMLD resumes at its exact end state (`extract_end_state`) and carries each track's D and γ
+  forward. A Vector keeps each emitter's own `photons`, gets fresh D draws, and is deduplicated
+  to the latest record per track_id (with a warning) if track_ids repeat.
 - `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (finite, ≥ 0); each of the
   n_sub records in a frame carries γ·dt, so a frame holds γ·camera_exposure photons.
-  Default: the `"γ"` in the metadata of an SMLD `starting_conditions`, else `1e4`
-  (1000 photons per frame at the default 0.1 s exposure). Starting emitters are restamped
-  to γ·dt. The 0.7 `photons` keyword was removed and throws.
+  An explicit γ restamps starting emitters to γ·dt. Default for new emitters: 1000 photons
+  per record (γ = 1000/dt, 0.7's default; 0.8.0 will change the default to a fixed rate).
+  For an SMLD `starting_conditions` the default is the source's `"γ"`.
+- `photons::Union{Nothing, Real}=nothing`: deprecated, removed in 0.8.0. Photons per record,
+  as in 0.7; `photons = p` is `γ = p/dt` with identical output. Passing both `photons` and
+  `γ` throws `ArgumentError`.
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 - `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model (default: IdealCamera with 100nm pixels)
   - If `nothing`, creates IdealCamera with dimensions matching box_size
   - Can specify SCMOSCamera for realistic noise modeling
 - Any additional parameters are ignored (allows unified interface with other simulate methods)
+
+# Warnings
+Each warns once and then runs with the stated rule: `camera_exposure` or the frame period not an
+integer multiple of `dt` (rounded to the nearest step count), `camera_exposure` longer than the
+frame period (capped at the frame period), `t_max` under one frame period (one frame is
+simulated), Vector `starting_conditions` with repeated track_id (latest record per track),
+and dimers without a matching partner (converted to monomers).
 
 # Returns
 - `Tuple{BasicSMLD, SimInfo}`: (smld, info)
@@ -464,21 +502,36 @@ smld_continued, info = simulate(params; starting_conditions=smld)
 function simulate(params::DiffusionSMLMConfig;
                  starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
                  γ::Union{Nothing, Real}=nothing,
+                 photons::Union{Nothing, Real}=nothing,
                  override_count::Union{Nothing, Int}=nothing,
                  camera::Union{Nothing, AbstractCamera}=nothing,
                  kwargs...)
 
     start_time = time_ns()
 
-    haskey(kwargs, :photons) && throw(ArgumentError("simulate(::DiffusionSMLMConfig): the photons keyword was removed in 0.8; pass γ, the emission rate in photons/s (γ = photons per frame / camera_exposure; 0.7's brightness is γ = photons_old / dt)"))
+    photons !== nothing && γ !== nothing &&
+        throw(ArgumentError("pass γ or the deprecated photons, not both"))
     γ === nothing || (isfinite(γ) && γ >= 0) ||
         throw(ArgumentError("γ must be finite and >= 0 (photons/s), got $γ"))
+    if photons !== nothing
+        (isfinite(photons) && photons >= 0) ||
+            throw(ArgumentError("photons must be finite and >= 0, got $photons"))
+        Base.depwarn("the photons keyword is deprecated and will be removed in 0.8.0; pass γ, the emission rate in photons/s (γ = photons/dt gives identical output)", :simulate; force=true)
+    end
 
-    # Sub-steps per exposure and per frame period (validates dt against the camera timing)
+    # Photons per record for new emitters, and the rate stored in the metadata
+    record_photons = photons !== nothing ? Float64(photons) :
+                     γ !== nothing ? Float64(γ) * params.dt : 1000.0
+    γ_new = photons !== nothing ? Float64(photons) / params.dt :
+            γ !== nothing ? Float64(γ) : 1000.0 / params.dt
+
+    # Sub-steps per exposure and per frame (warns and rounds if dt does not divide the camera timing)
     n_sub, steps_per_frame = substeps_per_frame(params)
     n_frames = floor(Int, params.t_max * params.camera_framerate + 1e-9)
-    n_frames < 1 && throw(ArgumentError("t_max ($(params.t_max) s) is shorter than one frame period " *
-        "(1/camera_framerate = $(1 / params.camera_framerate) s); no frames to simulate"))
+    if n_frames < 1
+        @warn "t_max ($(params.t_max) s) is shorter than one frame period (1/camera_framerate = $(1 / params.camera_framerate) s); simulating one frame" maxlog=1
+        n_frames = 1
+    end
 
     # Create camera if not provided
     if camera === nothing
@@ -490,24 +543,31 @@ function simulate(params::DiffusionSMLMConfig;
     # Initialize emitters
     n_initial_emitters = 0
     prior_D = nothing
-    prior_γ = nothing
+    γ_val = γ_new
     if starting_conditions !== nothing
         # Extract emitters from starting_conditions
         if starting_conditions isa SMLD
             # Exact end state of the previous run, one emitter per track
-            start_smld = extract_final_state(starting_conditions)
+            start_smld = extract_end_state(starting_conditions)
             start_emitters = start_smld.emitters
             prior_D = get(start_smld.metadata, "monomer_D", nothing)
             prior_γ = get(start_smld.metadata, "γ", nothing)
+            (γ === nothing && photons === nothing && prior_γ !== nothing) && (γ_val = Float64(prior_γ))
         else
             # Already a vector of emitters
             start_emitters = starting_conditions
             ids = [e.track_id for e in start_emitters]
             if length(unique(ids)) != length(ids)
-                throw(ArgumentError("starting_conditions has repeated track_id values " *
-                    "(one record per molecule expected); pass the SMLD from simulate or extract_final_state(smld)"))
+                @warn "starting_conditions has repeated track_id values; deduplicated to the latest record per track; pass the SMLD or extract_end_state(smld)" maxlog=1
+                latest = Dict{Int,eltype(start_emitters)}()
+                for e in start_emitters
+                    if !haskey(latest, e.track_id) || e.timestamp > latest[e.track_id].timestamp
+                        latest[e.track_id] = e
+                    end
+                end
+                start_emitters = [latest[id] for id in sort!(collect(keys(latest)))]
             end
-            isempty(params.monomer_mobility) || @warn "Vector starting_conditions get fresh monomer_mobility draws; pass the SMLD from simulate (or extract_final_state(smld)) to keep each track's D" maxlog=1
+            isempty(params.monomer_mobility) || @warn "Vector starting_conditions get fresh monomer_mobility draws; pass the SMLD from simulate (or extract_end_state(smld)) to keep each track's D" maxlog=1
         end
 
         # Validate emitter types
@@ -519,27 +579,24 @@ function simulate(params::DiffusionSMLMConfig;
             error("Starting conditions must contain diffusing emitters")
         end
 
-        # Every dimer needs a dimer partner that points back to it
+        # Every dimer needs a dimer partner that points back to it; others become monomers
         by_id = Dict(e.track_id => e for e in start_emitters)
-        for e in start_emitters
-            e.state == :dimer || continue
+        orphan(e) = e.state == :dimer && begin
             partner = e.partner_id === nothing ? nothing : get(by_id, e.partner_id, nothing)
-            if partner === nothing || partner.state != :dimer || partner.partner_id != e.track_id
-                throw(ArgumentError("starting_conditions: dimer track $(e.track_id) has no matching dimer partner " *
-                    "(partner_id=$(e.partner_id))"))
-            end
+            partner === nothing || partner.state != :dimer || partner.partner_id != e.track_id
+        end
+        if any(orphan, start_emitters)
+            @warn "starting_conditions has dimers without a matching dimer partner; converted to monomers" maxlog=1
+            start_emitters = [orphan(e) ? restamp(e; state=:monomer, partner_id=nothing) : e for e in start_emitters]
         end
 
-        # Resolve γ (explicit, else the source SMLD's, else 1e4)
-        γ_val = Float64(γ === nothing ? (prior_γ === nothing ? 1e4 : prior_γ) : γ)
-
-        # Reset timestamps to start at 0.0 and frame to 1; brightness is restamped to γ·dt
-        emitters = [restamp(e; photons=γ_val * params.dt, timestamp=0.0, frame=1) for e in start_emitters]
+        # Reset timestamps to start at 0.0 and frame to 1; an explicit γ restamps the brightness
+        emitters = [restamp(e; photons=(γ === nothing ? e.photons : Float64(γ) * params.dt),
+                            timestamp=0.0, frame=1) for e in start_emitters]
         n_initial_emitters = length(emitters)
     else
         # Initialize emitters using the standard approach
-        γ_val = Float64(γ === nothing ? 1e4 : γ)
-        emitters = initialize_emitters(params, γ_val; override_count=override_count)
+        emitters = build_emitters(params, record_photons, override_count)
         n_initial_emitters = length(emitters)
     end
 
@@ -595,7 +652,7 @@ Convert regular emitters to diffusing emitters for use as starting conditions.
 
 # Arguments
 - `emitters::Vector{<:AbstractEmitter}`: Vector of static emitters to convert
-- `photons::Float64=1000.0`: Number of photons to assign (`simulate` replaces `photons` with γ·dt)
+- `photons::Float64=1000.0`: Number of photons to assign (kept as given by `simulate` unless `γ` is passed)
 - `state::Symbol=:monomer`: Initial state (:monomer or :dimer)
 
 # Returns
@@ -651,10 +708,10 @@ function convert_to_diffusing_emitters(emitters::Vector{<:AbstractEmitter}, phot
 end
 
 """
-    extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
+    extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
 
-Reduce a diffusion simulation to its end state, for use as `starting_conditions`.
-Returns a `BasicSMLD` with one emitter per track, photons unchanged (γ·dt).
+Reduce a diffusion simulation to its exact end state, for use as `starting_conditions`.
+Returns a `BasicSMLD` with one emitter per track and photons unchanged.
 
 `simulate` stores the exact end state (the live emitters at the start of the frame after
 the last) in `smld.metadata["final_state"]`, and that is returned when present. Without it
@@ -676,10 +733,10 @@ smld, info = simulate(params)
 
 # Continue with new parameters
 params_new = DiffusionSMLMConfig(t_max=10.0, diff_monomer=0.2)
-smld_continued, info = simulate(params_new; starting_conditions=extract_final_state(smld))
+smld_continued, info = simulate(params_new; starting_conditions=extract_end_state(smld))
 ```
 """
-function extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
+function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
     final = get(smld.metadata, "final_state", nothing)
     if final !== nothing
         final_emitters = [restamp(e; frame=1) for e in final]
@@ -704,4 +761,26 @@ function extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusin
         haskey(smld.metadata, key) && (metadata[key] = smld.metadata[key])
     end
     return BasicSMLD(final_emitters, smld.camera, 1, smld.n_datasets, metadata)
+end
+
+"""
+    extract_final_state(smld::SMLD)
+
+Deprecated, removed in 0.8.0: use [`extract_end_state`](@ref), which returns the exact end
+state as an SMLD and carries each track's D.
+
+Returns a `Vector` with one emitter per track: the record with the largest timestamp in the
+last frame, photons unchanged, sorted by track_id.
+"""
+function extract_final_state(smld::SMLD)
+    Base.depwarn("extract_final_state is deprecated and will be removed in 0.8.0; use extract_end_state(smld), which returns the exact end state as an SMLD and carries each track's D", :extract_final_state; force=true)
+    max_frame = maximum(e -> e.frame, smld.emitters)
+    latest = Dict{Int,eltype(smld.emitters)}()
+    for e in smld.emitters
+        e.frame == max_frame || continue
+        if !haskey(latest, e.track_id) || e.timestamp > latest[e.track_id].timestamp
+            latest[e.track_id] = e
+        end
+    end
+    return [latest[id] for id in sort!(collect(keys(latest)))]
 end

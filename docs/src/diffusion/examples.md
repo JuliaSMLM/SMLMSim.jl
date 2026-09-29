@@ -41,7 +41,8 @@ params = DiffusionSMLMConfig(
 
 # Run simulation
 # γ = emission rate, photons/s; each of the n_sub = camera_exposure/dt records in a frame
-# carries γ·dt, so a frame holds γ·camera_exposure photons (1e4/s * 0.1 s = 1000)
+# carries γ·dt, so a frame holds γ·camera_exposure photons (1e4/s * 0.1 s = 1000);
+# without γ each record carries 1000 photons
 smld, info = simulate(params; γ=1e4)
 
 # Extract coordinates based on monomer/dimer state for a specific frame
@@ -166,7 +167,7 @@ The simulation already handles motion blur effects in a realistic way:
 
 - The `camera_exposure` parameter in the simulation determines how long each camera frame integrates photons
 - During the exposure window, n_sub = camera_exposure/dt emitter positions from the same track_id are captured, each carrying γ·dt (`γ` is the emission rate in photons/s, so a frame holds γ·camera_exposure photons)
-- `dt` sets the sub-steps per frame: camera_exposure and 1/camera_framerate must be integer multiples of dt
+- `dt` sets the sub-steps per frame: camera_exposure and 1/camera_framerate should be integer multiples of dt (otherwise `simulate` rounds and warns)
 - This naturally creates motion blur effects where fast-moving particles appear more blurred
 - The resulting images accurately represent what would be seen in real microscopy experiments
 

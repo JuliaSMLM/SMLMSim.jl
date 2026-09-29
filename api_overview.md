@@ -94,7 +94,7 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
 end
 ```
 
-camera_exposure and 1/camera_framerate must be integer multiples of dt. The `photons` passed to `simulate` is photons per emitter per frame (exposure); each of the n_sub = camera_exposure/dt records in a frame carries photons/n_sub.
+camera_exposure and 1/camera_framerate should be integer multiples of dt (otherwise `simulate` rounds to the nearest step count and warns). The `γ` passed to `simulate` is the emission rate in photons/s; each of the n_sub = camera_exposure/dt records in a frame carries γ·dt. The deprecated `photons` keyword (removed in 0.8.0) is photons per record, equal to `γ = photons/dt`; without either, records carry 1000 photons.
 
 ### Molecular Patterns
 
@@ -391,7 +391,8 @@ params_diff = DiffusionSMLMConfig()
 
 # Then run simulation - returns (smld, SimInfo)
 # γ = emission rate, photons/s; each of the n_sub records of a frame carries γ·dt,
-# so a frame holds γ·camera_exposure photons (1e4/s * 0.1 s = 1000)
+# so a frame holds γ·camera_exposure photons (1e4/s * 0.1 s = 1000).
+# Without γ each record carries 1000 photons (0.7's default).
 smld, info = simulate(
     params_diff;
     γ=1e4
@@ -543,7 +544,7 @@ lifetime = analyze_dimer_lifetime(smld)
 truth = frame_dimer_truth(smld)
 
 # Continue a run from its exact end state (each track keeps its D)
-smld2, info2 = simulate(params; starting_conditions=smld)
+smld2, info2 = simulate(params; starting_conditions=smld)  # resumes at extract_end_state(smld)
 
 # Track state changes over time
 state_history = track_state_changes(smld)

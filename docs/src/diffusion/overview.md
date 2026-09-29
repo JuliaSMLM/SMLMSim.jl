@@ -92,10 +92,16 @@ params = DiffusionSMLMConfig(
 ```
 
 `dt` is the physics step and also sets the sub-steps per frame (motion blur):
-`camera_exposure` and `1/camera_framerate` must be integer multiples of `dt`.
-The `γ` argument of `simulate` is the emission rate in photons/s (default `1e4`);
-each of the `n_sub = camera_exposure/dt` records in a frame carries `γ·dt`, so a frame
-holds `γ·camera_exposure` photons.
+`camera_exposure` and `1/camera_framerate` should be integer multiples of `dt`
+(otherwise `simulate` rounds to the nearest step count and warns).
+The `γ` argument of `simulate` is the emission rate in photons/s; each of the
+`n_sub = camera_exposure/dt` records in a frame carries `γ·dt`, so a frame holds
+`γ·camera_exposure` photons. Without `γ`, each record carries 1000 photons (γ = 1000/dt,
+0.7's default; 0.8.0 will change the default to a fixed rate). The `photons` keyword is
+deprecated (γ = photons/dt) and is removed in 0.8.0.
+
+To continue a run, pass `starting_conditions=smld` or `extract_end_state(smld)`; both resume
+at the exact end state and keep each track's D and γ. `extract_final_state` is deprecated.
 
 Monomers can be given a mixture of mobility populations with
 `monomer_mobility = [(0.85, 0.0), (0.05, 0.08), (0.10, 0.38)]` (entries are
