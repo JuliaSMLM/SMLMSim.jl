@@ -32,10 +32,13 @@ include("patterns.jl")
 include("ctmc.jl")
 include("photophysics.jl")
 include("track_utils.jl")
+include("excitation.jl")
 
 # Export abstract types
 export
     SMLMSimParams
+
+export EvanescentExcitation
 
 # Export molecule types
 export

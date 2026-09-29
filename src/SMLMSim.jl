@@ -63,7 +63,7 @@ include("interface.jl")
 using .Core: CTMC, get_state, get_next, intensity_trace, kinetic_model
 using .Core: Molecule, GenericFluor, Pattern, Pattern2D, Pattern3D
 using .Core: Nmer2D, Nmer3D, Line2D, Line3D, Nanoruler2D, Nanoruler3D, uniform2D, uniform3D, rotate!
-using .Core: SMLMSimParams
+using .Core: SMLMSimParams, EvanescentExcitation
 using .Core: get_track, get_num_tracks, get_tracks # Track utility functions
 using .Core: AbstractLabeling, FixedLabeling, PoissonLabeling, BinomialLabeling
 using .Core: n_fluorophores, apply_labeling
@@ -155,6 +155,9 @@ export
 
     # Concrete molecule types
     GenericFluor,
+
+    # Excitation (diffusion path; the stepper shares it)
+    EvanescentExcitation,
 
     # Static SMLM types
     StaticSMLMConfig,
