@@ -372,6 +372,8 @@ mutable struct PopState
     θ::Vector{Float64}                                # pair axis angle
     t_form::Vector{Float64}; t_break_due::Vector{Float64}   # -Inf if never bound
     t_bound::Vector{Float64}; t_break_f::Vector{Float64}    # frame accumulators
+    t_litb::Vector{Float64}                           # frame accumulator: time bound and emitting
+    vis_form::Vector{Bool}                            # both members emitting at the start of the forming sub-step
     t_next_birth::Float64
 end
 

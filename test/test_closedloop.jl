@@ -660,3 +660,92 @@ end
     end
     @test bad == 0
 end
+
+@testset "closedloop/visible_formation" begin
+    T, γ = 0.01, 1e4
+    dk = DimerKinetics(k_on=Inf, r_react=0.05, k_off=0.0, D_rot=0.0, d_dimer=0.02)
+    fl = two_state(γ, 1e-6, 1e-6)
+    function vis_world(xs, ys; pops=nothing, merge_radius=0.0, mult=(1, 1))
+        pops === nothing && (pops = [Population(name=:A, density=0.0, fluor=fl, psf=GaussianPSF(0.05)),
+                                     Population(name=:B, density=0.0, fluor=fl, multiplicity=mult[2], psf=GaussianPSF(0.05))])
+        w = SimWorld(StableRNG(7), cam32(), pops; n_sub=4, margin=0.0, dimers=dk, merge_radius)
+        for (k, ps) in enumerate(w.pops)
+            _add_emitter!(w, ps, 0.0)
+            place!(ps, xs[k:k], ys[k:k])
+            ps.state[1] = 1
+        end
+        return w
+    end
+    frame!(w, k) = (SMLMSim.step!(w, (k - 1) * T, k * T); byid(frame_truth(w)))
+    # (i) both emitting
+    w = vis_world([1.6, 1.63], [1.6, 1.6])
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    f = frame!(w, 1)
+    for r in (f[ia], f[ib])
+        @test r.t_form == 0.0
+        @test r.vis_form
+        @test isapprox(r.lit_bound, 1; atol=1e-12)
+        @test r.vis_bound
+    end
+    # (ii) B in state 2
+    w = vis_world([1.6, 1.63], [1.6, 1.6])
+    w.pops[2].state[1] = 2
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    f = frame!(w, 1)
+    @test !f[ia].vis_form && !f[ib].vis_form
+    @test f[ib].lit_bound == 0
+    @test !f[ia].vis_bound && !f[ib].vis_bound
+    @test isapprox(f[ia].lit_bound, 1; atol=1e-12)
+    # (iii) B bleaches at 0.015 s
+    w = vis_world([1.6, 1.63], [1.6, 1.6])
+    w.pops[2].budget[1] = γ * 0.015
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    f1 = frame!(w, 1)
+    f2 = frame!(w, 2)
+    @test isapprox(f2[ib].t_bleach, 0.015; atol=1e-12)
+    @test f2[ib].m == 0
+    f3 = frame!(w, 3)
+    @test f3[ib].m == 0 && f3[ib].lit_bound == 0
+    @test f3[ia].partner == ib && f3[ib].partner == ia
+    @test !f3[ia].vis_bound && !f3[ib].vis_bound
+    # (iv) dark formation: B bleaches before contact
+    w = vis_world([1.6, 2.1], [1.6, 1.6])
+    w.pops[2].budget[1] = γ * 0.005
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    f = frame!(w, 1)
+    @test isapprox(f[ib].t_bleach, 0.005; atol=1e-12) && f[ib].m == 0
+    @test all(isnan(r.t_form) for r in values(f))
+    w.pops[2].x[1] = 1.63; w.pops[2].y[1] = 1.6
+    f = frame!(w, 2)
+    for r in (f[ia], f[ib])
+        @test isapprox(r.t_form, 0.01; atol=1e-12)
+        @test !r.vis_form
+        @test !r.vis_bound
+    end
+    @test f[ia].partner == ib && f[ib].partner == ia
+    @test f[ib].lit_bound == 0 && f[ib].m == 0
+    @test isapprox(f[ia].lit_bound, 1; atol=1e-12)
+    f = frame!(w, 3)
+    for r in (f[ia], f[ib])
+        @test isnan(r.t_form) && !r.vis_form && !r.vis_bound
+    end
+    @test f[ia].partner == ib && f[ib].partner == ia
+    # (v) overlap
+    pops3 = [Population(name=:A, density=0.0, fluor=fl, psf=GaussianPSF(0.05)), Population(name=:B, density=0.0, fluor=fl, psf=GaussianPSF(0.05)),
+             Population(name=:C, density=0.0, fluor=fl, binds=false, psf=GaussianPSF(0.05))]
+    w = vis_world([1.6, 1.63], [1.6, 1.6]; pops=pops3[1:2], merge_radius=0.25)
+    f = frame!(w, 1)
+    @test all(!r.overlap for r in values(f))
+    w = vis_world([1.6, 1.63, 1.7], [1.6, 1.6, 1.6]; pops=pops3, merge_radius=0.25)
+    f = frame!(w, 1)
+    @test length(f) == 3 && all(r.overlap for r in values(f))
+    # (vi) unlabeled binder
+    w = vis_world([1.6, 1.63], [1.6, 1.6]; mult=(1, 0))
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    f = frame!(w, 1)
+    @test f[ia].t_form == 0.0 && f[ib].t_form == 0.0
+    @test !f[ia].vis_form && !f[ib].vis_form
+    @test f[ib].lit_bound == 0 && isnan(f[ib].t_bleach)
+    @test !f[ia].vis_bound && !f[ib].vis_bound
+    @test isapprox(f[ia].lit_bound, 1; atol=1e-12)
+end

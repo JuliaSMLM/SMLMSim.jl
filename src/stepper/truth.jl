@@ -39,8 +39,8 @@ function _write_row!(w::SimWorld, k::Int, ps::PopState, i::Int, departed::Bool)
                                     ps.t_lit[i] / T, tp > 0 ? ps.sI[i] / tp : NaN,
                                     tb >= w.t_a ? tb : NaN, ps.t_bleach_f[i],
                                     departed ? ps.t_depart[i] : NaN, pid, pid == 0 ? Int32(0) : ps.partner_pop[i],
-                                    ps.t_bound[i] / T, tf >= w.t_a ? tf : NaN, ps.t_break_f[i], 0.0,
-                                    false, false, false)
+                                    ps.t_bound[i] / T, tf >= w.t_a ? tf : NaN, ps.t_break_f[i], ps.t_litb[i] / T,
+                                    tf >= w.t_a && ps.vis_form[i], false, false)
     return nothing
 end
 
@@ -52,6 +52,7 @@ function _finish_truth!(w::SimWorld)
         end
     end
     w.merge_radius > 0 && _mark_overlaps!(w)
+    w.dimers === nothing || _mark_visible_pairs!(w)
     return nothing
 end
 
@@ -86,12 +87,31 @@ function _mark_overlaps!(w::SimWorld)
     end
     for a in 1:n
         flags[a] || continue
-        rows[a] = _with_overlap(rows[a])
+        rows[a] = _with_flag(rows[a], fieldcount(FrameTruth))
     end
     return nothing
 end
 
-@inline function _with_overlap(r::FrameTruth)
+@inline function _with_flag(r::FrameTruth, j::Int)
     N = fieldcount(FrameTruth)
-    return FrameTruth(ntuple(k -> k == N ? true : getfield(r, k), Val(N))...)
+    return FrameTruth(ntuple(k -> k == j ? true : getfield(r, k), Val(N))...)
+end
+
+# vis_bound: a row with a partner is visible as a pair when it and its partner's row of this frame both have
+# lit_bound > 0. Runs after all rows are written, O(B^2) over bound rows.
+function _mark_visible_pairs!(w::SimWorld)
+    n = w.n_truth
+    rows = w.truth
+    for a in 1:n
+        ra = rows[a]
+        (ra.partner != 0 && ra.lit_bound > 0) || continue
+        for b in 1:n
+            rb = rows[b]
+            if rb.id == ra.partner && rb.lit_bound > 0
+                rows[a] = _with_flag(ra, fieldcount(FrameTruth) - 1)
+                break
+            end
+        end
+    end
+    return nothing
 end

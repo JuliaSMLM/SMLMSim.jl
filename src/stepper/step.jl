@@ -42,7 +42,7 @@ function _pop_state(rng::AbstractRNG, p::Population, px::Float64, box::NTuple{4,
                   zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(Int32, cap), zeros(Int32, cap), zeros(Int, cap), zeros(cap), zeros(cap), zeros(cap),
-                  zeros(cap), zeros(cap), Inf)
+                  zeros(cap), zeros(cap), zeros(cap), zeros(Bool, cap), Inf)
     return ps, n0, A
 end
 

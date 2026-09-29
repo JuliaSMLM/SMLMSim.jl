@@ -13,14 +13,22 @@ end
 
 _capacity(n0::Integer) = n0 + ceil(Int, 10 * sqrt(n0)) + 64
 
-# Every per-emitter vector of a PopState: the one list that growth and swap-removal walk
-_vectors(ps::PopState) = (ps.id, ps.x, ps.y, ps.z, ps.D, ps.γ, ps.m, ps.state, ps.clock, ps.budget,
+# Every per-emitter vector of a PopState: the one list that growth and swap-removal walk. Kept as two
+# tuples because inference gives up on tuples longer than 32 elements and the loop would allocate.
+_vectors(ps::PopState) = ((ps.id, ps.x, ps.y, ps.z, ps.D, ps.γ, ps.m, ps.state, ps.clock, ps.budget,
                           ps.t_depart, ps.t_birth, ps.lj, ps.xr, ps.yr, ps.sx, ps.sy, ps.sxp, ps.syp,
-                          ps.sph, ps.t_present, ps.t_lit, ps.sI, ps.t_bleach_f, ps.partner, ps.partner_pop,
-                          ps.partner_id, ps.θ, ps.t_form, ps.t_break_due, ps.t_bound, ps.t_break_f)
+                          ps.sph, ps.t_present, ps.t_lit, ps.sI, ps.t_bleach_f, ps.partner, ps.partner_pop),
+                          (ps.partner_id, ps.θ, ps.t_form, ps.t_break_due, ps.t_bound, ps.t_break_f, ps.t_litb, ps.vis_form))
+
+@inline function _each_vector(f, ps::PopState)
+    a, b = _vectors(ps)
+    foreach(f, a)
+    foreach(f, b)
+    return nothing
+end
 
 function _grow!(ps::PopState, cap::Int)
-    foreach(v -> resize!(v, cap), _vectors(ps))
+    _each_vector(v -> resize!(v, cap), ps)
     return ps
 end
 
@@ -30,7 +38,7 @@ end
     ps.sx[i] = 0.0; ps.sy[i] = 0.0; ps.sxp[i] = 0.0; ps.syp[i] = 0.0
     ps.sph[i] = 0.0; ps.t_present[i] = 0.0; ps.t_lit[i] = 0.0; ps.sI[i] = 0.0
     ps.t_bleach_f[i] = NaN
-    ps.t_bound[i] = 0.0; ps.t_break_f[i] = NaN
+    ps.t_bound[i] = 0.0; ps.t_break_f[i] = NaN; ps.t_litb[i] = 0.0
     return nothing
 end
 
@@ -78,7 +86,7 @@ function _add_emitter!(w::SimWorld, ps::PopState, t_birth::Float64)
     ps.t_birth[i] = t_birth
     ps.lj[i] = p.brightness_jitter > 0 ? p.brightness_jitter * randn(rng) : 0.0
     ps.partner[i] = 0; ps.partner_pop[i] = 0; ps.partner_id[i] = 0
-    ps.θ[i] = 0.0; ps.t_form[i] = -Inf; ps.t_break_due[i] = -Inf
+    ps.θ[i] = 0.0; ps.t_form[i] = -Inf; ps.t_break_due[i] = -Inf; ps.vis_form[i] = false
     _reset_acc!(ps, i)
     return i
 end
@@ -89,7 +97,7 @@ function _remove!(w::SimWorld, ps::PopState, i::Int)
     pi = ps.partner[i]
     pi != 0 && (w.pops[ps.partner_pop[i]].partner[pi] = 0)
     j = ps.n
-    i != j && foreach(v -> (v[i] = v[j]), _vectors(ps))
+    i != j && _each_vector(v -> (v[i] = v[j]), ps)
     ps.n = j - 1
     if i != j && ps.partner[i] != 0
         w.pops[ps.partner_pop[i]].partner[ps.partner[i]] = i
@@ -158,6 +166,7 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
     sI = ps.sI[i]
     tbf = ps.t_bleach_f[i]
     tb = ps.t_bound[i]
+    tlb = ps.t_litb[i]
     tform = ps.t_form[i]
     tbrk = ps.t_break_due[i]
     dimers = w.dimers !== nothing
@@ -182,13 +191,13 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
         Δ = max(Δ0, 0.0)
         if Δ0 == tdp
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             alive = false
             departed = true
             break
         elseif Δ0 == tbl
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             τ += Δ
             clock -= λx * Δ
             m -= Int32(1)
@@ -200,14 +209,14 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
             end
         elseif Δ0 == tx
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             τ += Δ
             budget -= ρe * Δ
             s = Int(_exit_to(rng, ps, s))
             clock = randexp(rng)
         elseif Δ0 == tsw && Δ0 < trem
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
             clock -= λx * Δ
             τ = ts - t0
@@ -215,14 +224,14 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
             ts = _next_switch(excitation, ts)
         elseif Δ0 == tbk && Δ0 < trem
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
             clock -= λx * Δ
             τ += Δ
             phase += 1
         else
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
             clock -= λx * Δ
             break
@@ -234,6 +243,7 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
     ps.sI[i] = sI
     ps.t_bleach_f[i] = tbf
     ps.t_bound[i] = tb
+    ps.t_litb[i] = tlb
     if alive
         ps.state[i] = UInt8(s)
         ps.clock[i] = clock
