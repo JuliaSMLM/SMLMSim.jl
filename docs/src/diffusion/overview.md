@@ -91,6 +91,16 @@ params = DiffusionSMLMConfig(
 )
 ```
 
+`dt` is the physics step and also sets the sub-steps per frame (motion blur):
+`camera_exposure` and `1/camera_framerate` must be integer multiples of `dt`.
+The `photons` argument of `simulate` is photons per emitter per frame (exposure);
+each of the `n_sub = camera_exposure/dt` records in a frame carries `photons/n_sub`.
+
+Monomers can be given a mixture of mobility populations with
+`monomer_mobility = [(0.85, 0.0), (0.05, 0.08), (0.10, 0.38)]` (entries are
+`(fraction, D)`); the drawn coefficient per molecule is stored in
+`smld.metadata["monomer_D"]`. `frame_dimer_truth(smld)` returns per-frame, per-molecule
+dimer ground truth.
 
 
 ## Microscope Image Generation

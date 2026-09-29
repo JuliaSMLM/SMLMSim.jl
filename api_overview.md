@@ -84,14 +84,17 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     k_off::Float64 = 0.2            # dimer dissociation rate (s⁻¹)
     r_react::Float64 = 0.01         # reaction radius (μm)
     d_dimer::Float64 = 0.05         # monomer separation in dimer (μm)
-    dt::Float64 = 0.01              # time step (s)
+    dt::Float64 = 0.01              # physics step (s); also sets sub-steps per frame (motion blur)
     t_max::Float64 = 10.0           # total simulation time (s)
     ndims::Int = 2                  # number of dimensions (2 or 3)
     boundary::String = "periodic"   # boundary condition type ("periodic" or "reflecting")
     camera_framerate::Float64 = 10.0 # camera frames per second (Hz)
     camera_exposure::Float64 = 0.1   # camera exposure time per frame (s)
+    monomer_mobility::Vector{Tuple{Float64,Float64}} = []  # optional (fraction, D) mixture
 end
 ```
+
+camera_exposure and 1/camera_framerate must be integer multiples of dt. The `photons` passed to `simulate` is photons per emitter per frame (exposure); each of the n_sub = camera_exposure/dt records in a frame carries photons/n_sub.
 
 ### Molecular Patterns
 
@@ -387,6 +390,7 @@ smld_noisy, info = simulate(
 params_diff = DiffusionSMLMConfig()
 
 # Then run simulation - returns (smld, SimInfo)
+# photons = photons per emitter per frame (exposure), split over the n_sub records of a frame
 smld, info = simulate(
     params_diff;
     photons=1000.0
