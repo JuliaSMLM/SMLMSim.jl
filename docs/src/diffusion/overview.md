@@ -129,6 +129,7 @@ keeps its position when the pair forms, and the mobile partner is placed `d_dime
 reflecting box, mirrored across the immobile partner on each axis it would leave, so the bond keeps its
 length).
 On dissociation the partners are placed at least `r_react` apart along the pair axis (under `pair_mobility = :min` an immobile partner stays put; near a reflecting wall the placement stays inside the box, mirrored across an immobile partner on each axis it would leave, otherwise with the pair's midpoint shifted inward), so a pair does not re-form at the next step only because `d_dimer < r_react`; a mobile partner can still diffuse back and re-form (geminate re-encounter).
+The one exception to "an immobile partner stays put": when both partners are immobile, the one with the higher `track_id` is moved, because a pair closer than `r_react` must be separated to `r_react` and neither partner could otherwise ever move apart. A box with side at most `2·r_react` cannot hold the placement; the partners then stay where they are (the 0.7.2 behaviour, with a warning).
 
 
 ## Microscope Image Generation

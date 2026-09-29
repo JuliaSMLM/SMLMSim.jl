@@ -136,9 +136,6 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         if d_dimer <= 0
             throw(ArgumentError("Dimer separation must be positive"))
         end
-        if box_size <= 2 * r_react * (1 + UNBIND_MARGIN)
-            throw(ArgumentError("box_size ($box_size) must be greater than 2·r_react ($(2 * r_react)): dissociated partners are placed r_react apart"))
-        end
         if dt <= 0
             throw(ArgumentError("Time step must be positive"))
         end

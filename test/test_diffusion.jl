@@ -947,10 +947,6 @@ end
             @test count(k -> hypot(r1[k].x - r2[k].x, r1[k].y - r2[k].y) < r_react, k_break:length(r1)) == 0
         end
 
-        # Config check: the box must exceed 2 r_react
-        @test_throws ArgumentError DiffusionSMLMConfig(box_size=2 * 0.05, r_react=0.05)
-        @test_throws ArgumentError DiffusionSMLMConfig(box_size=2 * 0.05, r_react=0.05, boundary="reflecting")
-        @test DiffusionSMLMConfig(box_size=2 * 0.05 * (1 + 1e-6), r_react=0.05) isa DiffusionSMLMConfig
     end
 
     @testset "(l) Codex review of #36" begin
@@ -1151,5 +1147,53 @@ end
         Random.seed!(47); a, _ = simulate(pa; starting_conditions=s1, camera=cam32)
         Random.seed!(47); b, _ = simulate(pa; starting_conditions=s1n, camera=cam32)
         @test a.emitters == b.emitters
+    end
+
+    @testset "(n) Codex review of #39" begin
+        ID = SMLMSim.InteractionDiffusion
+        # B1. Float32 coordinates: dissociated partners cannot re-capture after conversion (2D and 3D)
+        f2(p, id) = DiffusingEmitter2D{Float32}(p[1], p[2], 100.0, 0.0, 1, 1, id, :monomer, nothing)
+        f3(p, id) = DiffusingEmitter3D{Float32}(p[1], p[2], p[3], 100.0, 0.0, 1, 1, id, :monomer, nothing)
+        Random.seed!(61)
+        n_tried = 0
+        n_close = 0
+        for nd in (2, 3), bnd in ("reflecting", "periodic"), pm_ in (:fixed, :min), k in 1:500
+            prm = (r_react = 0.05, pair_mobility = pm_, box_size = 2.0, boundary = bnd)
+            p = 0.1 .+ 1.8 .* rand(3)
+            q = p .+ 0.04 .* (rand(3) .- 0.5)
+            a, b = nd == 2 ? (f2(p, 1), f2(q, 2)) : (f3(p, 1), f3(q, 2))
+            ID.distance(a, b) < 0.05 || continue
+            D1, D2 = rand() < 0.5 ? (0.0, 0.3) : (0.3, 0.3)
+            m1, m2 = ID._unbind(a, b, prm, D1, D2)
+            n_tried += 1
+            ID.can_dimerize(m1, m2, 0.05) && (n_close += 1)
+        end
+        @test n_tried > 3000
+        @test n_close == 0
+
+        # B2. the placement allocates nothing and is type stable
+        pw = (r_react = 0.05, pair_mobility = :min, box_size = 2.0, boundary = "reflecting")
+        place_allocs(f, p1, p2, pw, anchor) = @allocated f(p1, p2, pw, anchor, 1)
+        for (p1, p2) in (((1.0, 1.0), (1.01, 1.0)), ((0.01, 1.0, 1.0), (0.02, 1.0, 1.0))), anchor in (nothing, 1)
+            place_allocs(ID._unbind_positions, p1, p2, pw, anchor)
+            @test place_allocs(ID._unbind_positions, p1, p2, pw, anchor) == 0
+            @test (@inferred ID._unbind_positions(p1, p2, pw, anchor, 1)) isa Tuple
+        end
+
+        # B3. every configuration 0.7.2 accepts still constructs; a box that cannot hold the placement
+        # leaves the partners where they are (0.7.2's behaviour) with a warning
+        @test DiffusionSMLMConfig(box_size=2 * 0.05, r_react=0.05) isa DiffusionSMLMConfig
+        @test DiffusionSMLMConfig(box_size=0.05, r_react=0.05, k_off=0.0) isa DiffusionSMLMConfig
+        @test DiffusionSMLMConfig(box_size=0.08, r_react=0.05, boundary="reflecting", ndims=3) isa DiffusionSMLMConfig
+        tiny = (r_react = 0.05, pair_mobility = :fixed, box_size = 0.08, boundary = "reflecting")
+        a = DiffusingEmitter2D{Float64}(0.03, 0.04, 100.0, 0.0, 1, 1, 1, :monomer, nothing)
+        b = DiffusingEmitter2D{Float64}(0.05, 0.04, 100.0, 0.0, 1, 1, 2, :monomer, nothing)
+        r = @test_logs (:warn, r"box_size") ID._unbind(a, b, tiny, 0.3, 0.3)
+        @test r == (a, b)
+        Random.seed!(62)
+        st, _ = simulate(DiffusionSMLMConfig(density=400.0, box_size=0.08, r_react=0.05, d_dimer=0.01, k_off=200.0,
+                                             dt=0.001, t_max=0.05, camera_framerate=100.0, camera_exposure=0.01);
+                         γ=500.0, camera=cam32)
+        @test all(e -> 0 <= e.x <= 0.08 && 0 <= e.y <= 0.08, st.emitters)
     end
 end

@@ -6,8 +6,9 @@
 #   julia --project=<worktree B> dev/bit_identity.jl run B.jls
 #   julia dev/bit_identity.jl compare A.jls B.jls
 #
-# Every case uses only keywords that exist in both versions. Compared: every field of every
-# emitter, in order, plus the next rand() after the run (the RNG stream consumed).
+# Every case uses only keywords that exist in both versions (0.7.2 on). Compared: every field of
+# every emitter, in order, plus the next rand() after the run (the RNG stream consumed). The "d<r"
+# cases have d_dimer < r_react, where 0.7.3's unbinding rule changes output by design.
 using Serialization, Random
 
 if ARGS[1] == "run"
@@ -24,14 +25,17 @@ if ARGS[1] == "run"
     out = Any[]
     r, _ = case("defaults", DiffusionSMLMConfig(); γ=1e5)
     push!(out, r)
-    r, s = case("dimers periodic", dimers(); γ=500.0)
-    push!(out, r)
-    r, _ = case("dimers reflecting 3D", dimers(ndims=3, density=8.0, boundary="reflecting"); γ=500.0)
-    push!(out, r)
-    r, _ = case("mobility mixture", dimers(monomer_mobility=[(0.5, 0.3), (0.5, 0.0)]); γ=500.0)
-    push!(out, r)
-    r, _ = case("continuation", dimers(); starting_conditions=s)
-    push!(out, r)
+    # d_dimer < r_react (0.7.3's unbinding rule acts here) and d_dimer >= r_react (it never acts)
+    for (tag, rd) in (("d<r", (r_react=0.05, d_dimer=0.03)), ("d>=r", (r_react=0.03, d_dimer=0.05)))
+        r, s = case("dimers $tag periodic", dimers(; rd...); γ=500.0)
+        push!(out, r)
+        r, _ = case("dimers $tag refl 3D", dimers(; rd..., ndims=3, density=8.0, boundary="reflecting"); γ=500.0)
+        push!(out, r)
+        r, _ = case("mixture $tag", dimers(; rd..., monomer_mobility=[(0.5, 0.3), (0.5, 0.0)]); γ=500.0)
+        push!(out, r)
+        r, _ = case("continuation $tag", dimers(; rd...); starting_conditions=s)
+        push!(out, r)
+    end
     serialize(ARGS[2], out)
     println("wrote ", length(out), " cases to ", ARGS[2], " (SMLMSim ", pkgversion(SMLMSim), ", Julia ", VERSION, ")")
 else
