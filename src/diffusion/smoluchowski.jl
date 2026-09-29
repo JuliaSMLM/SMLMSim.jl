@@ -39,8 +39,9 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   `smld.metadata["pair_mobility"]`.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
-`n_sub = camera_exposure/dt` records of a frame carries `γ·dt`, so a frame holds
-`γ·camera_exposure` photons. There is no field for γ; it is a keyword of `simulate`.
+`n_sub` records of a frame (`substeps_per_frame`) carries `γ·dt`, so a frame holds `γ·n_sub·dt`
+photons: `γ·camera_exposure` when `camera_exposure` is an integer multiple of `dt` and not longer
+than the frame period `1/camera_framerate`. There is no field for γ; it is a keyword of `simulate`.
 
 # Examples
 ```julia
@@ -506,7 +507,7 @@ end
 
 Record the current emitters as one sub-step record of camera frame `frame_num`.
 Each record carries the live emitter's photons (`γ·dt` for a rate `γ`), so the `n_sub`
-records of a frame sum to `γ·camera_exposure`. `simulate` decides by integer step which
+records of a frame sum to `γ·n_sub·dt`. `simulate` decides by integer step which
 sub-steps to record. Internal.
 """
 function _record_frame!(camera_emitters, emitters, time, frame_num)
@@ -536,10 +537,13 @@ with emitters that have both frame number and timestamp information.
   forward. A Vector keeps each emitter's own `photons`, gets fresh D draws, and is deduplicated
   to the latest record per track_id (with a warning) if track_ids repeat.
 - `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (finite, ≥ 0); each of the
-  n_sub records in a frame carries γ·dt, so a frame holds γ·camera_exposure photons.
+  n_sub records in a frame carries γ·dt, so a frame holds γ·n_sub·dt photons (γ·camera_exposure
+  when the exposure is a whole number of steps and not capped at the frame period).
   An explicit γ restamps starting emitters to γ·dt. Default for new emitters: 1000 photons
   per record (γ = 1000/dt, 0.7's default; 0.8.0 will change the default to a fixed rate).
-  For an SMLD `starting_conditions` the default is the source's `"γ"`.
+  For an SMLD `starting_conditions` the default is the source's `"γ"`, and a `dt` different from
+  the source run's keeps each track's rate (photons restamped to γ·dt, or without a saved γ to the
+  track's photons·dt/dt_source).
 - `photons::Union{Nothing, Real}=nothing`: deprecated, removed in 0.8.0. Photons per record,
   as in 0.7; `photons = p` is `γ = p/dt` with identical output. Passing both `photons` and
   `γ` throws `ArgumentError`.
@@ -637,8 +641,9 @@ function simulate(params::DiffusionSMLMConfig;
             prior_class = get(start_smld.metadata, "monomer_class", nothing)
             prior_γ = get(start_smld.metadata, "γ", nothing)
             γ === nothing && (γ_val = prior_γ === nothing ? nothing : Float64(prior_γ))
+            # The saved dt snapshot; older SMLDs only have the (mutable) config, which may have been edited since
             sim_params = get(start_smld.metadata, "simulation_parameters", nothing)
-            prior_dt = sim_params isa DiffusionSMLMConfig ? sim_params.dt : nothing
+            prior_dt = get(start_smld.metadata, "dt", sim_params isa DiffusionSMLMConfig ? sim_params.dt : nothing)
         else
             # Already a vector of emitters
             start_emitters = starting_conditions
@@ -676,10 +681,13 @@ function simulate(params::DiffusionSMLMConfig;
         end
 
         # Reset timestamps to start at 0.0 and frame to 1; an explicit γ restamps the brightness,
-        # and so does a changed dt when continuing from an SMLD (the saved rate applies to the new step)
-        dt_changed = prior_γ !== nothing && prior_dt !== nothing && prior_dt != params.dt
+        # and so does a changed dt when continuing from an SMLD: each track keeps its rate at the new
+        # step (the saved γ, or without one the track's own photons / prior dt)
+        dt_changed = prior_dt !== nothing && prior_dt != params.dt
         emitters = [restamp(e; photons=(γ !== nothing ? Float64(γ) * params.dt :
-                                        dt_changed ? Float64(prior_γ) * params.dt : e.photons),
+                                        !dt_changed ? e.photons :
+                                        prior_γ !== nothing ? Float64(prior_γ) * params.dt :
+                                        e.photons * (params.dt / prior_dt)),
                             timestamp=0.0, frame=1) for e in start_emitters]
         n_initial_emitters = length(emitters)
     else
@@ -852,7 +860,7 @@ function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingE
     end
 
     metadata = Dict{String,Any}("n_substeps" => 1)
-    for key in ("simulation_type", "simulation_parameters", "camera_framerate", "camera_exposure", "γ", "monomer_D", "monomer_class")
+    for key in ("simulation_type", "simulation_parameters", "dt", "camera_framerate", "camera_exposure", "γ", "monomer_D", "monomer_class")
         haskey(smld.metadata, key) && (metadata[key] = smld.metadata[key])
     end
     # A second extraction takes the stored path and returns the same emitters in the same order
