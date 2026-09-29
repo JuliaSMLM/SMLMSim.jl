@@ -22,9 +22,10 @@ using ..CameraImages: RenderBuffer, render_gaussian!, StampTable, render_stamp!
 
 include("types.jl")
 include("kinetics.jl")
+include("background.jl")
 include("step.jl")
 
 export Population, BackgroundModel, SimWorld, UniformExcitation
-export step!, layers, next_switch
+export step!, layers, next_switch, gen_background
 
 end # module

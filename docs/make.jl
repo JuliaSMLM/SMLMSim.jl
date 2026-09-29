@@ -33,6 +33,7 @@ makedocs(;
             "Examples" => "diffusion/examples.md"
         ],
         "Microscope Images" => "images.md",
+        "Stepper" => "stepper.md",
         "API Reference" => "api.md",
     ],
     warnonly=true,

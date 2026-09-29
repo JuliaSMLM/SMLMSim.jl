@@ -29,6 +29,9 @@ fluor = GenericFluor(1e5, [-50.0 50.0; 1e-2 -1e-2])
 
 # Create a fluorophore using the 2-state keyword constructor
 fluor = GenericFluor(; photons=1e5, k_off=10.0, k_on=1e-1)
+
+# Create a fluorophore from a rate and a rate matrix by keyword
+fluor = GenericFluor(; γ=1e4, q=[-10.0 10.0; 1e-1 -1e-1])
 ```
 """
 struct GenericFluor <: Molecule
@@ -38,33 +41,46 @@ end
 
 
 """
-    GenericFluor(; photons::AbstractFloat=1e5, k_off::AbstractFloat=50.0, k_on::AbstractFloat=1e-2)
+    GenericFluor(; photons, γ, k_off, k_on, q)
 
-Create a simple two-state (on/off) fluorophore with specified parameters.
+Create a fluorophore by keyword. Without `q` it is a simple two-state (on/off) fluorophore.
 
-# Arguments
-- `photons::AbstractFloat`: Photon emission rate in Hz
-- `k_off::AbstractFloat`: Off-switching rate (on→off) in Hz
-- `k_on::AbstractFloat`: On-switching rate (off→on) in Hz
+# Keywords
+- `γ::Real` or `photons::Real`: Photon emission rate in Hz (default 1e5). Give at most one of the two.
+- `q::AbstractMatrix`: Rate matrix, as in the positional constructor. Excludes `k_off` and `k_on`.
+- `k_off::Real`: Off-switching rate (on→off) in Hz (default 50.0)
+- `k_on::Real`: On-switching rate (off→on) in Hz (default 1e-2)
 
 # Details
-Creates a fluorophore with a 2-state model and the specified rates.
+Without `q`, the 2-state rate matrix is `q = [-k_off k_off; k_on -k_on]`.
 State 1 is the on (bright) state, and state 2 is the off (dark) state.
-The rate matrix is constructed as: q = [-k_off k_off; k_on -k_on]
 
 Note: k_on and k_off are transition rates (1/s), not duty cycle fractions.
 The duty cycle (fraction of time in ON state) is k_on/(k_on + k_off).
 For typical dSTORM, k_on << k_off gives low duty cycle (mostly dark, brief blinks).
+
+Throws `ArgumentError` when both `γ` and `photons` are given, or when `q` is given with `k_off` or `k_on`.
 """
-function GenericFluor(; 
-    photons::AbstractFloat=1e5, 
-    k_off::AbstractFloat=50.0, 
-    k_on::AbstractFloat=1e-2
+function GenericFluor(;
+    photons::Union{Nothing,Real}=nothing,
+    γ::Union{Nothing,Real}=nothing,
+    k_off::Union{Nothing,Real}=nothing,
+    k_on::Union{Nothing,Real}=nothing,
+    q::Union{Nothing,AbstractMatrix{<:Real}}=nothing
 )
-    # Create rate matrix for 2-state system
-    q = [-k_off k_off; k_on -k_on]
-    
-    return GenericFluor(photons, q)
+    (γ === nothing || photons === nothing) ||
+        throw(ArgumentError("give either γ or photons, not both"))
+    (q === nothing || (k_off === nothing && k_on === nothing)) ||
+        throw(ArgumentError("give either q or k_off/k_on, not both"))
+    rate = float(γ !== nothing ? γ : photons !== nothing ? photons : 1e5)
+    if q === nothing
+        koff = float(k_off === nothing ? 50.0 : k_off)
+        kon = float(k_on === nothing ? 1e-2 : k_on)
+        q = [-koff koff; kon -kon]
+    else
+        q = float.(q)
+    end
+    return GenericFluor(rate, q)
 end
 
 function Base.show(io::IO, fluor::GenericFluor)

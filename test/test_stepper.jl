@@ -3,8 +3,8 @@ using SMLMSim.Stepper: _add_emitter!, _reflect, _wrap
 
 # 32x32 pixel camera, 0.1 um pixels: FOV 0.0..3.2 um
 cam32() = IdealCamera(1:32, 1:32, 0.1)
-one_state(γ) = GenericFluor(γ, zeros(1, 1))
-two_state(γ, k_off, k_on) = GenericFluor(γ, [-k_off k_off; k_on -k_on])
+one_state(γ) = GenericFluor(; γ, q=zeros(1, 1))
+two_state(γ, k_off, k_on) = GenericFluor(; γ, q=[-k_off k_off; k_on -k_on])
 
 # a world with no emitters, ready for _add_emitter!
 empty_world(rng, pop; n_sub=1, kw...) = SimWorld(rng, cam32(), [pop]; n_sub, kw...)
@@ -202,6 +202,16 @@ end
     end
     @test gaps0
     @test w.frame == 10_000
+    # with a stretch of 200T the level changes exactly at frames 200j + 1
+    bgw = SimWorld(StableRNG(11), cam32(), Population[]; n_sub=1,
+                   background=BackgroundModel(level=Uniform(1.0, 100.0), stretch=200T))
+    lv = Float64[]
+    for k in 1:1000
+        step!(bgw, (k - 1) * T, (k - 1) * T + T)
+        push!(lv, bgw.expected[1, 1])
+    end
+    changes = [k for k in 2:1000 if !isapprox(lv[k], lv[k-1]; rtol=1e-9)]
+    @test changes == [201, 401, 601, 801]
 end
 
 @testset "stepper/excitation_z" begin
@@ -261,19 +271,20 @@ end
     @test_throws ArgumentError Population(density=1.0, fluor=f1, psf=psf, mobility=[(0.5, 0.1), (0.4, 0.2)])
     @test_throws ArgumentError Population(density=1.0, fluor=two_state(1000.0, 10.0, 1.0), psf=psf, multiplicity=3)
     q3 = [-1.0 1.0 0.0; 1.0 -2.0 1.0; 0.0 0.0 0.0]       # state 3 absorbing
-    @test_throws ArgumentError Population(density=1.0, fluor=GenericFluor(1000.0, q3), psf=psf)
+    @test_throws ArgumentError Population(density=1.0, fluor=GenericFluor(; γ=1000.0, q=q3), psf=psf)
     @test_throws ArgumentError Population(density=1.0, birth_rate=1.0, fluor=f1, psf=psf)
     tbl = StampTable(GaussianPSF(0.13), 0.1, range(-0.3, 0.3, length=5); radius=4)
     @test_throws ArgumentError Population(density=1.0, fluor=f1, psf=tbl, z=(0.5, 1.0))
     @test Population(density=1.0, fluor=f1, psf=tbl, z=(-0.2, 0.2)) isa Population
     good = Population(density=1.0, fluor=f1, psf=psf)
-    @test_throws ArgumentError SimWorld(StableRNG(1), cam32(), [good]; n_sub=1, background=BackgroundModel(level=1.0))
+    @test SimWorld(StableRNG(1), cam32(), [good]; n_sub=1, background=BackgroundModel(level=1.0)) isa SimWorld
+    @test_throws ArgumentError SimWorld(StableRNG(1), cam32(), [good]; n_sub=1, background=BackgroundModel(level=1.0, stretch=0.0))
     @test_throws ArgumentError SimWorld(StableRNG(1), cam32(), [good]; n_sub=1, boundary=:sticky)
     @test_throws UndefKeywordError SimWorld(StableRNG(1), cam32(), [good])
     @test_throws ArgumentError SimWorld(StableRNG(1), IdealCamera([0.0, 0.1, 0.25, 0.3], [0.0, 0.1, 0.2, 0.3]), [good]; n_sub=1)
     # the states of newborns follow the stationary distribution
     q = [-3.0 2.0 1.0; 1.0 -4.0 3.0; 5.0 1.0 -6.0]
-    pop = Population(density=0.0, fluor=GenericFluor(1000.0, q), psf=psf)
+    pop = Population(density=0.0, fluor=GenericFluor(; γ=1000.0, q=q), psf=psf)
     w = SimWorld(StableRNG(15), cam32(), [pop]; n_sub=1)
     ps = w.pops[1]
     for _ in 1:10_000
@@ -287,7 +298,7 @@ end
     @test ccdf(Chisq(2), χ2) > 1e-3
 end
 
-const GOLDEN_SUM = 55.498888995433425
+const GOLDEN_SUM = 54694.319025331104
 
 function rich_world(seed)
     flu = two_state(3000.0, 200.0, 20.0)
@@ -298,7 +309,9 @@ function rich_world(seed)
                      z=(0.5, 1.0), psf=tbl)
     oof2 = Population(name=:oof2, layer=:oof, density=1.0, lifetime=0.05, fluor=flu, budget=200.0,
                       z=(-0.2, 0.2), psf=GaussianPSF(0.39))
-    return SimWorld(StableRNG(seed), cam32(), [sig, oof, oof2]; n_sub=4)
+    bg = BackgroundModel(level=5000.0, jitter=0.05, contrast=0.3, feature_size=0.3,
+                         correlation_time=0.05, illumination_width=2.0, stretch=0.1)
+    return SimWorld(StableRNG(seed), cam32(), [sig, oof, oof2]; n_sub=4, background=bg)
 end
 
 @testset "stepper/determinism" begin
@@ -336,6 +349,20 @@ end
     total = 0
     for k in 202:301
         total += count_allocs(w, exc, nrng, dst, scam, k)
+    end
+    @test total == 0
+end
+
+@testset "stepper/zero_alloc_level_draw" begin
+    # a distribution level redrawn every 5 frames allocates nothing either
+    w = SimWorld(StableRNG(24), cam32(), Population[]; n_sub=1,
+                 background=BackgroundModel(level=Uniform(1.0, 100.0), stretch=0.05, contrast=0.3))
+    for k in 1:20
+        step!(w, (k - 1) * 0.01, k * 0.01)
+    end
+    total = 0
+    for k in 21:120
+        total += @allocated step!(w, (k - 1) * 0.01, k * 0.01)
     end
     @test total == 0
 end

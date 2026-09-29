@@ -169,8 +169,28 @@ next sub-step start.
 """
 next_switch(excitation, t::Float64) = Inf
 
-# Placeholder for the background state; filled in when background models are added.
-mutable struct BackgroundState end
+# Runtime state of the structured background (see BackgroundModel)
+mutable struct BackgroundState
+    model::BackgroundModel
+    level_src::Any                        # model.level, kept apart: reading it through the parametric model boxes
+    stretch::Float64                      # concrete copies of the model's numbers, so reads do not box
+    jitter::Float64
+    contrast::Float64
+    tau::Float64
+    t0::Float64
+    t_prev::Float64
+    stretch_idx::Int
+    level::Float64                        # L of the current stretch
+    frame_level::Float64                  # L J exposure of the last step
+    draw::Vector{Float64}                 # scratch for level draws
+    P::Matrix{Float64}                    # illumination, mean 1
+    g::Matrix{Float64}                    # lattice node values, N(0, 1)
+    tmp::Matrix{Float64}                  # rows mixed, columns still on the lattice
+    iy::Vector{Int}
+    ix::Vector{Int}
+    wy::Matrix{Float64}
+    wx::Matrix{Float64}
+end
 
 # Emitters of one Population (struct of arrays, capacity-preallocated, swap-remove).
 mutable struct PopState
@@ -205,7 +225,7 @@ separate call on the caller's own RNG.
 
 - `n_sub` (required): sub-steps per exposure. Motion and excitation are held over a
   sub-step, so this sets the blur; event times are exact.
-- `background`: `nothing` (only this is accepted for now).
+- `background`: `nothing` or a [`BackgroundModel`](@ref), which fills the `structured` layer.
 - `boundary`: `:reflecting` or `:periodic`.
 - `margin`: μm added around the field of view to form the world box. The default is the
   largest kernel half-width among the populations (5σ for a Gaussian, the stamp radius for a

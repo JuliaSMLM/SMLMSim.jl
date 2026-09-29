@@ -120,8 +120,8 @@ For each unique position in the input SMLD:
 # Example
 ```julia
 camera = IdealCamera(1:128, 1:128, 0.1)
-pattern = Nmer2D()
-smld_true, _, _ = simulate(pattern=pattern, camera=camera)
+emitters = [Emitter2DFit{Float64}(2.0 + 0.5k, 3.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0; track_id=k) for k in 1:10]
+smld_true = BasicSMLD(emitters, camera, 1, 1)
 
 # Add blinking kinetics
 fluor = GenericFluor(; γ=10000.0, q=[-10.0 10.0; 1e-1 -1e-1])

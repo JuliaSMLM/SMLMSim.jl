@@ -48,7 +48,6 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
                   background::Union{Nothing,BackgroundModel}=nothing, n_sub::Integer,
                   boundary::Symbol=:reflecting,
                   margin::Real=default_margin(pops, _pixel_geometry(camera)[3]), t0::Real=0.0)
-    background === nothing || throw(ArgumentError("background models arrive in lane C"))
     boundary in (:reflecting, :periodic) || throw(ArgumentError("boundary must be :reflecting or :periodic"))
     n_sub >= 1 || throw(ArgumentError("n_sub must be >= 1"))
     margin >= 0 || throw(ArgumentError("margin must be >= 0"))
@@ -68,6 +67,7 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
         end
         ps.t_next_birth = p.birth_rate > 0 ? t0 + randexp(rng) / (p.birth_rate * A) : Inf
     end
+    background === nothing || (w.bg = BackgroundState(rng, background, ny, nx, px, t0))
     return w
 end
 
@@ -118,6 +118,7 @@ function step!(w::SimWorld, t_a::Real, t_b::Real, excitation::E=UniformExcitatio
     end
     fill!(w.signal, 0.0)
     fill!(w.oof, 0.0)
+    w.bg === nothing || _update_background!(w, w.bg, t_a, t_b)
     for k in 1:w.n_sub
         _substep!(w, t_a + (k - 1) * h, h, excitation, true)
     end

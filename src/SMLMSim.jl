@@ -89,7 +89,7 @@ using .StaticSMLM: StaticSMLMConfig, apply_noise
 using .CameraImages: gen_images, gen_image, poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
 using .CameraImages: RenderBuffer, render_gaussian!, StampTable, render_stamp!
 
-using .Stepper: Population, BackgroundModel, SimWorld, UniformExcitation, step!, layers, next_switch
+using .Stepper: Population, BackgroundModel, SimWorld, UniformExcitation, step!, layers, next_switch, gen_background
 
 # Add this line to import the simulate methods
 using .InteractionDiffusion: simulate
@@ -186,7 +186,8 @@ export
     UniformExcitation,
     step!,
     layers,
-    next_switch
+    next_switch,
+    gen_background
 
 export
     get_track,
