@@ -481,11 +481,13 @@ with emitters that have both frame number and timestamp information.
   when the exposure is a whole number of steps and not capped at the frame period).
   An explicit γ restamps starting emitters to γ·dt. Default for new emitters: 1000 photons
   per record (γ = 1000/dt, 0.7's default; 0.8.0 will change the default to a fixed rate).
-  For an SMLD `starting_conditions` the default is the source's `"γ"`, and a `dt` different from
-  the source run's keeps each track's rate (photons restamped to γ·dt, or without a saved γ to the
-  track's photons·dt/dt_source).
+  `smld.metadata["rate_source"]` records how the rate was set: `"γ"`, `"photons"` or `"default"`.
+  Without γ, an SMLD `starting_conditions` whose rate was set with γ continues at that rate (every
+  molecule restamped to γ·dt at this `dt`); any other source (default, `photons`, a 0.7.1 SMLD, a
+  Vector) keeps each molecule's photons per record, as in 0.7.1.
 - `photons::Union{Nothing, Real}=nothing`: deprecated, removed in 0.8.0. Photons per record,
-  as in 0.7; `photons = p` is `γ = p/dt` with identical output. Passing both `photons` and
+  as in 0.7; for new emitters `photons = p` is `γ = p/dt` with identical output. It is ignored with
+  `starting_conditions`, as in 0.7, where `γ` restamps every molecule. Passing both `photons` and
   `γ` throws `ArgumentError`.
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 - `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model (default: IdealCamera with 100nm pixels)
@@ -540,14 +542,15 @@ function simulate(params::DiffusionSMLMConfig;
     γ === nothing || (isfinite(γ) && γ >= 0) ||
         throw(ArgumentError("γ must be finite and >= 0 (photons/s), got $γ"))
     if photons !== nothing
-        Base.depwarn("the photons keyword is deprecated and will be removed in 0.8.0; pass γ, the emission rate in photons/s (γ = photons/dt gives identical output)", :simulate; force=true)
+        Base.depwarn("the photons keyword is deprecated and will be removed in 0.8.0; pass γ, the emission rate in photons/s (for new emitters γ = photons/dt gives identical output; with starting_conditions photons is ignored, as in 0.7, while γ restamps every molecule to γ·dt)", :simulate; force=true)
     end
 
-    # Photons per record for new emitters, and the rate stored in the metadata
+    # Photons per record for new emitters, the rate stored in the metadata, and how it was set
     record_photons = photons !== nothing ? Float64(photons) :
                      γ !== nothing ? Float64(γ) * params.dt : 1000.0
     γ_new = photons !== nothing ? Float64(photons) / params.dt :
             γ !== nothing ? Float64(γ) : 1000.0 / params.dt
+    rate_source = γ !== nothing ? "γ" : photons !== nothing ? "photons" : "default"
 
     # Sub-steps per exposure and per frame (warns and rounds if dt does not divide the camera timing)
     n_sub, steps_per_frame = substeps_per_frame(params)
@@ -567,8 +570,7 @@ function simulate(params::DiffusionSMLMConfig;
     # Initialize emitters
     n_initial_emitters = 0
     prior_D = nothing
-    prior_γ = nothing
-    prior_dt = nothing
+    γ_restamp = γ === nothing ? nothing : Float64(γ)  # the rate every starting molecule is restamped to
     γ_val = γ_new
     if starting_conditions !== nothing
         # Extract emitters from starting_conditions
@@ -576,12 +578,16 @@ function simulate(params::DiffusionSMLMConfig;
             # Exact end state of the previous run, one emitter per track
             start_smld = extract_end_state(starting_conditions)
             start_emitters = start_smld.emitters
-            prior_D = get(start_smld.metadata, "monomer_D", nothing)
-            prior_γ = get(start_smld.metadata, "γ", nothing)
-            γ === nothing && (γ_val = prior_γ === nothing ? nothing : Float64(prior_γ))
-            # The saved dt snapshot; older SMLDs only have the (mutable) config, which may have been edited since
-            sim_params = get(start_smld.metadata, "simulation_parameters", nothing)
-            prior_dt = get(start_smld.metadata, "dt", sim_params isa DiffusionSMLMConfig ? sim_params.dt : nothing)
+            # Only a non-empty saved D is a molecule's own; a run without a mixture saves none
+            saved_D = get(start_smld.metadata, "monomer_D", nothing)
+            prior_D = saved_D === nothing || isempty(saved_D) ? nothing : saved_D
+            if γ === nothing
+                # A source whose rate was set with γ continues at that rate; any other keeps its photons per record
+                rate_source = get(start_smld.metadata, "rate_source", "photons")
+                saved_γ = get(start_smld.metadata, "γ", nothing)
+                rate_source == "γ" && saved_γ === nothing && (rate_source = "photons")
+                rate_source == "γ" && (γ_restamp = Float64(saved_γ))
+            end
         else
             # Already a vector of emitters
             start_emitters = starting_conditions
@@ -590,10 +596,7 @@ function simulate(params::DiffusionSMLMConfig;
                 @warn "starting_conditions has repeated track_id values; deduplicated to the latest record per track; pass the SMLD or extract_end_state(smld)" maxlog=1
                 start_emitters = _latest_per_track(start_emitters)
             end
-            if γ === nothing && !isempty(start_emitters)
-                p1 = start_emitters[1].photons
-                γ_val = all(e -> e.photons == p1, start_emitters) ? Float64(p1) / params.dt : nothing
-            end
+            γ === nothing && (rate_source = "photons")
             isempty(params.monomer_mobility) || @warn "Vector starting_conditions get fresh monomer_mobility draws; pass the SMLD from simulate (or extract_end_state(smld)) to keep each track's D" maxlog=1
         end
 
@@ -618,16 +621,14 @@ function simulate(params::DiffusionSMLMConfig;
             start_emitters = [orphan(e) ? restamp(e; state=:monomer, partner_id=nothing) : e for e in start_emitters]
         end
 
-        # Reset timestamps to start at 0.0 and frame to 1; an explicit γ restamps the brightness,
-        # and so does a changed dt when continuing from an SMLD: each track keeps its rate at the new
-        # step (the saved γ, or without one the track's own photons / prior dt)
-        dt_changed = prior_dt !== nothing && prior_dt != params.dt
-        emitters = [restamp(e; photons=(γ !== nothing ? Float64(γ) * params.dt :
-                                        !dt_changed ? e.photons :
-                                        prior_γ !== nothing ? Float64(prior_γ) * params.dt :
-                                        e.photons * (params.dt / prior_dt)),
+        # Reset timestamps to start at 0.0 and frame to 1. A rate set with γ (here or by the source
+        # run) restamps every molecule to γ·dt; otherwise each keeps its photons per record, as in 0.7.1
+        emitters = [restamp(e; photons=(γ_restamp === nothing ? e.photons : γ_restamp * params.dt),
                             timestamp=0.0, frame=1) for e in start_emitters]
         n_initial_emitters = length(emitters)
+        p1 = emitters[1].photons
+        γ_val = γ_restamp !== nothing ? γ_restamp :
+                all(e -> e.photons == p1, emitters) ? Float64(p1) / params.dt : nothing
     else
         # Initialize emitters using the standard approach
         emitters = build_emitters(params, record_photons, override_count)
@@ -644,6 +645,11 @@ function simulate(params::DiffusionSMLMConfig;
                 isempty(params.monomer_mobility) ? params.diff_monomer : draw_monomer_D(params)
         end
     end
+    if prior_D !== nothing
+        allowed = isempty(params.monomer_mobility) ? [params.diff_monomer] : last.(params.monomer_mobility)
+        any(e -> haskey(prior_D, e.track_id) && !(prior_D[e.track_id] in allowed), emitters) &&
+            @warn "starting_conditions carries each track's saved D (metadata \"monomer_D\"), which overrides this config's diff_monomer or monomer_mobility; pass extract_end_state(smld).emitters for fresh draws" maxlog=1
+    end
 
     # Store camera-frame emitters
     camera_emitters = Vector{eltype(emitters)}()
@@ -656,7 +662,8 @@ function simulate(params::DiffusionSMLMConfig;
     end
 
     # Convert to SMLD
-    smld = create_smld(camera_emitters, camera, params; track_D=track_D, γ=γ_val, n_frames=n_frames)
+    smld = create_smld(camera_emitters, camera, params; track_D=track_D, γ=γ_val, rate_source=rate_source,
+                       n_frames=n_frames)
 
     # Live emitters are now at the start of the next frame: the exact end state for continuation
     t_end = n_frames * steps_per_frame * params.dt
@@ -756,8 +763,8 @@ unchanged from that run (the latest record per track of the last frame matches
 `metadata["last_frame_latest"]`). Otherwise (filtered, concatenated, edited or re-wrapped
 without metadata) the record with the largest timestamp per track in the last frame present is
 used, with its photons as they are; tracks absent from that frame are not resumed. The result carries
-`"γ"` and `"monomer_D"` when present, so continuation keeps the emission rate and each
-track's D, and extracting twice gives the same result.
+`"γ"`, `"rate_source"` and `"monomer_D"` when present, so continuation keeps the emission rate and
+each track's D, and extracting twice gives the same result.
 
 # Arguments
 - `smld::BasicSMLD`: SMLD of diffusing emitters from `simulate`
@@ -784,7 +791,7 @@ function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingE
     end
 
     metadata = Dict{String,Any}("n_substeps" => 1)
-    for key in ("simulation_type", "simulation_parameters", "dt", "camera_framerate", "camera_exposure", "γ", "monomer_D")
+    for key in ("simulation_type", "simulation_parameters", "dt", "camera_framerate", "camera_exposure", "γ", "rate_source", "monomer_D")
         haskey(smld.metadata, key) && (metadata[key] = smld.metadata[key])
     end
     # A second extraction takes the stored path and returns the same emitters in the same order

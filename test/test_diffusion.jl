@@ -693,20 +693,18 @@ end
         s1e, _ = simulate(p1; starting_conditions=s1d, camera=cam32)
         prior_ph = Dict(e.track_id => e.photons for e in s1d.emitters)
         @test all(e -> e.photons == prior_ph[e.track_id], s1e.emitters)
-        # 1b. no saved γ or dt (0.7.1 output, heterogeneous brightness): each track keeps its own rate
+        # 1b. no saved γ or dt (0.7.1 output, heterogeneous brightness): photons per record kept, as in 0.7.1
         frame1(s, id) = sum(e.photons for e in s.emitters if e.track_id == id && e.frame == 1)
         no_rate(s) = BasicSMLD(s.emitters, s.camera, s.n_frames, s.n_datasets,
-                             Dict(k => v for (k, v) in s.metadata if k ∉ ("γ", "dt", "final_state", "last_frame_latest")))
+                             Dict(k => v for (k, v) in s.metadata if k ∉ ("γ", "dt", "rate_source", "final_state", "last_frame_latest")))
         het = [SMLMSim.InteractionDiffusion.restamp(e; photons=100.0 * e.track_id) for e in extract_end_state(s1).emitters]
         Random.seed!(33)
         sh, _ = simulate(p1; starting_conditions=het, camera=cam32)
         @test !haskey(sh.metadata, "γ")
         for (src, pnew) in ((no_rate(s1), p2), (sh, p2), (no_rate(s2), p1))
-            prior_dt = src.metadata["simulation_parameters"].dt
             ref = Dict(e.track_id => e.photons for e in extract_end_state(src).emitters)
             sc, _ = simulate(pnew; starting_conditions=src, camera=cam32)
-            @test all(e -> e.photons == ref[e.track_id] * (pnew.dt / prior_dt), sc.emitters)
-            @test all(id -> isapprox(frame1(sc, id), frame1(src, id); rtol=1e-12), 1:3)
+            @test all(e -> e.photons == ref[e.track_id], sc.emitters)
         end
         # 1c. dt changed in place on the same config object, and increasing dt with a saved γ
         pin = static_params(dt=0.01, diff_monomer=0.5)
@@ -727,7 +725,7 @@ end
         pempty = static_params(dt=1.25e-3, t_max=0.05, box_size=5.0, diff_monomer=0.5)
         @test isempty(pempty.monomer_mobility)
         start = Dict(e.track_id => e for e in extract_end_state(sm).emitters)
-        sm2, _ = simulate(pempty; starting_conditions=sm, camera=cam32)
+        sm2, _ = @test_logs (:warn, r"saved D") match_mode=:any simulate(pempty; starting_conditions=sm, camera=cam32)
         @test sm2.metadata["monomer_D"] == sm.metadata["monomer_D"]
         still = [id for (id, D) in sm.metadata["monomer_D"] if D == 0.0 &&
                  all(e -> e.state == :monomer, filter(e -> e.track_id == id, sm2.emitters))]
@@ -761,5 +759,57 @@ end
         @test all(e -> e.state == :monomer && e.partner_id === nothing, ss.emitters)
         @test all(nrec(ss, f) == 2 * 8 for f in 1:ss.n_frames)
         @test all(length(unique(e.timestamp for e in ss.emitters if e.track_id == id)) == length(ss.emitters) ÷ 2 for id in 1:2)
+    end
+
+    @testset "(m) main reviewer of #36" begin
+        pa = static_params(dt=0.01, diff_monomer=0.5)
+        pb = static_params(dt=0.001, diff_monomer=0.5)
+        # B2. default and photons= sources keep their photons per record at a new dt, as in 0.7.1, over two hops;
+        # the stored γ is the kept photons over the new dt
+        Random.seed!(41)
+        sd, _ = simulate(pa; override_count=3, camera=cam32)
+        sp, _ = @test_logs (:warn, r"photons is ignored") match_mode=:any simulate(
+            pa; photons=200.0, override_count=3, camera=cam32)
+        for (src, p, source) in ((sd, 1000.0, "default"), (sp, 200.0, "photons"))
+            @test src.metadata["rate_source"] == source
+            h1, _ = simulate(pb; starting_conditions=src, camera=cam32)
+            h2, _ = simulate(pa; starting_conditions=h1, camera=cam32)
+            for (h, q) in ((h1, pb), (h2, pa))
+                @test all(e -> e.photons == p, h.emitters)
+                @test h.metadata["γ"] == p / q.dt
+                @test h.metadata["rate_source"] == source
+            end
+        end
+        # a γ source keeps its rate at a new dt; an explicit γ on a continuation makes a γ source
+        Random.seed!(42)
+        sg, _ = simulate(pa; γ=1e4, override_count=3, camera=cam32)
+        @test sg.metadata["rate_source"] == "γ"
+        hg, _ = simulate(pb; starting_conditions=sg, camera=cam32)
+        @test all(e -> e.photons == 1e4 * pb.dt, hg.emitters)
+        @test hg.metadata["γ"] == 1e4 && hg.metadata["rate_source"] == "γ"
+        hx, _ = simulate(pb; starting_conditions=sd, γ=2e4, camera=cam32)
+        @test all(e -> e.photons == 2e4 * pb.dt, hx.emitters)
+        @test hx.metadata["rate_source"] == "γ"
+
+        # B1. a run without a mixture stores no per-track D, so a changed diff_monomer applies at every hop
+        pm(D) = static_params(dt=1.25e-3, t_max=0.05, diff_monomer=D, r_react=1e-6)
+        Random.seed!(43)
+        r1, _ = simulate(pm(0.5); override_count=3, camera=cam32)
+        r2, _ = simulate(pm(0.5); starting_conditions=r1, camera=cam32)
+        @test isempty(r2.metadata["monomer_D"])
+        r3, _ = simulate(pm(0.0); starting_conditions=r2, camera=cam32)
+        @test all(id -> length(unique((e.x, e.y) for e in r3.emitters if e.track_id == id)) == 1, 1:3)
+        r4, _ = simulate(pm(0.5); starting_conditions=r3, camera=cam32)
+        @test all(id -> length(unique((e.x, e.y) for e in r4.emitters if e.track_id == id)) > 1, 1:3)
+
+        # a saved D that overrides a changed diff_monomer or mixture warns; the same config does not
+        pmix(mix; D=0.5) = static_params(dt=1.25e-3, t_max=0.02, diff_monomer=D, monomer_mobility=mix)
+        Random.seed!(44)
+        sm, _ = simulate(pmix([(0.5, 0.0), (0.5, 0.1)]); override_count=6, camera=cam32)
+        @test_logs simulate(pmix([(0.5, 0.0), (0.5, 0.1)]); starting_conditions=sm, camera=cam32)
+        @test_logs (:warn, r"saved D") match_mode=:any simulate(
+            pmix(Tuple{Float64,Float64}[]); starting_conditions=sm, camera=cam32)
+        @test_logs (:warn, r"saved D") match_mode=:any simulate(
+            pmix([(1.0, 0.2)]); starting_conditions=sm, camera=cam32)
     end
 end
