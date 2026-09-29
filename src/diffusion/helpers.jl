@@ -561,26 +561,101 @@ function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, dif
     return (d1, d2)
 end
 
-# The partner placed `d_dimer` from an anchor that keeps its position. In a reflecting box it is
-# mirrored across the anchor on each axis it would leave, so the bond length stays exact (reflecting
-# the point at the wall would shorten it); a box narrower than the bond falls back to
-# `apply_boundary`, which also wraps under periodic boundaries. Internal.
-function _place_in_box(e::DiffusingEmitter2D{T}, a::DiffusingEmitter2D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
-    if boundary == "reflecting"
-        fl(q, p) = 0 <= q <= box_size ? q : 2p - q
-        e = DiffusingEmitter2D{T}(fl(e.x, a.x), fl(e.y, a.y), e.photons, e.timestamp, e.frame, e.dataset,
-                                  e.track_id, e.state, e.partner_id)
-    end
-    return apply_boundary(e, box_size, boundary)
+# Rigid-pair placement (dev/outputs/placement-rule.md), shared by pair formation and bound motion.
+# Positions are computed in Float64 from the partners' coordinates and returned in the coordinate
+# type T, inside [0, _top(T, box)] on every axis. Internal.
+
+# The largest value of T that is <= box, and x converted to T and clamped into [0, that value]
+_top(::Type{T}, box::Float64) where {T<:AbstractFloat} = T(box) <= box ? T(box) : prevfloat(T(box))
+_inbox(::Type{T}, x::Float64, box::Float64) where {T<:AbstractFloat} = clamp(T(x), zero(T), _top(T, box))
+
+_coords(e::DiffusingEmitter2D) = (e.x, e.y)
+_coords(e::DiffusingEmitter3D) = (e.x, e.y, e.z)
+_pos(e::AbstractDiffusingEmitter) = Float64.(_coords(e))
+_at(e::DiffusingEmitter2D{T}, p::NTuple{2,T}) where {T} =
+    DiffusingEmitter2D{T}(p[1], p[2], e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id)
+_at(e::DiffusingEmitter3D{T}, p::NTuple{3,T}) where {T} =
+    DiffusingEmitter3D{T}(p[1], p[2], p[3], e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state,
+                          e.partner_id)
+_inside(e::AbstractDiffusingEmitter, box::Float64) = all(c -> 0 <= c <= box, _coords(e))
+_clamp_in(e::AbstractDiffusingEmitter, box::Float64) = _at(e, map(c -> _inbox(typeof(c), Float64(c), box), _coords(e)))
+
+# Unit vector from p to q; (1, 0, ...) when they coincide
+function _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N}
+    v = q .- p
+    n = sqrt(sum(abs2, v))
+    return n > 0 ? v ./ n : ntuple(k -> k == 1 ? 1.0 : 0.0, Val(N))
 end
 
-function _place_in_box(e::DiffusingEmitter3D{T}, a::DiffusingEmitter3D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
-    if boundary == "reflecting"
-        fl(q, p) = 0 <= q <= box_size ? q : 2p - q
-        e = DiffusingEmitter3D{T}(fl(e.x, a.x), fl(e.y, a.y), fl(e.z, a.z), e.photons, e.timestamp, e.frame,
-                                  e.dataset, e.track_id, e.state, e.partner_id)
+# The point `s` from the fixed point `a` along `u`. Reflecting: each axis that would leave the box is
+# mirrored across `a`, and `ok` is false when some axis fits neither way. Periodic: wrapped, and `ok`
+# is false unless every s|u_k| <= box/2, so the offset is its own minimum image.
+function _place_from(a::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box::Float64, reflecting::Bool,
+                     ::Type{T}) where {N,T<:AbstractFloat}
+    top = Float64(_top(T, box))
+    fits(x) = 0 <= x <= top
+    ok = all(ntuple(k -> reflecting ? fits(a[k] + s * u[k]) || fits(a[k] - s * u[k]) : s * abs(u[k]) <= box / 2, Val(N)))
+    q = ntuple(Val(N)) do k
+        x = a[k] + s * u[k]
+        _inbox(T, reflecting ? (fits(x) ? x : a[k] - s * u[k]) : mod(x, box), box)
     end
-    return apply_boundary(e, box_size, boundary)
+    return ok, q
+end
+
+# Two points `s` apart along `u`, centered on `c`. Reflecting: the center keeps (s/2)|u_k| from each
+# wall, clamped there when placing or reflected off that inner wall when moving (`reflect = true`), and
+# `ok` is false when some s|u_k| exceeds the box. Periodic: each end wrapped, and `ok` is false unless
+# every s|u_k| <= box/2.
+function _place_centered(c::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box::Float64, reflecting::Bool,
+                         ::Type{T}; reflect::Bool=false) where {N,T<:AbstractFloat}
+    top = Float64(_top(T, box))
+    h = ntuple(k -> (s / 2) * abs(u[k]), Val(N))
+    ok = all(ntuple(k -> reflecting ? 2h[k] <= top : 2h[k] <= box / 2, Val(N)))
+    m = ntuple(Val(N)) do k
+        reflecting || return c[k]
+        lo, hi = h[k], top - h[k]
+        x = reflect && c[k] < lo ? 2lo - c[k] : reflect && c[k] > hi ? 2hi - c[k] : c[k]
+        return clamp(x, lo, hi)
+    end
+    wrap(x) = _inbox(T, reflecting ? x : mod(x, box), box)
+    return ok, ntuple(k -> wrap(m[k] - (s / 2) * u[k]), Val(N)), ntuple(k -> wrap(m[k] + (s / 2) * u[k]), Val(N))
+end
+
+# A pair just formed from monomers `e1`, `e2` (`d1`, `d2` from `dimerize`), by the placement rule: an
+# anchored pair keeps the anchor and places the other partner `d_dimer` from it, or leaves it where it
+# was when that cannot fit; a mobile pair in a reflecting box with an end outside moves to its midpoint
+# shifted inward just enough (each end reflected on its own when it cannot fit); a mobile pair under
+# periodic boundaries is left as in 0.7.1. Internal.
+function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
+                     params::DiffusionSMLMConfig) where {E<:AbstractDiffusingEmitter}
+    T = typeof(d1.x)
+    box, reflecting = params.box_size, params.boundary == "reflecting"
+    if anchor !== nothing
+        fixed, mover = anchor == e1.track_id ? (e1, e2) : (e2, e1)
+        a = _pos(fixed)
+        ok, q = _place_from(a, _axis(a, _pos(mover)), params.d_dimer, box, reflecting, T)
+        p = ok ? q : _coords(mover)
+        return anchor == e1.track_id ? (d1, _at(d2, p)) : (_at(d1, p), d2)
+    end
+    (!reflecting || (_inside(d1, box) && _inside(d2, box))) && return d1, d2
+    p1, p2 = _pos(e1), _pos(e2)
+    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, true, T)
+    ok && return _at(d1, q1), _at(d2, q2)
+    return _clamp_in(apply_boundary(d1, box, params.boundary), box), _clamp_in(apply_boundary(d2, box, params.boundary), box)
+end
+
+# A mobile pair after a bound step (`d1`, `d2` from `diffuse_dimer`): in a reflecting box with an end
+# outside, its center reflects off the walls moved in by each end's half-extent, keeping orientation and
+# bond length (each end reflected on its own when it cannot fit); under periodic boundaries each end is
+# wrapped, as in 0.7.1. Internal.
+function _move_pair(d1::E, d2::E, params::DiffusionSMLMConfig) where {E<:AbstractDiffusingEmitter}
+    box = params.box_size
+    params.boundary == "reflecting" || return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
+    _inside(d1, box) && _inside(d2, box) && return d1, d2
+    p1, p2 = _pos(d1), _pos(d2)
+    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, true, typeof(d1.x); reflect=true)
+    ok && return _at(d1, q1), _at(d2, q2)
+    return _clamp_in(apply_boundary(d1, box, params.boundary), box), _clamp_in(apply_boundary(d2, box, params.boundary), box)
 end
 
 """

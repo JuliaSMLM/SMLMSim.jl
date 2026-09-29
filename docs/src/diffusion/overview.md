@@ -132,7 +132,15 @@ are its partners' monomer D, so two partners at `diff_monomer` move at `diff_dim
 and a pair with an immobile partner (D = 0) does not move or rotate while bound: the immobile partner
 keeps its position when the pair forms, and the mobile partner is placed `d_dimer` from it (in a
 reflecting box, mirrored across the immobile partner on each axis it would leave, so the bond keeps its
-length).
+length; if some axis fits neither way, possible only when `box_size < 2·d_dimer`, it keeps its
+position). With `diff_dimer = 0` a `:min` pair does not rotate, while a `:fixed` pair still rotates
+with `diff_dimer_rot`.
+
+In a reflecting box a mobile pair (either setting) is a rigid body: when an end would leave the box at
+formation, both partners move to `d_dimer/2` either side of their midpoint, shifted inward just enough
+to fit, and while bound the pair's center reflects off the walls moved in by each end's half-extent, so
+both partners stay inside the box at `d_dimer` apart. When `box_size < d_dimer` each partner is
+reflected on its own, as in 0.7.1. Periodic boundaries (the default) are unchanged from 0.7.1.
 
 
 ## Microscope Image Generation

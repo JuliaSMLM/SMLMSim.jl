@@ -35,10 +35,17 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   `min(D1, D2) × diff_dimer/diff_monomer`, with `D1`, `D2` the partners' monomer D (from
   `monomer_mobility`, or `diff_monomer`), so two partners at `diff_monomer` move at `diff_dimer` (as
   under `:fixed`) and a pair with an immobile partner does not move; the rotation scales the same way
-  (`diff_dimer_rot × D_pair/diff_dimer`). On formation an immobile partner keeps its position and the
-  other is placed `d_dimer` from it (in a reflecting box, mirrored across the immobile partner on each
-  axis it would leave, so the bond stays `d_dimer` long); if both are immobile the lower `track_id`
-  stays. `:min` requires `diff_monomer > 0`. Stored in `smld.metadata["pair_mobility"]`.
+  (`diff_dimer_rot × D_pair/diff_dimer`; with `diff_dimer = 0` a `:min` pair does not rotate, while a
+  `:fixed` pair still rotates with `diff_dimer_rot`). On formation an immobile partner keeps its
+  position and the other is placed `d_dimer` from it (in a reflecting box, mirrored across the immobile
+  partner on each axis it would leave, so the bond stays `d_dimer` long; if some axis fits neither way,
+  possible only when `box_size < 2·d_dimer`, it keeps its position); if both are immobile the lower
+  `track_id` stays. `:min` requires `diff_monomer > 0`. Stored in `smld.metadata["pair_mobility"]`.
+  Under either setting a mobile pair in a reflecting box is rigid: at formation, if an end is outside
+  the box, both partners move to `d_dimer/2` either side of their midpoint, shifted inward just enough
+  to fit, and while bound the pair's center reflects off the walls moved in by each end's half-extent,
+  so both partners stay inside at `d_dimer` apart (when `box_size < d_dimer` each partner is reflected
+  on its own, as in 0.7.1). Periodic boundaries, the default, are unchanged from 0.7.1.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
 `n_sub` records of a frame (`substeps_per_frame`) carries `γ·dt`, so a frame holds `γ·n_sub·dt`
@@ -386,14 +393,9 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                         anchor = D1 == 0 && (D2 != 0 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
                     end
                     d1, d2 = dimerize(e1, e2, params.d_dimer; anchor=anchor)
-                    if anchor !== nothing
-                        # The placed partner never reaches apply_boundary while the pair is pinned
-                        if anchor == d1.track_id
-                            d2 = _place_in_box(d2, d1, params.box_size, params.boundary)
-                        else
-                            d1 = _place_in_box(d1, d2, params.box_size, params.boundary)
-                        end
-                    end
+                    # The placement rule: an anchored partner is placed d_dimer from the anchor, a mobile
+                    # pair in a reflecting box is kept whole inside it
+                    d1, d2 = _place_pair(d1, d2, e1, e2, anchor, params)
                     push!(new_emitters, d1, d2)
                     push!(processed, e1.track_id, e2.track_id)
                     found_dimer = true
@@ -441,12 +443,9 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                         d1 = restamp(e1; timestamp=e1.timestamp + dt)
                         d2 = restamp(e2; timestamp=e2.timestamp + dt)
                     else
-                        # Apply dimer diffusion
+                        # Apply dimer diffusion, then the boundary to the pair as a rigid body
                         d1, d2 = diffuse_dimer(e1, e2, D_pair, rot, params.d_dimer, dt)
-
-                        # Apply boundary conditions
-                        d1 = apply_boundary(d1, params.box_size, params.boundary)
-                        d2 = apply_boundary(d2, params.box_size, params.boundary)
+                        d1, d2 = _move_pair(d1, d2, params)
                     end
                     
                     push!(new_emitters, d1, d2)
