@@ -1,3 +1,5 @@
+using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, Random
+
 @testset "Diffusion SMLM" begin
     # Create diffusion simulation parameters
     params = DiffusionSMLMConfig(

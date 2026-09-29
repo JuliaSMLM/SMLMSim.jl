@@ -1,3 +1,5 @@
+using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, Random
+
 @testset "Core - Labeling" begin
     # Test FixedLabeling
     @testset "FixedLabeling" begin

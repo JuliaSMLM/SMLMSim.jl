@@ -1,3 +1,5 @@
+using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, Random
+
 @testset "Static SMLM" begin
     # Create 2D patterns for testing
     pattern2d = Nmer2D(n=3, d=0.2)

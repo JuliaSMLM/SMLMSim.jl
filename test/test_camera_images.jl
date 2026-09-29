@@ -1,3 +1,5 @@
+using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, Random
+
 @testset "Camera Images" begin
     # Create some emitters for testing (using Emitter2DFit which has frame and other parameters)
     emitters = Vector{Emitter2DFit{Float64}}()

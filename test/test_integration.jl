@@ -1,3 +1,5 @@
+using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, Random
+
 @testset "Integration Tests" begin
     @testset "Static SMLM Workflow" begin
         # Create StaticSMLMConfig
