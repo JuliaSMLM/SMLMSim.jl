@@ -1076,29 +1076,31 @@ end
         mixA = [(0.5, 0.0), (0.5, 0.2)]
         Random.seed!(50)
         # (γ keyword of the source run or nothing, its config, its output)
-        srcs = [(1e4, cfg(), go(cfg(); γ=1e4)), (2e4, cfg(mix=mixA), go(cfg(mix=mixA); γ=2e4)),
-                (nothing, cfg(), go(cfg())), (nothing, cfg(mix=mixA), go(cfg(mix=mixA))),
+        # two sources at dt 0.0025, so a concatenation's colliding ids resume the other run's records
+        srcs = [(1e4, cfg(), go(cfg(); γ=1e4)), (2e4, cfg(dt=0.0025, mix=mixA), go(cfg(dt=0.0025, mix=mixA); γ=2e4)),
+                (nothing, cfg(), go(cfg())), (nothing, cfg(dt=0.0025, mix=mixA), go(cfg(dt=0.0025, mix=mixA))),
                 (nothing, cfg(), @test_logs((:warn, r"deprecated"), match_mode=:any, go(cfg(); photons=300.0)))]
         wrap(es, s) = BasicSMLD(es, s.camera, s.n_frames, 1, copy(s.metadata))
         shift(es, k) = [DiffusingEmitter2D{Float64}(e.x, e.y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id + k,
                                                     e.state, e.partner_id) for e in es]
-        # (name, input SMLD, whether a resumed track's record is the metadata run's own)
+        # (name, input SMLD); the metadata is always the first run's
         function inputs(a, b)
             s = a[3]
             last_f = s.n_frames
             edited = [e.track_id == 1 && e.frame == last_f ? restamp(e; photons=2 * e.photons) : e for e in s.emitters]
-            return [("single", wrap(s.emitters, s), t -> true),
-                    ("filtered", wrap(filter(e -> e.track_id <= 2, s.emitters), s), t -> true),
-                    ("edited", wrap(edited, s), t -> t != 1),
-                    ("concat distinct", wrap(vcat(s.emitters, shift(b[3].emitters, 100)), s), t -> t <= 100),
-                    ("concat colliding", wrap(vcat(s.emitters, b[3].emitters), s), t -> true)]
+            return [("single", wrap(s.emitters, s)),
+                    ("filtered", wrap(filter(e -> e.track_id <= 2, s.emitters), s)),
+                    ("cut", wrap(filter(e -> e.frame < last_f, s.emitters), s)),
+                    ("edited", wrap(edited, s)),
+                    ("concat distinct", wrap(vcat(s.emitters, shift(b[3].emitters, 100)), s)),
+                    ("concat colliding", wrap(vcat(s.emitters, b[3].emitters), s))]
         end
         configs = [cfg(dt=0.0025, D=0.3), cfg(dt=0.0025, mix=[(0.5, 0.05), (0.5, 0.4)]),
                    cfg(dt=0.0025, mix=[(0.9, 0.0), (0.1, 0.2)])]
         fails = String[]
-        nrun = 0
-        for a in srcs, b in srcs, (name, X, own) in inputs(a, b), c in configs
-            name in ("single", "filtered", "edited") && b !== srcs[1] && continue
+        nrun = ntie = 0
+        for a in srcs, b in srcs, (name, X) in inputs(a, b), c in configs
+            name in ("single", "filtered", "cut", "edited") && b !== srcs[1] && continue
             name == "concat distinct" && a === b && continue   # identical positions would dimerize
             nrun += 1
             γa, ca, sa = a
@@ -1109,14 +1111,22 @@ end
                 e.frame == lastf || continue
                 (!haskey(ts, e.track_id) || e.timestamp > ts[e.track_id]) && (ts[e.track_id] = e.timestamp; R[e.track_id] = e.photons)
             end
-            restampγ = γa !== nothing && all(p -> p == γa * ca.dt, values(R))
+            # two last-frame records of one track at one timestamp: unknown provenance
+            lastrecs = [(e.track_id, e.timestamp) for e in X.emitters if e.frame == lastf]
+            tie = length(unique(lastrecs)) < length(lastrecs)
+            restampγ = !tie && γa !== nothing && all(p -> p == γa * ca.dt, values(R))
             savedA = sa.metadata["monomer_D"]
-            keep(t) = own(t) && haskey(savedA, t)
+            keep(t) = !tie && haskey(savedA, t)
+            source = restampγ ? "γ" : !tie && sa.metadata["rate_source"] == "default" ? "default" : "photons"
             logs, s1 = Test.collect_test_logs(() -> simulate(c; starting_conditions=X, camera=cam32)[1])
             warned(r) = any(l -> occursin(r, string(l.message)), logs)
             _, s2 = Test.collect_test_logs(() -> simulate(cfg(dt=0.005, D=0.0); starting_conditions=s1, camera=cam32)[1])
             tag = "$(name) γ=$(γa) mix=$(ca.monomer_mobility) -> $(c.monomer_mobility)"
             md1, md2 = s1.metadata["monomer_D"], s2.metadata["monomer_D"]
+            # every resumed molecule, and only those, in both hops
+            Set(e.track_id for e in s1.emitters) == Set(e.track_id for e in s2.emitters) == Set(keys(R)) ||
+                push!(fails, "$tag: resumed tracks")
+            s1.metadata["rate_source"] == source || push!(fails, "$tag: rate_source")
             for t in keys(R)
                 # brightness, hop 1 and hop 2
                 all(e -> e.photons == (restampγ ? γa * c.dt : R[t]), recs(s1, t)) || push!(fails, "$tag: brightness hop 1, track $t")
@@ -1136,12 +1146,14 @@ end
                     (!haskey(md2, t) && !moved(s2, t)) || push!(fails, "$tag: hop 2 run-time D, track $t")
                 end
             end
-            warned(r"not every resumed molecule carries") == (γa !== nothing && !restampγ) || push!(fails, "$tag: brightness warning")
-            warned(r"not the run's own") == any(t -> haskey(savedA, t) && !own(t), keys(R)) || push!(fails, "$tag: drop warning")
+            warned(r"not every resumed molecule carries") == (!tie && γa !== nothing && !restampγ) || push!(fails, "$tag: brightness warning")
+            warned(r"same timestamp") == tie || push!(fails, "$tag: provenance warning")
+            ntie += tie
             warned(r"differs from the source run's") == (any(keep, keys(R)) && c.monomer_mobility != ca.monomer_mobility) ||
                 push!(fails, "$tag: mixture warning")
         end
-        @test nrun == 5 * 3 * 3 + (25 * 2 - 5) * 3
+        @test nrun == 5 * 4 * 3 + (25 * 2 - 5) * 3
+        @test ntie >= 25 * 3   # every colliding concatenation of these sources ties at a frame-boundary timestamp
         @test isempty(fails)
         isempty(fails) || foreach(println, first(fails, 20))
 
@@ -1155,7 +1167,7 @@ end
         delete!(X.metadata, "dt")
         sx = @test_logs (:warn, r"not every resumed molecule carries") match_mode=:any simulate(cfg(dt=0.0025); starting_conditions=X, camera=cam32)[1]
         @test all(e -> e.photons == 1e4 * 0.005, sx.emitters)
-        # an SMLD converted to Float32 keeps its γ rate and its saved D, without a warning
+        # guard (passes on 65e3f6f too): an SMLD converted to Float32 keeps its γ rate and its saved D, without a warning
         Random.seed!(51)
         s = go(cfg(mix=mixA); γ=1234.567)
         f32 = [DiffusingEmitter2D{Float32}(e.x, e.y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state,
@@ -1165,6 +1177,37 @@ end
         sx = @test_logs simulate(cfg(dt=0.0025, mix=mixA); starting_conditions=X, camera=cam32)[1]
         @test all(e -> e.photons == Float32(1234.567 * 0.0025), sx.emitters)
         @test sx.metadata["monomer_D"] == s.metadata["monomer_D"] && sx.metadata["rate_source"] == "γ"
+    end
+
+    @testset "(r) main reviewer of #36 on 65e3f6f..a0d0af5" begin
+        # dev/outputs/continuation-rule.md, the Provenance and D sentences (#37)
+        cfg(; dt=0.005, mix=[(0.5, 0.0), (0.5, 0.2)]) = static_params(dt=dt, t_max=0.02, box_size=5.0,
+            diff_monomer=0.3, monomer_mobility=mix, r_react=1e-6)
+        wrap(es, s) = BasicSMLD(es, s.camera, s.n_frames, 1, copy(s.metadata))
+        Random.seed!(60)
+        s, _ = simulate(cfg(); γ=1e4, override_count=4, camera=cam32)
+        # SHOULD-1: a run concatenated with itself (two last-frame records of a track at one timestamp) has unknown
+        # provenance: no γ, rate source, saved D or class, one warning; each molecule keeps its photons per record
+        X = wrap(vcat(s.emitters, s.emitters), s)
+        x = @test_logs (:warn, r"same timestamp") extract_end_state(X)
+        @test !any(k -> haskey(x.metadata, k), ("γ", "rate_source", "monomer_D", "monomer_class"))
+        @test length(x.emitters) == 4
+        sx = @test_logs (:warn, r"same timestamp") match_mode=:any simulate(cfg(dt=0.0025); starting_conditions=X, camera=cam32)[1]
+        @test sx.metadata["rate_source"] == "photons" && all(e -> e.photons == 1e4 * 0.005, sx.emitters)
+        # NOTE: a time-cut subset of one run keeps each track's saved D, without a warning
+        cut = wrap(filter(e -> e.frame < s.n_frames, s.emitters), s)
+        sc = @test_logs simulate(cfg(); starting_conditions=cut, camera=cam32)[1]
+        @test sc.metadata["monomer_D"] == s.metadata["monomer_D"]
+        # NOTE: the mixture warning's advice names γ, which the Vector path needs to keep a γ rate
+        @test_logs (:warn, r"and γ, to keep a γ rate") match_mode=:any simulate(cfg(mix=[(1.0, 0.1)]); starting_conditions=s, camera=cam32)
+        # NIT: the extract's metadata holds copies; editing it leaves the source unchanged
+        x = extract_end_state(s)
+        id = first(keys(s.metadata["monomer_D"]))
+        D0, cl0, mix0 = s.metadata["monomer_D"][id], s.metadata["monomer_class"][id], copy(s.metadata["monomer_mobility"])
+        x.metadata["monomer_D"][id] = -1.0
+        x.metadata["monomer_class"][id] = 99
+        push!(x.metadata["monomer_mobility"], (0.0, 9.9))
+        @test s.metadata["monomer_D"][id] == D0 && s.metadata["monomer_class"][id] == cl0 && s.metadata["monomer_mobility"] == mix0
     end
 
     @testset "(q) placement rule" begin

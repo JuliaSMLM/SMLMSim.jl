@@ -108,14 +108,17 @@ that rate (each record carries γ·dt at the new `dt`) when every resumed molecu
 the saved `dt`, to a relative 1e-6, so a frame's brightness is unchanged as long as the effective
 exposure `n_sub·dt` is unchanged; a new `dt` that changes `n_sub·dt` (an exposure that is not a whole
 number of steps, or one capped at the frame period) changes the brightness with it. Otherwise (a
-default or `photons` source, or an edited or concatenated SMLD) each molecule keeps its photons per
-record, as in 0.7.1, with a warning when a γ rate could not be kept. D: a track keeps its saved D and
-mobility class (drawn from a `monomer_mobility` mixture) when its record is the run's own, with a
-warning when the new mixture differs from the run's; every other track draws from the new mixture or
-uses `diff_monomer` at run time, which is never saved, so a later change applies. Continuation assumes the
-SMLD comes from one simulation run, or a filtered subset of one; continuing a concatenation of different
-runs is unsupported, and the γ check cannot detect a molecule from another run that happens to carry
-γ·dt. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
+default or `photons` source, an SMLD with edited photons, or one of unknown provenance) each molecule
+keeps its photons per record, as in 0.7.1, with a warning when a γ rate could not be kept. D: a track
+keeps its saved D and mobility class (drawn from a `monomer_mobility` mixture) when the run saved one
+for it, also in a filtered, time-cut or edited subset, with a warning when the new mixture differs from
+the run's; every other track draws from the new mixture or uses `diff_monomer` at run time, which is
+never saved, so a later change applies (such a track has no entry in `metadata["monomer_D"]`).
+Continuation assumes the SMLD comes from one simulation run, or a filtered subset of one; continuing a
+concatenation of different runs is unsupported, and the γ check cannot detect a molecule from another
+run that happens to carry γ·dt. A last frame holding two records of one track at the same timestamp,
+which no single run produces, is taken as unknown provenance: no γ, rate source or saved D is carried,
+with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
 its last frame, which is not the exact end state and carries no per-molecule history beyond that record
 (blinking, bleaching or brightness-jitter state is not rebuilt). `extract_final_state` is deprecated.
 

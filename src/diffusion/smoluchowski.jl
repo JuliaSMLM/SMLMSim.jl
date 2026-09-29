@@ -27,7 +27,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   `starting_conditions`), and keeps its own `D` as a monomer, including after dissociation.
   Empty (default) means every monomer uses `diff_monomer`. Under `pair_mobility = :fixed`
   dimers always use `diff_dimer`.
-  The drawn values are stored in `smld.metadata["monomer_D"]` (track_id => D), and each
+  The drawn values are stored in `smld.metadata["monomer_D"]` (track_id => D; a track at
+  `diff_monomer` has no entry, so read it with `get(smld.metadata["monomer_D"], id, diff_monomer)`), and each
   molecule's population index in `smld.metadata["monomer_class"]` (track_id => Int; 1 when empty,
   unless an SMLD `starting_conditions` carries the class).
 - `pair_mobility::Symbol`: how a bound pair diffuses. `:fixed` (default, the 0.7 behaviour):
@@ -661,7 +662,7 @@ function simulate(params::DiffusionSMLMConfig;
                     rate_source = "γ"
                     γ_restamp = Float64(saved_γ)
                 else
-                    claims_γ && @warn "starting_conditions: the source's rate was set with γ = $saved_γ, but not every resumed molecule carries γ·dt at its saved dt (edited, concatenated or missing dt); each keeps its photons per record, as in 0.7.1; pass γ to restamp every molecule" maxlog=1
+                    claims_γ && @warn "starting_conditions: the source's rate was set with γ = $saved_γ, but not every resumed molecule carries γ·dt at its saved dt (edited photons or missing dt); each keeps its photons per record, as in 0.7.1; pass γ to restamp every molecule" maxlog=1
                     rate_source = get(md, "rate_source", nothing) == "default" ? "default" : "photons"
                 end
             end
@@ -734,7 +735,7 @@ function simulate(params::DiffusionSMLMConfig;
     end
     if prior_D !== nothing && prior_mix !== nothing && params.monomer_mobility != prior_mix &&
        any(e -> haskey(prior_D, e.track_id), emitters)
-        @warn "starting_conditions: tracks keep their saved D (metadata \"monomer_D\") although this config's monomer_mobility differs from the source run's; the new mixture applies only to tracks without a saved D; pass extract_end_state(smld).emitters for fresh draws" maxlog=1
+        @warn "starting_conditions: tracks keep their saved D (metadata \"monomer_D\") although this config's monomer_mobility differs from the source run's; the new mixture applies only to tracks without a saved D; pass extract_end_state(smld).emitters (and γ, to keep a γ rate) for fresh draws" maxlog=1
     end
 
     # Store camera-frame emitters
@@ -846,14 +847,13 @@ Returns a `BasicSMLD` with one emitter per track and photons unchanged.
 `simulate` stores the exact end state (the live emitters at the start of the frame after
 the last) in `smld.metadata["final_state"]`, and that is returned when the SMLD's last frame is
 unchanged from that run (the latest record per track of the last frame matches
-`metadata["last_frame_latest"]`). Otherwise (filtered, concatenated, edited or re-wrapped
+`metadata["last_frame_latest"]`). Otherwise (filtered, edited or re-wrapped
 without metadata) the record with the largest timestamp per track in the last frame present is
 used, with its photons as they are; tracks absent from that frame are not resumed. The result carries
-`"γ"`, `"rate_source"`, `"dt"`, `"monomer_mobility"`, `"monomer_D"` and `"monomer_class"` when present,
-with `"monomer_D"` and `"monomer_class"` restricted to the tracks whose resumed record is the run's own
-(the unchanged last frame, or a record equal, to a relative 1e-6, to the run's stored last-frame record
-for that track; metadata without stored records is taken as written), with one warning when a saved D
-is dropped. `simulate` then applies the continuation rule: a γ-set rate is restamped to γ·dt only if
+copies of `"γ"`, `"rate_source"`, `"dt"`, `"monomer_mobility"`, `"monomer_D"` and `"monomer_class"` when
+present. A last frame holding two records of one track at the same timestamp, which no single run
+produces, has unknown provenance: the first of them per track is resumed, `"γ"`, `"rate_source"`,
+`"monomer_D"` and `"monomer_class"` are left out, and one warning is given. `simulate` then applies the continuation rule: a γ-set rate is restamped to γ·dt only if
 every molecule carries γ·dt at the saved dt, and otherwise photons per record are kept; a kept D stays,
 other tracks take the current setting. Extracting twice gives the same result. Continuation assumes the
 SMLD comes from one simulation run, or a filtered subset of one; continuing a concatenation of different
@@ -877,43 +877,47 @@ smld_continued, info = simulate(params_new; starting_conditions=extract_end_stat
 ```
 """
 function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
+    # Two last-frame records of one track at one timestamp, which no single run produces: unknown provenance
+    tie = _has_tie(smld.emitters)
     final = get(smld.metadata, "final_state", nothing)
-    exact = final !== nothing && _final_state_matches(smld, final)
+    exact = !tie && final !== nothing && _final_state_matches(smld, final)
     resumed = exact ? final : _last_frame_latest(smld.emitters)
     final_emitters = [restamp(e; frame=1) for e in resumed]
 
     metadata = Dict{String,Any}("n_substeps" => 1)
     for key in ("simulation_type", "simulation_parameters", "dt", "camera_framerate", "camera_exposure", "γ", "rate_source",
                 "monomer_mobility", "monomer_D", "monomer_class")
-        haskey(smld.metadata, key) && (metadata[key] = smld.metadata[key])
+        tie && key in ("γ", "rate_source", "monomer_D", "monomer_class") && continue
+        haskey(smld.metadata, key) && (metadata[key] = _md_copy(smld.metadata[key]))
     end
-    # A saved D and class belong to a track only if its resumed record is the run's own
-    ref = get(smld.metadata, "last_frame_latest", nothing)
-    saved = get(metadata, "monomer_D", nothing)
-    if !exact && ref !== nothing && saved !== nothing
-        by_id = Dict(e.track_id => e for e in ref)
-        own = Set(e.track_id for e in resumed if haskey(by_id, e.track_id) && _same_record(e, by_id[e.track_id]))
-        dropped = count(e -> haskey(saved, e.track_id) && !(e.track_id in own), resumed)
-        dropped > 0 && @warn "extract_end_state: $dropped resumed tracks with a saved D are not the run's own records (concatenated, edited or re-wrapped SMLD); they take the current diff_monomer or monomer_mobility" maxlog=1
-        metadata["monomer_D"] = Dict{Int,Float64}(id => D for (id, D) in saved if id in own)
-        haskey(metadata, "monomer_class") &&
-            (metadata["monomer_class"] = Dict{Int,Int}(id => k for (id, k) in metadata["monomer_class"] if id in own))
-    end
+    tie && @warn "extract_end_state: the last frame holds two records of one track at the same timestamp (a concatenation of runs, which continuation does not support); provenance unknown: no γ, rate source or saved D is carried, so each molecule keeps its photons per record and takes the current diff_monomer or monomer_mobility" maxlog=1
     # A second extraction takes the stored path and returns the same emitters in the same order
     metadata["final_state"] = final_emitters
     metadata["last_frame_latest"] = _last_frame_latest(final_emitters)
     return BasicSMLD(final_emitters, smld.camera, 1, smld.n_datasets, metadata)
 end
 
-# Relative tolerance of the continuation checks (a molecule carries γ·dt, a record is the run's own), so an SMLD
-# converted to Float32 or written and read back keeps its provenance
+# Relative tolerance of the continuation check that a molecule carries γ·dt, so an SMLD converted to Float32 or
+# written and read back keeps its rate
 const CONTINUATION_RTOL = 1e-6
 
-# Two records of one track agree: equal integer, state and partner fields, floats to CONTINUATION_RTOL. Internal.
-_same_record(a, b) = nameof(typeof(a)) == nameof(typeof(b)) &&
-    all(f -> _same_field(getfield(a, f), getfield(b, f)), fieldnames(typeof(a)))
-_same_field(u::AbstractFloat, v::AbstractFloat) = isapprox(u, v; rtol=CONTINUATION_RTOL)
-_same_field(u, v) = u == v
+# The extract's metadata holds copies, so editing it leaves the source unchanged. Internal.
+_md_copy(v::Union{AbstractDict,AbstractVector}) = copy(v)
+_md_copy(v) = v
+
+# Two records of one track at one timestamp in the last frame present. Internal.
+function _has_tie(emitters)
+    isempty(emitters) && return false
+    max_frame = maximum(e -> e.frame, emitters)
+    seen = Set{Tuple{Int,Float64}}()
+    for e in emitters
+        e.frame == max_frame || continue
+        key = (e.track_id, Float64(e.timestamp))
+        key in seen && return true
+        push!(seen, key)
+    end
+    return false
+end
 
 # The stored final state belongs to the emitters only if their last frame is the one the run
 # recorded: the latest record per track there equals the stored copy. Filters, concatenation
