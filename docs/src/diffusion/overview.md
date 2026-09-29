@@ -103,15 +103,16 @@ than the frame period `1/camera_framerate`; otherwise `n_sub = round(camera_expo
 deprecated (γ = photons/dt) and is removed in 0.8.0.
 
 To continue a run, pass `starting_conditions=smld` or `extract_end_state(smld)`; both resume
-at the exact end state and keep each track's D, mobility class and γ. A continuation with a different
-`dt` keeps each track's emission rate (photons per record scale with `dt`), so a frame's brightness is
-unchanged as long as the effective exposure `n_sub·dt` is unchanged; a new `dt` that changes `n_sub·dt`
-(an exposure that is not a whole number of steps, or one capped at the frame period) changes the
-brightness with it. Two limitations: an SMLD that was filtered, concatenated or edited resumes from each
-track's latest record in its last frame, which is not the exact end state and carries no per-molecule
-history beyond that record (blinking, bleaching or brightness-jitter state is not rebuilt); and an SMLD
-from SMLMSim 0.7.1 or earlier has no saved `dt`, so its step is read from the saved config, and if that
-config's `dt` was changed in place after the run the original step cannot be recovered.
+at the exact end state and keep each track's D, mobility class and γ. A run whose rate was set with
+`γ` continues at that rate, so with a different `dt` each record carries γ·dt and a frame's brightness
+is unchanged as long as the effective exposure `n_sub·dt` is unchanged; a new `dt` that changes
+`n_sub·dt` (an exposure that is not a whole number of steps, or one capped at the frame period)
+changes the brightness with it. A run set by the default or by `photons` keeps its photons per record,
+as in 0.7.1. A saved per-track D (from a `monomer_mobility` mixture) overrides a changed `diff_monomer`
+or mixture, with a warning; a run without a mixture saves none, so a changed `diff_monomer` applies.
+One limitation: an SMLD that was filtered, concatenated or edited resumes from each track's latest
+record in its last frame, which is not the exact end state and carries no per-molecule history beyond
+that record (blinking, bleaching or brightness-jitter state is not rebuilt).
 `extract_final_state` is deprecated.
 
 Monomers can be given a mixture of mobility populations with

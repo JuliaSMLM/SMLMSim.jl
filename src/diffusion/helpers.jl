@@ -724,6 +724,8 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 - `track_D::Dict{Int,Float64}`: Per-track monomer diffusion coefficients, stored as `metadata["monomer_D"]`
 - `track_class::Dict{Int,Int}`: Per-track mobility class (index into `monomer_mobility`), stored as `metadata["monomer_class"]`
 - `γ::Union{Nothing,Real}=nothing`: Emission rate, photons/s, stored as `metadata["γ"]`; no key when `nothing`
+- `rate_source::Union{Nothing,String}=nothing`: How the rate was set (`"γ"`, `"photons"` or `"default"`), stored as
+  `metadata["rate_source"]`; no key when `nothing`
 - `n_frames::Union{Nothing,Int}=nothing`: Frame count of the movie; the largest frame present when `nothing`
 
 # Returns
@@ -732,7 +734,8 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::DiffusionSMLMConfig;
                      track_D::Dict{Int,Float64}=Dict{Int,Float64}(),
                      track_class::Dict{Int,Int}=Dict{Int,Int}(),
-                     γ::Union{Nothing,Real}=nothing, n_frames::Union{Nothing,Int}=nothing)
+                     γ::Union{Nothing,Real}=nothing, rate_source::Union{Nothing,String}=nothing,
+                     n_frames::Union{Nothing,Int}=nothing)
     # Determine max frame number
     max_frame = n_frames !== nothing ? n_frames : isempty(emitters) ? 0 : maximum(e -> e.frame, emitters)
     
@@ -749,6 +752,7 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
         "pair_mobility" => params.pair_mobility
     )
     γ === nothing || (metadata["γ"] = γ)
+    rate_source === nothing || (metadata["rate_source"] = rate_source)
     
     # Create SMLD object
     return BasicSMLD(
