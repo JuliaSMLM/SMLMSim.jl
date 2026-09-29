@@ -72,6 +72,7 @@ using .Core: n_fluorophores, apply_labeling
 include("static/StaticSMLM.jl")
 include("diffusion/InteractionDiffusion.jl")
 include("camera_images/CameraImages.jl")
+include("stepper/Stepper.jl")
 
 # Include the API overview functionality
 include("api.jl")
@@ -86,6 +87,9 @@ using .StaticSMLM: StaticSMLMConfig, apply_noise
 
 # Import from CameraImages
 using .CameraImages: gen_images, gen_image, poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
+using .CameraImages: RenderBuffer, render_gaussian!, StampTable, render_stamp!
+
+using .Stepper: Population, BackgroundModel, SimWorld, UniformExcitation, step!, layers, next_switch
 
 # Add this line to import the simulate methods
 using .InteractionDiffusion: simulate
@@ -176,6 +180,15 @@ export
 
 # Track utility functions
 export
+    Population,
+    BackgroundModel,
+    SimWorld,
+    UniformExcitation,
+    step!,
+    layers,
+    next_switch
+
+export
     get_track,
     get_num_tracks,
     get_tracks
@@ -188,6 +201,11 @@ export
     poisson_noise!,
     scmos_noise,
     scmos_noise!,
+
+    RenderBuffer,
+    render_gaussian!,
+    StampTable,
+    render_stamp!,
 
 # Info types
     SimInfo,
