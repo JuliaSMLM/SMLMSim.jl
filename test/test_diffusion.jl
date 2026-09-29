@@ -672,14 +672,22 @@ end
             es = smld.emitters
             (length(es), sum(e -> e.x, es), sum(e -> e.y, es), sum(e -> e.photons, es), count(e -> e.state == :dimer, es))
         end
-        # Recorded from 0.7.2 (97880c1) before the change
+        # Recorded from 0.7.2 (97880c1) before the change, on Julia 1.13.0. Julia does not promise bitwise-equal
+        # float sums across versions: the same 97880c1 code on Julia 1.10.11 gives x sums of 8213.124175680383
+        # (mixed) and 8280.643606955444 (default) against 8213.209547718594 and 8280.728978993655 here, a
+        # relative difference of 1.04e-5, with identical rand/randn/randexp streams and identical counts. So the
+        # counts (records, photons, dimer records) are compared exactly, the x/y sums at rtol 1e-4 (10x margin),
+        # and the default path against pair_mobility = :fixed exactly within one run.
         GOLD_MIXED = (8000, 8213.209547718594, 8116.742301806108, 4000.0, 4340)
         GOLD_DEFAULT = (8000, 8280.728978993655, 8287.913871628487, 4000.0, 5462)
+        matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
+                             isapprox(r[2], g[2]; rtol=1e-4) && isapprox(r[3], g[3]; rtol=1e-4)
         mob = [(0.5, 0.2), (0.5, 0.0)]
-        @test fx(monomer_mobility=mob) == GOLD_MIXED
-        @test fx() == GOLD_DEFAULT
-        @test fx(monomer_mobility=mob, pair_mobility=:fixed) == GOLD_MIXED
-        @test fx(pair_mobility=:fixed) == GOLD_DEFAULT
+        r_mixed, r_default = fx(monomer_mobility=mob), fx()
+        @test matches_gold(r_mixed, GOLD_MIXED)
+        @test matches_gold(r_default, GOLD_DEFAULT)
+        @test fx(monomer_mobility=mob, pair_mobility=:fixed) == r_mixed
+        @test fx(pair_mobility=:fixed) == r_default
 
         # Mobile-immobile pairs stay put, and the formation rule holds in 2D and 3D
         for nd in (2, 3)
