@@ -697,8 +697,13 @@ end
         # relative difference of 1.04e-5, with identical rand/randn/randexp streams and identical counts. So the
         # counts (records, photons, dimer records) are compared exactly, the x/y sums at rtol 1e-4 (10x margin),
         # and the default path against pair_mobility = :fixed exactly within one run.
-        GOLD_MIXED = (8000, 8213.209547718594, 8116.742301806108, 4000.0, 4340)
-        GOLD_DEFAULT = (8000, 8280.728978993655, 8287.913871628487, 4000.0, 5462)
+        # Re-recorded on Julia 1.13.0 for the periodic straddle fix (captain's brief on c7770fc, item 4): a bound
+        # pair straddling the periodic boundary used to jump by half the box (its center taken from wrapped
+        # coordinates) and now moves by one step. Counts are unchanged; the default run's sums moved by exactly
+        # -84.0 (x) and +18.0 (y), whole half-boxes (box 2); 0.7.2's values were (8213.209547718594,
+        # 8116.742301806108) mixed and (8280.728978993655, 8287.913871628487) default.
+        GOLD_MIXED = (8000, 8172.562136937116, 8097.732570713662, 4000.0, 4340)
+        GOLD_DEFAULT = (8000, 8196.728978993657, 8305.913871628487, 4000.0, 5462)
         matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
                              isapprox(r[2], g[2]; rtol=1e-4) && isapprox(r[3], g[3]; rtol=1e-4)
         mob = [(0.5, 0.2), (0.5, 0.0)]
@@ -1271,8 +1276,8 @@ end
                 q = pos(B)
                 inside(q, T, L) || push!(fails, "$tg: outside $q")
                 u = unit(Float64.(b) .- Float64.(a))
-                t = Float64(top(T, L))
-                fits = refl ? all(k -> 0 <= a[k] + d * u[k] <= t || 0 <= a[k] - d * u[k] <= t, 1:N) :
+                # the fit is decided against the physical box [0, L]
+                fits = refl ? all(k -> 0 <= a[k] + d * u[k] <= L || 0 <= a[k] - d * u[k] <= L, 1:N) :
                               all(k -> d * abs(u[k]) <= L / 2, 1:N)
                 off = refl ? q .- Float64.(a) : mi.(q .- Float64.(a), L)
                 if fits
@@ -1297,12 +1302,11 @@ end
                 end
                 inside(p1, T, L) && inside(p2, T, L) || push!(fails, "$tg: mobile outside")
                 u = unit(Float64.(b) .- Float64.(a))
-                t = Float64(top(T, L))
-                if all(k -> d * abs(u[k]) <= t, 1:N)
+                if all(k -> d * abs(u[k]) <= L, 1:N)
                     tally(:mobile_fit)
                     abs(sqrt(sum(abs2, p2 .- p1)) - d) <= tol || push!(fails, "$tg: mobile bond")
                     mid = (Float64.(a) .+ Float64.(b)) ./ 2
-                    all(k -> abs((p1[k] + p2[k]) / 2 - clamp(mid[k], d / 2 * abs(u[k]), t - d / 2 * abs(u[k]))) <= tol, 1:N) ||
+                    all(k -> abs((p1[k] + p2[k]) / 2 - clamp(mid[k], d / 2 * abs(u[k]), L - d / 2 * abs(u[k]))) <= tol, 1:N) ||
                         push!(fails, "$tg: mobile midpoint")
                 else
                     tally(:mobile_fallback)
@@ -1318,13 +1322,26 @@ end
                 es = [mk(T, q1, 1, :dimer, 2), mk(T, q2, 2, :dimer, 1)]
                 pb = DiffusionSMLMConfig(ndims=N, box_size=L, boundary="reflecting", d_dimer=d, r_react=rr, diff_monomer=0.3,
                                          diff_dimer=0.5 * L^2, diff_dimer_rot=0.5, k_off=0.0)
+                Random.seed!(trial)
                 out = ID.update_system(es, pb, 0.001; track_D=Dict(1 => 0.3, 2 => 0.3))
                 p1, p2 = pos(out[1]), pos(out[2])
                 inside(p1, T, L) && inside(p2, T, L) || push!(fails, "$tg: bound outside")
-                if all(k -> d * abs(w[k]) <= Float64(top(T, L)), 1:N)
+                # the proposed step (update_system draws the dissociation rand() first, then diffuse_dimer)
+                Random.seed!(trial); rand()
+                r1, r2 = pos.(ID.diffuse_dimer(es[1], es[2], pb.diff_dimer, pb.diff_dimer_rot, d, 0.001))
+                u = unit(r2 .- r1)
+                if inside(r1, T, L) && inside(r2, T, L)
+                    tally(:bound_inside)
+                    (p1, p2) == (r1, r2) || push!(fails, "$tg: bound pair inside moved")
+                elseif all(k -> d * abs(u[k]) <= L, 1:N)
                     tally(:bound_fit)
-                    abs(sqrt(sum(abs2, p2 .- p1)) - d) <= tol + 4 * sqrt(N) * eps(T) * d ||
-                        push!(fails, "$tg: bound bond $(sqrt(sum(abs2, p2 .- p1)))")
+                    # the center folds into [h, L - h] per axis as often as it crosses (a triangle wave); orientation kept
+                    fold(x, lo, hi) = hi <= lo ? lo : (wd = hi - lo; y = mod(x - lo, 2wd); lo + (y <= wd ? y : 2wd - y))
+                    c = ntuple(k -> fold((r1[k] + r2[k]) / 2, d / 2 * abs(u[k]), L - d / 2 * abs(u[k])), N)
+                    btol = tol + 4 * sqrt(N) * eps(T) * d
+                    all(k -> abs(p1[k] - (c[k] - d / 2 * u[k])) <= btol && abs(p2[k] - (c[k] + d / 2 * u[k])) <= btol, 1:N) ||
+                        push!(fails, "$tg: bound center or orientation")
+                    abs(sqrt(sum(abs2, p2 .- p1)) - d) <= btol || push!(fails, "$tg: bound bond $(sqrt(sum(abs2, p2 .- p1)))")
                 else
                     tally(:bound_fallback)
                 end
@@ -1332,7 +1349,8 @@ end
         end
         @test isempty(fails)
         isempty(fails) || foreach(println, first(fails, 20))
-        @test all(k -> get(counts, k, 0) > 20, (:anchored_fit, :anchored_fallback, :mobile_fit, :mobile_periodic, :bound_fit))
+        @test all(k -> get(counts, k, 0) > 20, (:anchored_fit, :anchored_fallback, :mobile_fit, :mobile_periodic, :bound_fit,
+                                                 :bound_inside))
 
         # the reviewer's corner and Codex's box narrower than 2 d_dimer
         for (a, b) in (((0.01, 0.01), (0.005, 0.005)), ((0.01, 0.01, 0.01), (0.005, 0.005, 0.005)))
@@ -1348,5 +1366,45 @@ end
         out = ID.update_system([mk(Float64, (0.4, 0.1), 1, :monomer, nothing), mk(Float64, (0.39, 0.1), 2, :monomer, nothing)],
                                prm, 0.001; track_D=Dict(1 => 0.0, 2 => 0.3))
         @test pos(out[1]) == (0.4, 0.1) && pos(out[2]) == (0.39, 0.1) && out[2].state == :dimer
+
+        # reviews of c7770fc. Codex B1: the fit is decided against [0, box], not the Float32 top of the box
+        for N in (2, 3), Ds in ((0.0, 0.3), (0.0, 0.0))
+            prm = DiffusionSMLMConfig(ndims=N, box_size=0.1, boundary="reflecting", d_dimer=0.05, r_react=0.02,
+                                      diff_monomer=0.3, k_off=0.0, pair_mobility=:min)
+            a = ntuple(k -> k == 1 ? prevfloat(0.05f0) : 0.05f0, N); b = ntuple(k -> k == 1 ? 0.04f0 : 0.05f0, N)
+            out = ID.update_system([mk(Float32, a, 1, :monomer, nothing), mk(Float32, b, 2, :monomer, nothing)], prm, 0.001;
+                                   track_D=Dict(1 => Ds[1], 2 => Ds[2]))
+            @test pos(out[1]) == Float64.(a) && all(c -> 0 <= c <= 0.1, pos(out[2]))
+            @test isapprox(sqrt(sum(abs2, pos(out[2]) .- Float64.(a))), 0.05; atol=1e-6)
+        end
+        # Codex B2: the bound center folds as often as it crosses: proposed ends (0.45, 1.25) in a unit box give (0.05, 0.85)
+        prm = DiffusionSMLMConfig(box_size=1.0, boundary="reflecting", d_dimer=0.8, r_react=0.05, diff_monomer=0.3, k_off=0.0)
+        q1, q2 = ID._move_pair(mk(Float64, (0.45, 0.5), 1, :dimer, 2), mk(Float64, (1.25, 0.5), 2, :dimer, 1), prm)
+        @test all(isapprox.(pos(q1), (0.05, 0.5); atol=1e-12)) && all(isapprox.(pos(q2), (0.85, 0.5); atol=1e-12))
+        # Claude: a bound pair straddling the periodic boundary moves by one step, not to the middle of the box
+        prm = DiffusionSMLMConfig(box_size=10.0, boundary="periodic", d_dimer=0.05, r_react=0.01, diff_monomer=0.3,
+                                  diff_dimer=0.01, diff_dimer_rot=0.5, k_off=0.0)
+        es = [mk(Float64, (9.99, 5.0), 1, :dimer, 2), mk(Float64, (0.04, 5.0), 2, :dimer, 1)]
+        out = Dict(e.track_id => e for e in ID.update_system(es, prm, 0.001))
+        for e in es
+            @test all(abs.(mi.(pos(out[e.track_id]) .- pos(e), 10.0)) .< 0.1) && all(c -> 0 <= c <= 10.0, pos(out[e.track_id]))
+        end
+        @test isapprox(sqrt(sum(abs2, mi.(pos(out[2]) .- pos(out[1]), 10.0))), 0.05; atol=1e-12)
+        # Claude: apply_boundary ends inside the box in Float32 (Float32(0.1) lies above 0.1)
+        for bnd in ("reflecting", "periodic"), p in ((0.1f0, 0.05f0), (0.1f0, 0.05f0, 0.1f0))
+            @test all(c -> 0 <= c <= 0.1, pos(ID.apply_boundary(mk(Float32, p, 1, :monomer, nothing), 0.1, bnd)))
+        end
+        # item 9: under :fixed, one warning per run when a bound pair has an immobile member, pointing to :min
+        cfgw(pm) = DiffusionSMLMConfig(density=50.0, box_size=1.0, diff_monomer=0.3, monomer_mobility=[(1.0, 0.0)],
+                                       diff_dimer=0.1, r_react=0.2, d_dimer=0.05, k_off=0.0, dt=0.001, t_max=0.02,
+                                       camera_framerate=100.0, camera_exposure=0.01, pair_mobility=pm)
+        function nwarn(pm)
+            Random.seed!(63)
+            logs, s = Test.collect_test_logs(() -> simulate(cfgw(pm); γ=1e3)[1])
+            return count(l -> occursin("use pair_mobility = :min", string(l.message)), logs), s
+        end
+        n, s = nwarn(:fixed)
+        @test n == 1 && any(e -> e.state == :dimer, s.emitters)
+        @test nwarn(:min)[1] == 0
     end
 end

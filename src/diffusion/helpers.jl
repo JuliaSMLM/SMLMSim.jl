@@ -578,7 +578,22 @@ _at(e::DiffusingEmitter3D{T}, p::NTuple{3,T}) where {T} =
     DiffusingEmitter3D{T}(p[1], p[2], p[3], e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state,
                           e.partner_id)
 _inside(e::AbstractDiffusingEmitter, box::Float64) = all(c -> 0 <= c <= box, _coords(e))
-_clamp_in(e::AbstractDiffusingEmitter, box::Float64) = _at(e, map(c -> _inbox(typeof(c), Float64(c), box), _coords(e)))
+
+# `e` at the minimum image of its offset from `ref` under periodic boundaries, so a pair's center and
+# axis are those of its bond, not of its wrapped coordinates; unchanged under reflecting boundaries
+function _near(e::AbstractDiffusingEmitter, ref::AbstractDiffusingEmitter, params::DiffusionSMLMConfig)
+    params.boundary == "periodic" || return e
+    L = params.box_size
+    return _at(e, map((c, r) -> typeof(c)(c - L * round((c - r) / L)), _coords(e), _coords(ref)))
+end
+
+# x folded into [lo, hi] as often as it crosses either end (a triangle wave); lo when hi <= lo
+function _fold(x::Float64, lo::Float64, hi::Float64)
+    hi <= lo && return lo
+    w = hi - lo
+    y = mod(x - lo, 2w)
+    return lo + (y <= w ? y : 2w - y)
+end
 
 # Unit vector from p to q; (1, 0, ...) when they coincide
 function _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N}
@@ -587,13 +602,12 @@ function _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N}
     return n > 0 ? v ./ n : ntuple(k -> k == 1 ? 1.0 : 0.0, Val(N))
 end
 
-# The point `s` from the fixed point `a` along `u`. Reflecting: each axis that would leave the box is
-# mirrored across `a`, and `ok` is false when some axis fits neither way. Periodic: wrapped, and `ok`
-# is false unless every s|u_k| <= box/2, so the offset is its own minimum image.
+# The point `s` from the fixed point `a` along `u`. Reflecting: each axis that would leave the box
+# [0, box] is mirrored across `a`, and `ok` is false when some axis fits neither way. Periodic: wrapped,
+# and `ok` is false unless every s|u_k| <= box/2, so the offset is its own minimum image.
 function _place_from(a::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box::Float64, reflecting::Bool,
                      ::Type{T}) where {N,T<:AbstractFloat}
-    top = Float64(_top(T, box))
-    fits(x) = 0 <= x <= top
+    fits(x) = 0 <= x <= box
     ok = all(ntuple(k -> reflecting ? fits(a[k] + s * u[k]) || fits(a[k] - s * u[k]) : s * abs(u[k]) <= box / 2, Val(N)))
     q = ntuple(Val(N)) do k
         x = a[k] + s * u[k]
@@ -602,23 +616,15 @@ function _place_from(a::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box
     return ok, q
 end
 
-# Two points `s` apart along `u`, centered on `c`. Reflecting: the center keeps (s/2)|u_k| from each
-# wall, clamped there when placing or reflected off that inner wall when moving (`reflect = true`), and
-# `ok` is false when some s|u_k| exceeds the box. Periodic: each end wrapped, and `ok` is false unless
-# every s|u_k| <= box/2.
-function _place_centered(c::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box::Float64, reflecting::Bool,
+# Two points `s` apart along `u`, centered on `c`, in a reflecting box [0, box]: the center keeps
+# (s/2)|u_k| from each wall, clamped there when placing, or folded into that interval as often as it
+# crosses when moving (`reflect = true`); `ok` is false when some s|u_k| exceeds the box.
+function _place_centered(c::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box::Float64,
                          ::Type{T}; reflect::Bool=false) where {N,T<:AbstractFloat}
-    top = Float64(_top(T, box))
     h = ntuple(k -> (s / 2) * abs(u[k]), Val(N))
-    ok = all(ntuple(k -> reflecting ? 2h[k] <= top : 2h[k] <= box / 2, Val(N)))
-    m = ntuple(Val(N)) do k
-        reflecting || return c[k]
-        lo, hi = h[k], top - h[k]
-        x = reflect && c[k] < lo ? 2lo - c[k] : reflect && c[k] > hi ? 2hi - c[k] : c[k]
-        return clamp(x, lo, hi)
-    end
-    wrap(x) = _inbox(T, reflecting ? x : mod(x, box), box)
-    return ok, ntuple(k -> wrap(m[k] - (s / 2) * u[k]), Val(N)), ntuple(k -> wrap(m[k] + (s / 2) * u[k]), Val(N))
+    ok = all(ntuple(k -> 2h[k] <= box, Val(N)))
+    m = ntuple(k -> reflect ? _fold(c[k], h[k], box - h[k]) : clamp(c[k], h[k], box - h[k]), Val(N))
+    return ok, ntuple(k -> _inbox(T, m[k] - (s / 2) * u[k], box), Val(N)), ntuple(k -> _inbox(T, m[k] + (s / 2) * u[k], box), Val(N))
 end
 
 # A pair just formed from monomers `e1`, `e2` (`d1`, `d2` from `dimerize`), by the placement rule: an
@@ -639,23 +645,23 @@ function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
     end
     (!reflecting || (_inside(d1, box) && _inside(d2, box))) && return d1, d2
     p1, p2 = _pos(e1), _pos(e2)
-    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, true, T)
+    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, T)
     ok && return _at(d1, q1), _at(d2, q2)
-    return _clamp_in(apply_boundary(d1, box, params.boundary), box), _clamp_in(apply_boundary(d2, box, params.boundary), box)
+    return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
 end
 
-# A mobile pair after a bound step (`d1`, `d2` from `diffuse_dimer`): in a reflecting box with an end
-# outside, its center reflects off the walls moved in by each end's half-extent, keeping orientation and
-# bond length (each end reflected on its own when it cannot fit); under periodic boundaries each end is
-# wrapped, as in 0.7.1. Internal.
+# A mobile pair after a bound step (`d1`, `d2` from `diffuse_dimer` of the partner's minimum image,
+# `_near`): in a reflecting box with an end outside, its center folds off the walls moved in by each
+# end's half-extent, keeping orientation and bond length (each end reflected on its own when it cannot
+# fit); under periodic boundaries each end is wrapped. Internal.
 function _move_pair(d1::E, d2::E, params::DiffusionSMLMConfig) where {E<:AbstractDiffusingEmitter}
     box = params.box_size
     params.boundary == "reflecting" || return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
     _inside(d1, box) && _inside(d2, box) && return d1, d2
     p1, p2 = _pos(d1), _pos(d2)
-    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, true, typeof(d1.x); reflect=true)
+    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, typeof(d1.x); reflect=true)
     ok && return _at(d1, q1), _at(d2, q2)
-    return _clamp_in(apply_boundary(d1, box, params.boundary), box), _clamp_in(apply_boundary(d2, box, params.boundary), box)
+    return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
 end
 
 """
@@ -709,6 +715,9 @@ function apply_boundary(e::DiffusingEmitter2D{T}, box_size::Float64, boundary::S
         end
     end
     
+    # Inside [0, box_size] in T: a Float32 coordinate can round past the wall
+    new_x, new_y = _inbox(T, Float64(new_x), box_size), _inbox(T, Float64(new_y), box_size)
+
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y
         return DiffusingEmitter2D{T}(
@@ -768,6 +777,10 @@ function apply_boundary(e::DiffusingEmitter3D{T}, box_size::Float64, boundary::S
         end
     end
     
+    # Inside [0, box_size] in T: a Float32 coordinate can round past the wall
+    new_x, new_y, new_z = _inbox(T, Float64(new_x), box_size), _inbox(T, Float64(new_y), box_size),
+                          _inbox(T, Float64(new_z), box_size)
+
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y || new_z != e.z
         return DiffusingEmitter3D{T}(

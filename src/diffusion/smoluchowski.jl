@@ -44,9 +44,12 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   `track_id` stays. `:min` requires `diff_monomer > 0`. Stored in `smld.metadata["pair_mobility"]`.
   Under either setting a mobile pair in a reflecting box is rigid: at formation, if an end is outside
   the box, both partners move to `d_dimer/2` either side of their midpoint, shifted inward just enough
-  to fit, and while bound the pair's center reflects off the walls moved in by each end's half-extent,
-  so both partners stay inside at `d_dimer` apart (when `box_size < d_dimer` each partner is reflected
-  on its own, as in 0.7.1). Periodic boundaries, the default, are unchanged from 0.7.1.
+  to fit, and while bound the pair's center folds off the walls moved in by each end's half-extent as
+  often as it crosses them, so both partners stay inside at `d_dimer` apart (when `box_size < d_dimer`
+  each partner is reflected on its own, as in 0.7.1). Under periodic boundaries, the default, a bound
+  pair moves from its partner's minimum image, so a pair straddling the boundary moves by one step.
+  Under `:fixed` a bound pair moves and rotates even when a member is immobile (monomer D = 0), and
+  `simulate` warns once per run when that happens; `:min` keeps such a pair in place.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
 `n_sub` records of a frame (`substeps_per_frame`) carries `γ·dt`, so a frame holds `γ·n_sub·dt`
@@ -444,8 +447,9 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                         d1 = restamp(e1; timestamp=e1.timestamp + dt)
                         d2 = restamp(e2; timestamp=e2.timestamp + dt)
                     else
-                        # Apply dimer diffusion, then the boundary to the pair as a rigid body
-                        d1, d2 = diffuse_dimer(e1, e2, D_pair, rot, params.d_dimer, dt)
+                        # Apply dimer diffusion to the bond (the partner's minimum image under periodic
+                        # boundaries), then the boundary to the pair as a rigid body
+                        d1, d2 = diffuse_dimer(e1, _near(e2, e1, params), D_pair, rot, params.d_dimer, dt)
                         d1, d2 = _move_pair(d1, d2, params)
                     end
                     
@@ -746,6 +750,12 @@ function simulate(params::DiffusionSMLMConfig;
         k = (f - 1) * steps_per_frame + j
         j < n_sub && _record_frame!(camera_emitters, emitters, k * params.dt, f)
         emitters = update_system(emitters, params, params.dt; track_D=isempty(track_D) ? nothing : track_D)
+    end
+
+    # Under :fixed, a bound pair moves and rotates even with an immobile member: say so once per run
+    if params.pair_mobility == :fixed && (params.diff_dimer > 0 || params.diff_dimer_rot > 0) &&
+       any(e -> e.state == :dimer && get(track_D, e.track_id, params.diff_monomer) == 0, camera_emitters)
+        @warn "pair_mobility = :fixed: bound pairs with an immobile member (monomer D = 0) move with diff_dimer and rotate with diff_dimer_rot; use pair_mobility = :min to keep such pairs in place"
     end
 
     # Convert to SMLD

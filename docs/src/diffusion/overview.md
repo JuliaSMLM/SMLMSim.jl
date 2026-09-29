@@ -142,9 +142,13 @@ with `diff_dimer_rot`.
 
 In a reflecting box a mobile pair (either setting) is a rigid body: when an end would leave the box at
 formation, both partners move to `d_dimer/2` either side of their midpoint, shifted inward just enough
-to fit, and while bound the pair's center reflects off the walls moved in by each end's half-extent, so
-both partners stay inside the box at `d_dimer` apart. When `box_size < d_dimer` each partner is
-reflected on its own, as in 0.7.1. Periodic boundaries (the default) are unchanged from 0.7.1.
+to fit, and while bound the pair's center folds off the walls moved in by each end's half-extent as
+often as it crosses them, so both partners stay inside the box at `d_dimer` apart. When
+`box_size < d_dimer` each partner is reflected on its own, as in 0.7.1. Under periodic boundaries (the
+default) a bound pair moves from its partner's minimum image, so a pair straddling the boundary moves by
+one step. Under the default `:fixed`, a pair with an immobile member (a D = 0 population) still moves
+with `diff_dimer` and rotates with `diff_dimer_rot` once bound; `simulate` warns once per run when that
+happens, and `pair_mobility = :min` keeps such a pair in place.
 
 
 ## Microscope Image Generation
