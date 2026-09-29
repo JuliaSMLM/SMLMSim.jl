@@ -971,6 +971,31 @@ end
         s1e, _ = simulate(p1; starting_conditions=s1d, camera=cam32)
         prior_ph = Dict(e.track_id => e.photons for e in s1d.emitters)
         @test all(e -> e.photons == prior_ph[e.track_id], s1e.emitters)
+        # 1b. no saved γ or dt (0.7.1 output, heterogeneous brightness): each track keeps its own rate
+        frame1(s, id) = sum(e.photons for e in s.emitters if e.track_id == id && e.frame == 1)
+        no_rate(s) = BasicSMLD(s.emitters, s.camera, s.n_frames, s.n_datasets,
+                             Dict(k => v for (k, v) in s.metadata if k ∉ ("γ", "dt", "final_state", "last_frame_latest")))
+        het = [SMLMSim.InteractionDiffusion.restamp(e; photons=100.0 * e.track_id) for e in extract_end_state(s1).emitters]
+        Random.seed!(33)
+        sh, _ = simulate(p1; starting_conditions=het, camera=cam32)
+        @test !haskey(sh.metadata, "γ")
+        for (src, pnew) in ((no_rate(s1), p2), (sh, p2), (no_rate(s2), p1))
+            prior_dt = src.metadata["simulation_parameters"].dt
+            ref = Dict(e.track_id => e.photons for e in extract_end_state(src).emitters)
+            sc, _ = simulate(pnew; starting_conditions=src, camera=cam32)
+            @test all(e -> e.photons == ref[e.track_id] * (pnew.dt / prior_dt), sc.emitters)
+            @test all(id -> isapprox(frame1(sc, id), frame1(src, id); rtol=1e-12), 1:3)
+        end
+        # 1c. dt changed in place on the same config object, and increasing dt with a saved γ
+        pin = static_params(dt=0.01, diff_monomer=0.5)
+        Random.seed!(34)
+        si, _ = simulate(pin; γ=1e4, override_count=3, camera=cam32)
+        pin.dt = 0.005
+        si2, _ = simulate(pin; starting_conditions=si, camera=cam32)
+        @test all(e -> e.photons == 1e4 * 0.005, si2.emitters)
+        s3, _ = simulate(p1; starting_conditions=s2, camera=cam32)
+        @test all(e -> e.photons == 1e4 * 0.01, s3.emitters)
+        @test all(id -> isapprox(frame1(s3, id), frame1(s2, id); rtol=1e-12), 1:3)
 
         # 2. an empty new mixture keeps the saved per-track D
         mix = [(0.5, 0.0), (0.5, 0.1)]
