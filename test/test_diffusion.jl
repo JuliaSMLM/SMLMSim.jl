@@ -1208,6 +1208,23 @@ end
         x.metadata["monomer_class"][id] = 99
         push!(x.metadata["monomer_mobility"], (0.0, 9.9))
         @test s.metadata["monomer_D"][id] == D0 && s.metadata["monomer_class"][id] == cl0 && s.metadata["monomer_mobility"] == mix0
+        # ... simulation_parameters included
+        D1 = s.metadata["simulation_parameters"].diff_monomer
+        x.metadata["simulation_parameters"].diff_monomer = 9.0
+        @test s.metadata["simulation_parameters"].diff_monomer == D1
+        # Claude reviewer's HOLD on c7770fc: SMLMData's cat_smld and merge_smld keys mean unknown provenance, without a
+        # tie (B runs a frame longer, so its records alone make the last frame, at A's rate and with A's track ids)
+        Random.seed!(61)
+        sb, _ = simulate(cfg(); γ=1e4, override_count=4, camera=cam32)
+        Random.seed!(62)
+        sl, _ = simulate(static_params(dt=0.005, t_max=0.03, box_size=5.0, diff_monomer=0.3, monomer_mobility=[(0.5, 0.0), (0.5, 0.2)],
+                                       r_react=1e-6); γ=1e4, override_count=4, camera=cam32)
+        for C in (SMLMSim.SMLMData.cat_smld([sb, sl]), SMLMSim.SMLMData.merge_smld([sb, sl]))
+            x = @test_logs (:warn, r"provenance unknown") extract_end_state(C)
+            @test !any(k -> haskey(x.metadata, k), ("γ", "rate_source", "monomer_D", "monomer_class"))
+            sx = @test_logs (:warn, r"provenance unknown") match_mode=:any simulate(cfg(dt=0.0025); starting_conditions=C, camera=cam32)[1]
+            @test sx.metadata["rate_source"] == "photons" && all(e -> e.photons == 1e4 * 0.005, sx.emitters)
+        end
     end
 
     @testset "(q) placement rule" begin

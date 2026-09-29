@@ -116,9 +116,10 @@ the run's; every other track draws from the new mixture or uses `diff_monomer` a
 never saved, so a later change applies (such a track has no entry in `metadata["monomer_D"]`).
 Continuation assumes the SMLD comes from one simulation run, or a filtered subset of one; continuing a
 concatenation of different runs is unsupported, and the γ check cannot detect a molecule from another
-run that happens to carry γ·dt. A last frame holding two records of one track at the same timestamp,
-which no single run produces, is taken as unknown provenance: no γ, rate source or saved D is carried,
-with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
+run that happens to carry γ·dt. A concatenation or merge (SMLMData's `cat_smld` and `merge_smld` mark
+it in the metadata) or, as a backstop, a last frame holding two records of one track at the same
+timestamp, which no single run produces, is taken as unknown provenance: no γ, rate source or saved D
+is carried, with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
 its last frame, which is not the exact end state and carries no per-molecule history beyond that record
 (blinking, bleaching or brightness-jitter state is not rebuilt). `extract_final_state` is deprecated.
 

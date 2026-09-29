@@ -851,9 +851,11 @@ unchanged from that run (the latest record per track of the last frame matches
 without metadata) the record with the largest timestamp per track in the last frame present is
 used, with its photons as they are; tracks absent from that frame are not resumed. The result carries
 copies of `"γ"`, `"rate_source"`, `"dt"`, `"monomer_mobility"`, `"monomer_D"` and `"monomer_class"` when
-present. A last frame holding two records of one track at the same timestamp, which no single run
-produces, has unknown provenance: the first of them per track is resumed, `"γ"`, `"rate_source"`,
-`"monomer_D"` and `"monomer_class"` are left out, and one warning is given. `simulate` then applies the continuation rule: a γ-set rate is restamped to γ·dt only if
+present. A concatenation or merge of runs has unknown provenance: metadata `"concatenated_from"` or
+`"merged_from"` (written by SMLMData's `cat_smld` and `merge_smld`), or, as a backstop, a last frame
+holding two records of one track at the same timestamp, which no single run produces. Then the latest
+record per track (the first of tied ones) is resumed, `"γ"`, `"rate_source"`, `"monomer_D"` and
+`"monomer_class"` are left out, and one warning is given. `simulate` then applies the continuation rule: a γ-set rate is restamped to γ·dt only if
 every molecule carries γ·dt at the saved dt, and otherwise photons per record are kept; a kept D stays,
 other tracks take the current setting. Extracting twice gives the same result. Continuation assumes the
 SMLD comes from one simulation run, or a filtered subset of one; continuing a concatenation of different
@@ -877,8 +879,9 @@ smld_continued, info = simulate(params_new; starting_conditions=extract_end_stat
 ```
 """
 function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
-    # Two last-frame records of one track at one timestamp, which no single run produces: unknown provenance
-    tie = _has_tie(smld.emitters)
+    # SMLMData's cat_smld / merge_smld keys, or (a backstop for a hand-built concatenation) two last-frame records of
+    # one track at one timestamp, which no single run produces: unknown provenance
+    tie = haskey(smld.metadata, "concatenated_from") || haskey(smld.metadata, "merged_from") || _has_tie(smld.emitters)
     final = get(smld.metadata, "final_state", nothing)
     exact = !tie && final !== nothing && _final_state_matches(smld, final)
     resumed = exact ? final : _last_frame_latest(smld.emitters)
@@ -890,7 +893,7 @@ function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingE
         tie && key in ("γ", "rate_source", "monomer_D", "monomer_class") && continue
         haskey(smld.metadata, key) && (metadata[key] = _md_copy(smld.metadata[key]))
     end
-    tie && @warn "extract_end_state: the last frame holds two records of one track at the same timestamp (a concatenation of runs, which continuation does not support); provenance unknown: no γ, rate source or saved D is carried, so each molecule keeps its photons per record and takes the current diff_monomer or monomer_mobility" maxlog=1
+    tie && @warn "extract_end_state: a concatenation or merge of runs (metadata \"concatenated_from\" or \"merged_from\", or two last-frame records of one track at the same timestamp), which continuation does not support; provenance unknown: no γ, rate source or saved D is carried, so each molecule keeps its photons per record and takes the current diff_monomer or monomer_mobility" maxlog=1
     # A second extraction takes the stored path and returns the same emitters in the same order
     metadata["final_state"] = final_emitters
     metadata["last_frame_latest"] = _last_frame_latest(final_emitters)
@@ -903,6 +906,7 @@ const CONTINUATION_RTOL = 1e-6
 
 # The extract's metadata holds copies, so editing it leaves the source unchanged. Internal.
 _md_copy(v::Union{AbstractDict,AbstractVector}) = copy(v)
+_md_copy(v::SMLMSimParams) = deepcopy(v)
 _md_copy(v) = v
 
 # Two records of one track at one timestamp in the last frame present. Internal.
