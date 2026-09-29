@@ -18,7 +18,8 @@ _capacity(n0::Integer) = n0 + ceil(Int, 10 * sqrt(n0)) + 64
 _vectors(ps::PopState) = ((ps.id, ps.x, ps.y, ps.z, ps.D, ps.γ, ps.m, ps.state, ps.clock, ps.budget,
                           ps.t_depart, ps.t_birth, ps.lj, ps.xr, ps.yr, ps.sx, ps.sy, ps.sxp, ps.syp,
                           ps.sph, ps.t_present, ps.t_lit, ps.sI, ps.t_bleach_f, ps.partner, ps.partner_pop),
-                          (ps.partner_id, ps.θ, ps.t_form, ps.t_break_due, ps.t_bound, ps.t_break_f, ps.t_litb, ps.vis_form))
+                          (ps.partner_id, ps.θ, ps.t_form, ps.t_break_due, ps.t_bound, ps.t_break_f, ps.t_litb, ps.vis_form,
+                           ps.partner_f))
 
 @inline function _each_vector(f, ps::PopState)
     a, b = _vectors(ps)
@@ -39,6 +40,7 @@ end
     ps.sph[i] = 0.0; ps.t_present[i] = 0.0; ps.t_lit[i] = 0.0; ps.sI[i] = 0.0
     ps.t_bleach_f[i] = NaN
     ps.t_bound[i] = 0.0; ps.t_break_f[i] = NaN; ps.t_litb[i] = 0.0
+    ps.partner_f[i] = ps.partner[i] != 0 ? ps.partner_id[i] : 0
     return nothing
 end
 

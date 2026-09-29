@@ -766,8 +766,8 @@ end
         @test r.vis_form && r.vis_bound
         @test isapprox(r.bound, (ta + T - tf) / T; atol=1e-12) && isapprox(r.lit_bound, (ta + T - tf) / T; atol=1e-12)
     end
-    # (viii) breakup at 0.0137 s, inside frame 2: bound and lit for 3.7 ms of it; unbound in frame 3. The row's
-    # partner is the one at the end of the exposure, so the breakup frame is not a visible pair
+    # (viii) breakup at 0.0137 s, inside frame 2: bound and lit for 3.7 ms of it, so a visible pair in it, while the
+    # row's partner is the one at the end of the exposure (0); unbound in frame 3
     w = vis_world([1.6, 1.63], [1.6, 1.6])
     ia, ib = w.pops[1].id[1], w.pops[2].id[1]
     frame!(w, 1)
@@ -776,7 +776,7 @@ end
     for r in (f[ia], f[ib])
         @test isapprox(r.t_break, 0.0137; atol=1e-12)
         @test isapprox(r.bound, 0.37; atol=1e-9) && isapprox(r.lit_bound, 0.37; atol=1e-9)
-        @test r.partner == 0 && !r.vis_bound && !r.vis_form   # vis_bound follows `partner`, 0 after the break
+        @test r.partner == 0 && r.vis_bound && !r.vis_form
     end
     f = frame!(w, 3)
     for r in (f[ia], f[ib])

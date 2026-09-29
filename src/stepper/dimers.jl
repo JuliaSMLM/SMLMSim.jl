@@ -148,6 +148,7 @@ function _try_pair!(w::SimWorld, e1::Int, e2::Int, t0::Float64, h::Float64)
     A.t_form[ia] = tform; B.t_form[ib] = tform
     vis = A.state[ia] == 1 && A.m[ia] > 0 && B.state[ib] == 1 && B.m[ib] > 0
     A.vis_form[ia] = vis; B.vis_form[ib] = vis
+    A.partner_f[ia] = B.id[ib]; B.partner_f[ib] = A.id[ia]
     A.t_break_due[ia] = tbd; B.t_break_due[ib] = tbd
     A.t_depart[ia] = tdep; B.t_depart[ib] = tdep
     return nothing

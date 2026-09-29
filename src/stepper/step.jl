@@ -42,7 +42,7 @@ function _pop_state(rng::AbstractRNG, p::Population, px::Float64, box::NTuple{4,
                   zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(Int32, cap), zeros(Int32, cap), zeros(Int, cap), zeros(cap), zeros(cap), zeros(cap),
-                  zeros(cap), zeros(cap), zeros(cap), zeros(Bool, cap), Inf)
+                  zeros(cap), zeros(cap), zeros(cap), zeros(Bool, cap), zeros(Int, cap), Inf)
     return ps, n0, A
 end
 
@@ -79,7 +79,7 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
                  zeros(ny, nx), zeros(ny, nx), zeros(ny, nx), zeros(ny, nx), 0,
                  RenderBuffer(maximum((p.psf isa StampTable ? p.psf.radius : ceil(Int, 5 * p.psf.σ / px) + 1
                                        for p in pops); init=0)),
-                 0, FrameTruth[], 0, Float64(merge_radius), Bool[], t0, t0,
+                 0, FrameTruth[], 0, Float64(merge_radius), Bool[], Int[], t0, t0,
                  dimers, zeros(Int32, ncx * ncy), Int32[], Int32[], Int32[], ncx, ncy)
     for p in pops
         ps, n0, A = _pop_state(rng, p, px, box, t0)

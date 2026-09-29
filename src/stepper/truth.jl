@@ -33,6 +33,8 @@ function _write_row!(w::SimWorld, k::Int, ps::PopState, i::Int, departed::Bool)
     end
     tb = ps.t_birth[i]
     w.n_truth += 1
+    length(w.vis_partner) < length(w.truth) && resize!(w.vis_partner, length(w.truth))
+    w.vis_partner[w.n_truth] = ps.partner_f[i]
     pid = ps.partner_id[i]
     tf = ps.t_form[i]
     w.truth[w.n_truth] = FrameTruth(w.frame + 1, ps.id[i], Int32(k), ps.m[i], x, y, ps.z[i], sph,
@@ -97,18 +99,19 @@ end
     return FrameTruth(ntuple(k -> k == j ? true : getfield(r, k), Val(N))...)
 end
 
-# vis_bound: a row with a partner is visible as a pair when it and its partner's row of this frame both have
-# lit_bound > 0. Runs after all rows are written: one pass over the N rows, and each of the B bound, lit rows
-# scans the N rows for its partner's row, O(N + B·N).
+# vis_bound: a row bound at some point in this frame is visible as a pair when it and its last partner's row of
+# this frame both have lit_bound > 0 (vis_partner, so a pair that broke counts). Runs after all rows are written:
+# one pass over the N rows, and each of the B bound, lit rows scans the N rows for its partner's row, O(N + B·N).
 function _mark_visible_pairs!(w::SimWorld)
     n = w.n_truth
     rows = w.truth
+    vp = w.vis_partner
     for a in 1:n
         ra = rows[a]
-        (ra.partner != 0 && ra.lit_bound > 0) || continue
+        (vp[a] != 0 && ra.lit_bound > 0) || continue
         for b in 1:n
             rb = rows[b]
-            if rb.id == ra.partner && rb.lit_bound > 0
+            if rb.id == vp[a] && rb.lit_bound > 0
                 rows[a] = _with_flag(ra, fieldcount(FrameTruth) - 1)
                 break
             end

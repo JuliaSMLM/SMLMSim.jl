@@ -316,8 +316,9 @@ NaN or false without dimers. `partner` is the partner at the end of the exposure
 the fraction of `T` it is lit (state 1 with `m > 0`) while bound, so a member lit for 5 ms of a
 10 ms exposure while bound has `lit_bound = 0.5`. `vis_form` is true in the exposure where the
 pair formed (`t_form` not NaN) when both members were lit at the start of the forming sub-step.
-`vis_bound` is true when this row and its `partner`'s row of the same exposure both have
-`lit_bound > 0`, so a pair that breaks within the exposure is not marked in it. `overlap` is set by `SimWorld(...; merge_radius)`.
+`vis_bound` is true when the emitter was bound at some point in this exposure and it and that
+partner (the last one, if several) both have `lit_bound > 0`, so a pair that breaks within the
+exposure is marked in it while its rows' `partner` is already 0. `overlap` is set by `SimWorld(...; merge_radius)`.
 """
 struct FrameTruth
     frame::Int
@@ -380,6 +381,7 @@ mutable struct PopState
     t_bound::Vector{Float64}; t_break_f::Vector{Float64}    # frame accumulators
     t_litb::Vector{Float64}                           # frame accumulator: time bound and emitting
     vis_form::Vector{Bool}                            # both members emitting at the start of the forming sub-step
+    partner_f::Vector{Int}                            # frame: id of the last partner bound in the exposure (vis pass)
     t_next_birth::Float64
 end
 
@@ -434,6 +436,7 @@ mutable struct SimWorld{R<:AbstractRNG,C<:AbstractCamera}
     n_truth::Int
     merge_radius::Float64
     overlap_scratch::Vector{Bool}
+    vis_partner::Vector{Int}              # per truth row: the emitter's last partner in the exposure (vis pass)
     t_a::Float64                          # the recorded exposure
     t_b::Float64
     dimers::Union{Nothing,DimerKinetics}
