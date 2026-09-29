@@ -390,10 +390,11 @@ smld_noisy, info = simulate(
 params_diff = DiffusionSMLMConfig()
 
 # Then run simulation - returns (smld, SimInfo)
-# photons = photons per emitter per frame (exposure), split over the n_sub records of a frame
+# γ = emission rate, photons/s; each of the n_sub records of a frame carries γ·dt,
+# so a frame holds γ·camera_exposure photons (1e4/s * 0.1 s = 1000)
 smld, info = simulate(
     params_diff;
-    photons=1000.0
+    γ=1e4
 )
 
 # Check timing

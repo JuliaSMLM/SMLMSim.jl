@@ -28,7 +28,7 @@ pixel_size = 0.1
 fps = 100
 n_frames = 50  # Reduced for demo speed
 density = 1.0
-photons = 200.0
+photons = 200.0  # photons per frame
 box_size = 5.0  # 5x5 μm for speed
 
 println("\nParameters:")
@@ -88,7 +88,7 @@ params = DiffusionSMLMConfig(
     diff_monomer = D
 )
 
-smld, _ = simulate(params; camera=camera_scmos, photons=photons)
+smld, _ = simulate(params; camera=camera_scmos, γ=photons * fps)
 println("  Generated $(length(smld.emitters)) localizations")
 
 # Generate images

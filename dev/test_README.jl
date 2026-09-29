@@ -143,7 +143,7 @@ params_spt = DiffusionSMLMConfig(
     camera_framerate = 100.0, # 100 fps
     camera_exposure = 0.01    # 10 ms exposure (at most the frame period)
 )
-smld_spt, _ = simulate(params_spt; camera=camera_scmos2, photons=200.0)
+smld_spt, _ = simulate(params_spt; camera=camera_scmos2, γ=2e4)  # 200 photons per 10 ms frame
 
 # sCMOS images vs ideal-camera images for the same data
 images_spt_scmos, _ = gen_images(smld_spt, GaussianPSF(0.13); bg=10.0, camera_noise=true)

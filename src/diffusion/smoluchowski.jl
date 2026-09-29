@@ -27,8 +27,9 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   Empty (default) means every monomer uses `diff_monomer`. Dimers always use `diff_dimer`.
   The drawn values are stored in `smld.metadata["monomer_D"]` (track_id => D).
 
-Photons: the `photons` given to `simulate` is photons per emitter per frame (exposure).
-Each of the `n_sub = camera_exposure/dt` records of a frame carries `photons/n_sub`.
+Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
+`n_sub = camera_exposure/dt` records of a frame carries `γ·dt`, so a frame holds
+`γ·camera_exposure` photons.
 
 # Examples
 ```julia
@@ -197,20 +198,20 @@ function draw_monomer_D(params::DiffusionSMLMConfig)
 end
 
 """
-    initialize_emitters(params::DiffusionSMLMConfig, photons::Float64=1000.0; override_count::Union{Nothing, Int}=nothing)
+    initialize_emitters(params::DiffusionSMLMConfig, γ::Float64=1e4; override_count::Union{Nothing, Int}=nothing)
 
 Create initial emitter positions for the simulation.
 
 # Arguments
 - `params::DiffusionSMLMConfig`: Simulation parameters
-- `photons::Float64=1000.0`: Photons per emitter per frame (exposure); each of the
-  n_sub = camera_exposure/dt records in a frame carries photons/n_sub
+- `γ::Float64=1e4`: Emission rate, photons/s; each emitter starts with `γ·dt` photons
+  (the photons of one sub-step), so a frame holds γ·camera_exposure photons
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Vector of initialized emitters
 """
-function initialize_emitters(params::DiffusionSMLMConfig, photons::Float64=1000.0; override_count::Union{Nothing, Int}=nothing)
+function initialize_emitters(params::DiffusionSMLMConfig, γ::Float64=1e4; override_count::Union{Nothing, Int}=nothing)
     # Calculate number of molecules
     n_molecules = if override_count !== nothing
         override_count
@@ -230,7 +231,7 @@ function initialize_emitters(params::DiffusionSMLMConfig, photons::Float64=1000.
             # Create emitter with initial properties
             emitters[i] = DiffusingEmitter2D{Float64}(
                 x, y,                      # Position
-                photons,                   # Photons
+                γ * params.dt,                   # Photons (one sub-step)
                 0.0,                       # Initial timestamp
                 1,                         # Initial frame
                 1,                         # Dataset
@@ -251,7 +252,7 @@ function initialize_emitters(params::DiffusionSMLMConfig, photons::Float64=1000.
             # Create emitter with initial properties
             emitters[i] = DiffusingEmitter3D{Float64}(
                 x, y, z,                   # Position
-                photons,                   # Photons
+                γ * params.dt,                   # Photons (one sub-step)
                 0.0,                       # Initial timestamp
                 1,                         # Initial frame
                 1,                         # Dataset
@@ -386,8 +387,8 @@ restamp(e::DiffusingEmitter3D{T}; photons=e.photons, timestamp=e.timestamp, fram
     add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, n_sub)
 
 Record the current emitters as one sub-step record of camera frame `frame_num`.
-Each record carries `photons / n_sub`, so the `n_sub` records of a frame sum to the
-per-frame photons.
+Live emitters carry `γ·dt` photons, so each record does too and the `n_sub` records of a
+frame sum to `γ·camera_exposure`.
 
 # Arguments
 - `camera_emitters::Vector{<:AbstractDiffusingEmitter}`: Collection of emitters for camera frames
@@ -401,7 +402,7 @@ per-frame photons.
 """
 function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, n_sub)
     for e in emitters
-        push!(camera_emitters, restamp(e; photons=e.photons / n_sub, timestamp=time, frame=frame_num))
+        push!(camera_emitters, restamp(e; timestamp=time, frame=frame_num))
     end
     
     return nothing
@@ -410,7 +411,7 @@ end
 """
     simulate(params::DiffusionSMLMConfig;
              starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
-             photons::Float64=1000.0,
+             γ::Union{Nothing, Real}=nothing,
              override_count::Union{Nothing, Int}=nothing,
              kwargs...)
 
@@ -424,8 +425,11 @@ with emitters that have both frame number and timestamp information.
 - `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing`: Optional starting emitters
   (an SMLD carries each track's D and exact end state forward; a Vector gets fresh D draws
   and must have one record per track_id)
-- `photons::Float64=1000.0`: Photons per emitter per frame (exposure); each of the
-  n_sub = camera_exposure/dt records in a frame carries photons/n_sub
+- `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (finite, ≥ 0); each of the
+  n_sub records in a frame carries γ·dt, so a frame holds γ·camera_exposure photons.
+  Default: the `"γ"` in the metadata of an SMLD `starting_conditions`, else `1e4`
+  (1000 photons per frame at the default 0.1 s exposure). Starting emitters are restamped
+  to γ·dt. The 0.7 `photons` keyword was removed and throws.
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 - `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model (default: IdealCamera with 100nm pixels)
   - If `nothing`, creates IdealCamera with dimensions matching box_size
@@ -459,12 +463,16 @@ smld_continued, info = simulate(params; starting_conditions=smld)
 """
 function simulate(params::DiffusionSMLMConfig;
                  starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
-                 photons::Float64=1000.0,
+                 γ::Union{Nothing, Real}=nothing,
                  override_count::Union{Nothing, Int}=nothing,
                  camera::Union{Nothing, AbstractCamera}=nothing,
                  kwargs...)
 
     start_time = time_ns()
+
+    haskey(kwargs, :photons) && throw(ArgumentError("simulate(::DiffusionSMLMConfig): the photons keyword was removed in 0.8; pass γ, the emission rate in photons/s (γ = photons per frame / camera_exposure; 0.7's brightness is γ = photons_old / dt)"))
+    γ === nothing || (isfinite(γ) && γ >= 0) ||
+        throw(ArgumentError("γ must be finite and >= 0 (photons/s), got $γ"))
 
     # Sub-steps per exposure and per frame period (validates dt against the camera timing)
     n_sub, steps_per_frame = substeps_per_frame(params)
@@ -482,13 +490,15 @@ function simulate(params::DiffusionSMLMConfig;
     # Initialize emitters
     n_initial_emitters = 0
     prior_D = nothing
+    prior_γ = nothing
     if starting_conditions !== nothing
         # Extract emitters from starting_conditions
         if starting_conditions isa SMLD
-            # Exact end state of the previous run, one emitter per track at per-frame photons
+            # Exact end state of the previous run, one emitter per track
             start_smld = extract_final_state(starting_conditions)
             start_emitters = start_smld.emitters
             prior_D = get(start_smld.metadata, "monomer_D", nothing)
+            prior_γ = get(start_smld.metadata, "γ", nothing)
         else
             # Already a vector of emitters
             start_emitters = starting_conditions
@@ -520,12 +530,16 @@ function simulate(params::DiffusionSMLMConfig;
             end
         end
 
-        # Reset timestamps to start at 0.0 and frame to 1
-        emitters = [restamp(e; timestamp=0.0, frame=1) for e in start_emitters]
+        # Resolve γ (explicit, else the source SMLD's, else 1e4)
+        γ_val = Float64(γ === nothing ? (prior_γ === nothing ? 1e4 : prior_γ) : γ)
+
+        # Reset timestamps to start at 0.0 and frame to 1; brightness is restamped to γ·dt
+        emitters = [restamp(e; photons=γ_val * params.dt, timestamp=0.0, frame=1) for e in start_emitters]
         n_initial_emitters = length(emitters)
     else
         # Initialize emitters using the standard approach
-        emitters = initialize_emitters(params, photons; override_count=override_count)
+        γ_val = Float64(γ === nothing ? 1e4 : γ)
+        emitters = initialize_emitters(params, γ_val; override_count=override_count)
         n_initial_emitters = length(emitters)
     end
 
@@ -549,7 +563,7 @@ function simulate(params::DiffusionSMLMConfig;
     end
 
     # Convert to SMLD
-    smld = create_smld(camera_emitters, camera, params; track_D=track_D)
+    smld = create_smld(camera_emitters, camera, params; track_D=track_D, γ=γ_val)
 
     # Live emitters are now at the start of the next frame: the exact end state for continuation
     t_end = n_frames * steps_per_frame * params.dt
@@ -581,7 +595,7 @@ Convert regular emitters to diffusing emitters for use as starting conditions.
 
 # Arguments
 - `emitters::Vector{<:AbstractEmitter}`: Vector of static emitters to convert
-- `photons::Float64=1000.0`: Number of photons to assign
+- `photons::Float64=1000.0`: Number of photons to assign (`simulate` replaces `photons` with γ·dt)
 - `state::Symbol=:monomer`: Initial state (:monomer or :dimer)
 
 # Returns
@@ -640,14 +654,14 @@ end
     extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
 
 Reduce a diffusion simulation to its end state, for use as `starting_conditions`.
-Returns a `BasicSMLD` with one emitter per track at per-frame photons.
+Returns a `BasicSMLD` with one emitter per track, photons unchanged (γ·dt).
 
 `simulate` stores the exact end state (the live emitters at the start of the frame after
 the last) in `smld.metadata["final_state"]`, and that is returned when present. Without it
 (for example an SMLD re-wrapped without metadata) the record with the largest timestamp
-per track in the last frame is used, with photons multiplied by that track's number of
-records in the frame. The result carries `"monomer_D"` when present, so continuation keeps
-each track's D, and extracting twice gives the same result.
+per track in the last frame is used, with its photons as they are. The result carries
+`"γ"` and `"monomer_D"` when present, so continuation keeps the emission rate and each
+track's D, and extracting twice gives the same result.
 
 # Arguments
 - `smld::BasicSMLD`: SMLD of diffusing emitters from `simulate`
@@ -672,23 +686,21 @@ function extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusin
     else
         max_frame = maximum(e -> e.frame, smld.emitters)
 
-        # Latest record of each track in the last frame, and how many records it has there
+        # Latest record of each track in the last frame
         latest = Dict{Int,E}()
-        counts = Dict{Int,Int}()
         for e in smld.emitters
             e.frame == max_frame || continue
-            counts[e.track_id] = get(counts, e.track_id, 0) + 1
             if !haskey(latest, e.track_id) || e.timestamp > latest[e.track_id].timestamp
                 latest[e.track_id] = e
             end
         end
 
-        final_emitters = [restamp(latest[id]; photons=latest[id].photons * counts[id], frame=1)
+        final_emitters = [restamp(latest[id]; frame=1)
                           for id in sort!(collect(keys(latest)))]
     end
 
     metadata = Dict{String,Any}("n_substeps" => 1, "final_state" => final_emitters)
-    for key in ("simulation_type", "simulation_parameters", "camera_framerate", "camera_exposure", "monomer_D")
+    for key in ("simulation_type", "simulation_parameters", "camera_framerate", "camera_exposure", "γ", "monomer_D")
         haskey(smld.metadata, key) && (metadata[key] = smld.metadata[key])
     end
     return BasicSMLD(final_emitters, smld.camera, 1, smld.n_datasets, metadata)
