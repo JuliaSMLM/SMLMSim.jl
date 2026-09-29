@@ -95,8 +95,10 @@ params = DiffusionSMLMConfig(
 `camera_exposure` and `1/camera_framerate` should be integer multiples of `dt`
 (otherwise `simulate` rounds to the nearest step count and warns).
 The `γ` argument of `simulate` is the emission rate in photons/s; each of the
-`n_sub = camera_exposure/dt` records in a frame carries `γ·dt`, so a frame holds
-`γ·camera_exposure` photons. Without `γ`, each record carries 1000 photons (γ = 1000/dt,
+`n_sub` records in a frame carries `γ·dt`, so a frame holds `γ·n_sub·dt` photons. That
+equals `γ·camera_exposure` when `camera_exposure` is an integer multiple of `dt`; otherwise
+`n_sub = round(camera_exposure/dt)` (at least 1), capped at the number of steps in the frame
+period, with a warning. Without `γ`, each record carries 1000 photons (γ = 1000/dt,
 0.7's default; 0.8.0 will change the default to a fixed rate). The `photons` keyword is
 deprecated (γ = photons/dt) and is removed in 0.8.0.
 
