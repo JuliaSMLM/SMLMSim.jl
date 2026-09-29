@@ -642,7 +642,7 @@ function simulate(params::DiffusionSMLMConfig;
 
     # Live emitters are now at the start of the next frame: the exact end state for continuation
     t_end = n_frames * steps_per_frame * params.dt
-    smld.metadata["n_records"] = length(smld.emitters)
+    smld.metadata["last_frame_latest"] = _last_frame_latest(smld.emitters)
     smld.metadata["final_state"] = [restamp(e; timestamp=t_end, frame=n_frames) for e in emitters]
 
     elapsed_s = (time_ns() - start_time) / 1e9
@@ -733,9 +733,10 @@ Reduce a diffusion simulation to its exact end state, for use as `starting_condi
 Returns a `BasicSMLD` with one emitter per track and photons unchanged.
 
 `simulate` stores the exact end state (the live emitters at the start of the frame after
-the last) in `smld.metadata["final_state"]`, and that is returned when the SMLD still holds
-all the records of that run. Otherwise (filtered, concatenated or re-wrapped without
-metadata) the record with the largest timestamp per track in the last frame present is
+the last) in `smld.metadata["final_state"]`, and that is returned when the SMLD's last frame is
+unchanged from that run (the latest record per track of the last frame matches
+`metadata["last_frame_latest"]`). Otherwise (filtered, concatenated, edited or re-wrapped
+without metadata) the record with the largest timestamp per track in the last frame present is
 used, with its photons as they are; tracks absent from that frame are not resumed. The result carries
 `"γ"` and `"monomer_D"` when present, so continuation keeps the emission rate and each
 track's D, and extracting twice gives the same result.
@@ -764,21 +765,20 @@ function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingE
         final_emitters = [restamp(e; frame=1) for e in _last_frame_latest(smld.emitters)]
     end
 
-    metadata = Dict{String,Any}("n_substeps" => 1, "final_state" => final_emitters)
+    metadata = Dict{String,Any}("n_substeps" => 1)
     for key in ("simulation_type", "simulation_parameters", "camera_framerate", "camera_exposure", "γ", "monomer_D")
         haskey(smld.metadata, key) && (metadata[key] = smld.metadata[key])
     end
     return BasicSMLD(final_emitters, smld.camera, 1, smld.n_datasets, metadata)
 end
 
-# The stored final state belongs to the emitters only if nothing was filtered or concatenated:
-# same record count, and the last frame holds the tracks of the final state. Internal.
+# The stored final state belongs to the emitters only if their last frame is the one the run
+# recorded: the latest record per track there equals the stored copy. Filters, concatenation
+# and edits that change the last frame fail this. Internal.
 function _final_state_matches(smld::SMLD, final)
-    (haskey(smld.metadata, "n_records") && length(smld.emitters) == smld.metadata["n_records"]) || return false
-    (isempty(smld.emitters) || isempty(final)) && return false
-    max_frame = maximum(e -> e.frame, smld.emitters)
-    max_frame == first(final).frame || return false
-    return Set(e.track_id for e in smld.emitters if e.frame == max_frame) == Set(e.track_id for e in final)
+    ref = get(smld.metadata, "last_frame_latest", nothing)
+    ref === nothing && return false
+    return _last_frame_latest(smld.emitters) == ref
 end
 
 # One emitter per track: the record with the largest timestamp, sorted by track_id. Internal.
@@ -794,6 +794,7 @@ end
 
 # Latest record of each track in the largest frame present. Internal.
 function _last_frame_latest(emitters)
+    isempty(emitters) && return similar(emitters, 0)
     max_frame = maximum(e -> e.frame, emitters)
     return _latest_per_track([e for e in emitters if e.frame == max_frame])
 end

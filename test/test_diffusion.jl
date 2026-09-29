@@ -472,7 +472,7 @@ end
         p = static_params(dt=1.25e-3, diff_monomer=0.5, t_max=0.1)
         Random.seed!(21)
         smld, _ = simulate(p; γ=1e4, override_count=5, camera=cam32)
-        @test smld.metadata["n_records"] == length(smld.emitters)
+        @test smld.metadata["last_frame_latest"] == SMLMSim.InteractionDiffusion._last_frame_latest(smld.emitters)
         # unfiltered SMLD resumes at the exact stored end state
         @test [(e.x, e.y) for e in extract_end_state(smld).emitters] ==
               [(e.x, e.y) for e in smld.metadata["final_state"]]
@@ -498,6 +498,21 @@ end
         # concatenation falls back and does not throw
         sc = SD.cat_smld([smld, smld])
         @test length(extract_end_state(sc).emitters) == 5
+
+        # an edit that keeps the record count but changes the last frame falls back
+        nf = smld.n_frames
+        edited = [e.frame == nf ? DiffusingEmitter2D{Float64}(e.x + 0.1, e.y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state, e.partner_id) : e for e in smld.emitters]
+        se = typeof(smld)(edited, smld.camera, nf, smld.n_datasets, copy(smld.metadata))
+        @test [(e.x, e.y) for e in extract_end_state(se).emitters] ==
+              [(e.x, e.y) for e in SMLMSim.InteractionDiffusion._last_frame_latest(edited)]
+
+        # two runs spliced at the last frame (same record count) resume from the second run
+        Random.seed!(22)
+        smld_b, _ = simulate(p; γ=1e4, override_count=5, camera=cam32)
+        sab = SD.cat_smld([SD.filter_frames(smld, 1:nf-1), SD.filter_frames(smld_b, nf:nf)])
+        @test length(sab.emitters) == length(smld.emitters)
+        @test [(e.x, e.y) for e in extract_end_state(sab).emitters] ==
+              [(e.x, e.y) for e in SMLMSim.InteractionDiffusion._last_frame_latest(smld_b.emitters)]
 
         # deprecated photons keyword behaves as in 0.7: no validation
         sn, _ = @test_logs (:warn, r"photons keyword is deprecated") match_mode=:any simulate(
@@ -531,6 +546,7 @@ end
         # zero emitters: the movie still has its frames
         s0, i0 = simulate(p; override_count=0, camera=cam32)
         @test i0.n_frames == s0.n_frames == 10
+        @test isempty(extract_end_state(s0).emitters)
     end
 
     @testset "(f) motion blur" begin
