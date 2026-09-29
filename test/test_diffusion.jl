@@ -814,4 +814,106 @@ end
         @test_logs (:warn, r"saved D") match_mode=:any simulate(
             pmix([(1.0, 0.2)]); starting_conditions=sm, camera=cam32)
     end
+
+    @testset "(n) continuation rule" begin
+        # dev/outputs/continuation-rule.md: brightness, D and dt over mixed sources, partial D and two hops
+        restamp = SMLMSim.InteractionDiffusion.restamp
+        recs(s, id) = filter(e -> e.track_id == id, s.emitters)
+        moved(s, id) = length(unique((e.x, e.y) for e in recs(s, id))) > 1
+        cfg(; dt=0.005, D=0.3, mix=Tuple{Float64,Float64}[]) = static_params(dt=dt, t_max=0.02, box_size=5.0,
+            diff_monomer=D, monomer_mobility=mix, r_react=1e-6)
+        go(c; kw...) = simulate(c; override_count=4, camera=cam32, kw...)[1]
+        mixA = [(0.5, 0.0), (0.5, 0.2)]
+        Random.seed!(50)
+        # (γ keyword of the source run or nothing, its config, its output)
+        srcs = [(1e4, cfg(), go(cfg(); γ=1e4)), (2e4, cfg(mix=mixA), go(cfg(mix=mixA); γ=2e4)),
+                (nothing, cfg(), go(cfg())), (nothing, cfg(mix=mixA), go(cfg(mix=mixA))),
+                (nothing, cfg(), @test_logs((:warn, r"deprecated"), match_mode=:any, go(cfg(); photons=300.0)))]
+        wrap(es, s) = BasicSMLD(es, s.camera, s.n_frames, 1, copy(s.metadata))
+        shift(es, k) = [DiffusingEmitter2D{Float64}(e.x, e.y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id + k,
+                                                    e.state, e.partner_id) for e in es]
+        # (name, input SMLD, whether a resumed track's record is the metadata run's own)
+        function inputs(a, b)
+            s = a[3]
+            last_f = s.n_frames
+            edited = [e.track_id == 1 && e.frame == last_f ? restamp(e; photons=2 * e.photons) : e for e in s.emitters]
+            return [("single", wrap(s.emitters, s), t -> true),
+                    ("filtered", wrap(filter(e -> e.track_id <= 2, s.emitters), s), t -> true),
+                    ("edited", wrap(edited, s), t -> t != 1),
+                    ("concat distinct", wrap(vcat(s.emitters, shift(b[3].emitters, 100)), s), t -> t <= 100),
+                    ("concat colliding", wrap(vcat(s.emitters, b[3].emitters), s), t -> true)]
+        end
+        configs = [cfg(dt=0.0025, D=0.3), cfg(dt=0.0025, mix=[(0.5, 0.05), (0.5, 0.4)]),
+                   cfg(dt=0.0025, mix=[(0.9, 0.0), (0.1, 0.2)])]
+        fails = String[]
+        nrun = 0
+        for a in srcs, b in srcs, (name, X, own) in inputs(a, b), c in configs
+            name in ("single", "filtered", "edited") && b !== srcs[1] && continue
+            name == "concat distinct" && a === b && continue   # identical positions would dimerize
+            nrun += 1
+            γa, ca, sa = a
+            # resumed tracks and the photons of each one's latest record in the last frame
+            lastf = maximum(e -> e.frame, X.emitters)
+            R, ts = Dict{Int,Float64}(), Dict{Int,Float64}()
+            for e in X.emitters
+                e.frame == lastf || continue
+                (!haskey(ts, e.track_id) || e.timestamp > ts[e.track_id]) && (ts[e.track_id] = e.timestamp; R[e.track_id] = e.photons)
+            end
+            restampγ = γa !== nothing && all(p -> p == γa * ca.dt, values(R))
+            savedA = sa.metadata["monomer_D"]
+            keep(t) = own(t) && haskey(savedA, t)
+            logs, s1 = Test.collect_test_logs(() -> simulate(c; starting_conditions=X, camera=cam32)[1])
+            warned(r) = any(l -> occursin(r, string(l.message)), logs)
+            _, s2 = Test.collect_test_logs(() -> simulate(cfg(dt=0.005, D=0.0); starting_conditions=s1, camera=cam32)[1])
+            tag = "$(name) γ=$(γa) mix=$(ca.monomer_mobility) -> $(c.monomer_mobility)"
+            md1, md2 = s1.metadata["monomer_D"], s2.metadata["monomer_D"]
+            for t in keys(R)
+                # brightness, hop 1 and hop 2
+                all(e -> e.photons == (restampγ ? γa * c.dt : R[t]), recs(s1, t)) || push!(fails, "$tag: brightness hop 1, track $t")
+                all(e -> e.photons == (restampγ ? γa * 0.005 : R[t]), recs(s2, t)) || push!(fails, "$tag: brightness hop 2, track $t")
+                # D, hop 1
+                if keep(t)
+                    get(md1, t, NaN) == savedA[t] || push!(fails, "$tag: saved D kept, track $t")
+                elseif isempty(c.monomer_mobility)
+                    (!haskey(md1, t) && moved(s1, t)) || push!(fails, "$tag: run-time diff_monomer, track $t")
+                else
+                    get(md1, t, NaN) in last.(c.monomer_mobility) || push!(fails, "$tag: fresh draw, track $t")
+                end
+                # D, hop 2 at diff_monomer = 0: a saved or drawn D is kept, a run-time one is never saved
+                if haskey(md1, t)
+                    get(md2, t, NaN) == md1[t] || push!(fails, "$tag: hop 2 keeps D, track $t")
+                else
+                    (!haskey(md2, t) && !moved(s2, t)) || push!(fails, "$tag: hop 2 run-time D, track $t")
+                end
+            end
+            warned(r"not every resumed molecule carries") == (γa !== nothing && !restampγ) || push!(fails, "$tag: brightness warning")
+            warned(r"not the run's own") == any(t -> haskey(savedA, t) && !own(t), keys(R)) || push!(fails, "$tag: drop warning")
+            warned(r"differs from the source run's") == (any(keep, keys(R)) && c.monomer_mobility != ca.monomer_mobility) ||
+                push!(fails, "$tag: mixture warning")
+        end
+        @test nrun == 5 * 3 * 3 + (25 * 2 - 5) * 3
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 20))
+
+        # a non-String rate_source reads as "photons"; a γ source without a saved dt keeps its photons, with the warning
+        s = srcs[1][3]
+        X = wrap(s.emitters, s)
+        X.metadata["rate_source"] = :γ
+        sx = simulate(cfg(dt=0.0025); starting_conditions=X, camera=cam32)[1]
+        @test sx.metadata["rate_source"] == "photons" && all(e -> e.photons == 1e4 * 0.005, sx.emitters)
+        X = wrap(s.emitters, s)
+        delete!(X.metadata, "dt")
+        sx = @test_logs (:warn, r"not every resumed molecule carries") match_mode=:any simulate(cfg(dt=0.0025); starting_conditions=X, camera=cam32)[1]
+        @test all(e -> e.photons == 1e4 * 0.005, sx.emitters)
+        # an SMLD converted to Float32 keeps its γ rate and its saved D, without a warning
+        Random.seed!(51)
+        s = go(cfg(mix=mixA); γ=1234.567)
+        f32 = [DiffusingEmitter2D{Float32}(e.x, e.y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id, e.state,
+                                           e.partner_id) for e in s.emitters]
+        X = wrap(f32, s)
+        @test all(e -> e.photons != 1234.567 * 0.005, X.emitters)
+        sx = @test_logs simulate(cfg(dt=0.0025, mix=mixA); starting_conditions=X, camera=cam32)[1]
+        @test all(e -> e.photons == Float32(1234.567 * 0.0025), sx.emitters)
+        @test sx.metadata["monomer_D"] == s.metadata["monomer_D"] && sx.metadata["rate_source"] == "γ"
+    end
 end

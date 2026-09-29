@@ -103,11 +103,14 @@ than the frame period `1/camera_framerate`; otherwise `n_sub = round(camera_expo
 deprecated (γ = photons/dt) and is removed in 0.8.0.
 
 To continue a run, pass `starting_conditions=smld` or `extract_end_state(smld)`; both resume
-at the exact end state and keep each track's D and γ. A run whose rate was set with `γ` continues
-at that rate, so with a different `dt` each record carries γ·dt; a run set by the default or by
-`photons` keeps its photons per record, as in 0.7.1. A saved per-track D (from a `monomer_mobility`
-mixture) overrides a changed `diff_monomer` or mixture, with a warning; a run without a mixture saves
-none, so a changed `diff_monomer` applies. `extract_final_state` is deprecated.
+at the exact end state of an unchanged run. Brightness: a run whose rate was set with `γ` continues at
+that rate (each record carries γ·dt at the new `dt`) when every resumed molecule still carries γ·dt at
+the saved `dt`, to a relative 1e-6; otherwise (a default or `photons` source, or an edited or
+concatenated SMLD) each molecule keeps its photons per record, as in 0.7.1, with a warning when a γ
+rate could not be kept. D: a track keeps its saved D (drawn from a `monomer_mobility` mixture) when its
+record is the run's own, with a warning when the new mixture differs from the run's; every other track
+draws from the new mixture or uses `diff_monomer` at run time, which is never saved, so a later change
+applies. `extract_final_state` is deprecated.
 
 Monomers can be given a mixture of mobility populations with
 `monomer_mobility = [(0.85, 0.0), (0.05, 0.08), (0.10, 0.38)]` (entries are
