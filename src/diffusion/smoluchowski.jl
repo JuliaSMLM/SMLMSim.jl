@@ -352,9 +352,16 @@ function build_emitters(params::DiffusionSMLMConfig, photons::Float64, override_
     return emitters
 end
 
+# Under :fixed, note in `flag` a pair step (formation or bound motion) that moved an immobile member. Internal.
+function _note_immobile!(flag, params::DiffusionSMLMConfig, D1, D2, e1, e2, d1, d2)
+    (flag === nothing || params.pair_mobility != :fixed) && return nothing
+    ((D1 == 0 && _coords(d1) != _coords(e1)) || (D2 == 0 && _coords(d2) != _coords(e2))) && (flag[] = true)
+    return nothing
+end
+
 """
     update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
-                  track_D=nothing)
+                  track_D=nothing, moved_immobile=nothing)
 
 Update all emitters based on Smoluchowski diffusion dynamics. Monomers diffuse with
 `track_D[track_id]` when the track has an entry, otherwise with `params.diff_monomer`.
@@ -364,17 +371,12 @@ Update all emitters based on Smoluchowski diffusion dynamics. Monomers diffuse w
 - `params::DiffusionSMLMConfig`: Simulation parameters
 - `dt::Float64`: Time step
 - `track_D::Union{Nothing,Dict{Int,Float64}}=nothing`: Per-track monomer diffusion coefficients
+- `moved_immobile::Union{Nothing,Base.RefValue{Bool}}=nothing`: Set to `true` when, under `pair_mobility = :fixed`,
+  a formation or a bound step moves a member whose monomer D is 0 (`simulate` warns once per run from it)
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Updated emitters
 """
-# Under :fixed, note in `flag` a pair step (formation or bound motion) that moved an immobile member. Internal.
-function _note_immobile!(flag, params::DiffusionSMLMConfig, D1, D2, e1, e2, d1, d2)
-    (flag === nothing || params.pair_mobility != :fixed) && return nothing
-    ((D1 == 0 && _coords(d1) != _coords(e1)) || (D2 == 0 && _coords(d2) != _coords(e2))) && (flag[] = true)
-    return nothing
-end
-
 function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
                        track_D::Union{Nothing,Dict{Int,Float64}}=nothing,
                        moved_immobile::Union{Nothing,Base.RefValue{Bool}}=nothing)

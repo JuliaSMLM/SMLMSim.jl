@@ -1414,7 +1414,7 @@ end
         n, s = nwarn(:fixed)
         @test n == 1 && any(e -> e.state == :dimer, s.emitters)
         @test nwarn(:min)[1] == 0
-        # Codex on 326b0ab: the warning does not depend on what the camera records (two D = 0 monomers bind and move
+        # the warning does not depend on what the camera records (two D = 0 monomers bind and move
         # after the only recorded step), and formation alone warns when it moves an immobile member (no diff_dimer
         # or diff_dimer_rot)
         two = [DiffusingEmitter2D{Float64}(0.4, 0.5, 1.0, 0.0, 1, 1, 1, :monomer, nothing),
@@ -1427,5 +1427,18 @@ end
             logs, s = Test.collect_test_logs(() -> simulate(c; starting_conditions=two, γ=1e3)[1])
             @test count(l -> occursin("use pair_mobility = :min", string(l.message)), logs) == 1
         end
+        # the bound step alone warns: a pair bound from the start (k_off = 0, so no formation) with one immobile member
+        bound = [DiffusingEmitter2D{Float64}(0.5, 0.5, 1.0, 0.0, 1, 1, 1, :dimer, 2),
+                 DiffusingEmitter2D{Float64}(0.55, 0.5, 1.0, 0.0, 1, 1, 2, :dimer, 1)]
+        cb = DiffusionSMLMConfig(box_size=1.0, diff_monomer=0.3, r_react=0.1, d_dimer=0.05, diff_dimer=0.1,
+                                 diff_dimer_rot=0.5, k_off=0.0, dt=0.001, t_max=0.01, camera_framerate=100.0,
+                                 camera_exposure=0.01)
+        Random.seed!(63)
+        logs, s = Test.collect_test_logs(() -> simulate(cb; γ=1e3, starting_conditions=BasicSMLD(bound, cam32, 1, 1,
+                                                  Dict{String,Any}("monomer_D" => Dict(1 => 0.0))))[1])
+        @test count(l -> occursin("use pair_mobility = :min", string(l.message)), logs) == 1
+        @test s.metadata["monomer_D"] == Dict(1 => 0.0) && all(e -> e.state == :dimer, s.emitters)
+        # update_system keeps its docstring (with moved_immobile) on the API page
+        @test occursin("moved_immobile::", string(@doc ID.update_system))
     end
 end
