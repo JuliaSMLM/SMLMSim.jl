@@ -33,10 +33,13 @@ function _write_row!(w::SimWorld, k::Int, ps::PopState, i::Int, departed::Bool)
     end
     tb = ps.t_birth[i]
     w.n_truth += 1
+    pid = ps.partner_id[i]
+    tf = ps.t_form[i]
     w.truth[w.n_truth] = FrameTruth(w.frame + 1, ps.id[i], Int32(k), ps.m[i], x, y, ps.z[i], sph,
                                     ps.t_lit[i] / T, tp > 0 ? ps.sI[i] / tp : NaN,
                                     tb >= w.t_a ? tb : NaN, ps.t_bleach_f[i],
-                                    departed ? ps.t_depart[i] : NaN, 0, Int32(0), 0.0, NaN, NaN, 0.0,
+                                    departed ? ps.t_depart[i] : NaN, pid, pid == 0 ? Int32(0) : ps.partner_pop[i],
+                                    ps.t_bound[i] / T, tf >= w.t_a ? tf : NaN, ps.t_break_f[i], 0.0,
                                     false, false, false)
     return nothing
 end

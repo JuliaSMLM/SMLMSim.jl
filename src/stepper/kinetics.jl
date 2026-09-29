@@ -16,7 +16,8 @@ _capacity(n0::Integer) = n0 + ceil(Int, 10 * sqrt(n0)) + 64
 # Every per-emitter vector of a PopState: the one list that growth and swap-removal walk
 _vectors(ps::PopState) = (ps.id, ps.x, ps.y, ps.z, ps.D, ps.γ, ps.m, ps.state, ps.clock, ps.budget,
                           ps.t_depart, ps.t_birth, ps.lj, ps.xr, ps.yr, ps.sx, ps.sy, ps.sxp, ps.syp,
-                          ps.sph, ps.t_present, ps.t_lit, ps.sI, ps.t_bleach_f)
+                          ps.sph, ps.t_present, ps.t_lit, ps.sI, ps.t_bleach_f, ps.partner, ps.partner_pop,
+                          ps.partner_id, ps.θ, ps.t_form, ps.t_break_due, ps.t_bound, ps.t_break_f)
 
 function _grow!(ps::PopState, cap::Int)
     foreach(v -> resize!(v, cap), _vectors(ps))
@@ -29,6 +30,7 @@ end
     ps.sx[i] = 0.0; ps.sy[i] = 0.0; ps.sxp[i] = 0.0; ps.syp[i] = 0.0
     ps.sph[i] = 0.0; ps.t_present[i] = 0.0; ps.t_lit[i] = 0.0; ps.sI[i] = 0.0
     ps.t_bleach_f[i] = NaN
+    ps.t_bound[i] = 0.0; ps.t_break_f[i] = NaN
     return nothing
 end
 
@@ -75,15 +77,23 @@ function _add_emitter!(w::SimWorld, ps::PopState, t_birth::Float64)
     ps.t_depart[i] = isfinite(p.lifetime) ? t_birth + p.lifetime * randexp(rng) : Inf
     ps.t_birth[i] = t_birth
     ps.lj[i] = p.brightness_jitter > 0 ? p.brightness_jitter * randn(rng) : 0.0
+    ps.partner[i] = 0; ps.partner_pop[i] = 0; ps.partner_id[i] = 0
+    ps.θ[i] = 0.0; ps.t_form[i] = -Inf; ps.t_break_due[i] = -Inf
     _reset_acc!(ps, i)
     return i
 end
 
-# Swap-remove emitter i (the last emitter takes its slot)
-function _remove!(ps::PopState, i::Int)
+# Swap-remove emitter i (the last emitter takes its slot). A bound partner is unlinked (it keeps
+# partner_pop and partner_id for its truth row); a bound emitter moved into slot i re-points its partner.
+function _remove!(w::SimWorld, ps::PopState, i::Int)
+    pi = ps.partner[i]
+    pi != 0 && (w.pops[ps.partner_pop[i]].partner[pi] = 0)
     j = ps.n
     i != j && foreach(v -> (v[i] = v[j]), _vectors(ps))
     ps.n = j - 1
+    if i != j && ps.partner[i] != 0
+        w.pops[ps.partner_pop[i]].partner[ps.partner[i]] = i
+    end
     return nothing
 end
 
@@ -147,6 +157,11 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
     tl = ps.t_lit[i]
     sI = ps.sI[i]
     tbf = ps.t_bleach_f[i]
+    tb = ps.t_bound[i]
+    tform = ps.t_form[i]
+    tbrk = ps.t_break_due[i]
+    dimers = w.dimers !== nothing
+    phase = t0 + τ0 < tform ? 0 : (t0 + τ0 < tbrk ? 1 : 2)   # before, inside, after the bound interval
     I = _excite(excitation, x, y, z, t0 + τ0)
     ts = _next_switch(excitation, t0 + τ0)
     alive = true
@@ -154,51 +169,60 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
     while true
         lit = s == 1 && m > 0
         tnow = t0 + τ
-        λx = s == 1 ? ps.exitrate[1] * I : ps.exitrate[s]
+        λx = m == 0 ? 0.0 : (s == 1 ? ps.exitrate[1] * I : ps.exitrate[s])
         tx = λx > 0 ? clock / λx : Inf
         ρe = s == 1 ? m * γi * I : 0.0
         tbl = ρe > 0 ? budget / ρe : Inf
         tdp = tdep - tnow
         trem = h - τ
         tsw = ts - tnow
-        Δ0 = min(tx, tbl, tdp, trem, tsw)
+        tbk = phase == 0 ? tform - tnow : (phase == 1 ? tbrk - tnow : Inf)
+        bnd = phase == 1
+        Δ0 = min(tx, tbl, tdp, trem, tsw, tbk)
         Δ = max(Δ0, 0.0)
         if Δ0 == tdp
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
             alive = false
             departed = true
             break
         elseif Δ0 == tbl
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
             τ += Δ
             clock -= λx * Δ
             m -= Int32(1)
             if m == 0
                 tbf = t0 + τ
-                alive = false
-                break
+                dimers || (alive = false; break)   # with dimers a bleached emitter stays, dark
+            else
+                budget = bmean * randexp(rng)
             end
-            budget = bmean * randexp(rng)
         elseif Δ0 == tx
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
             τ += Δ
             budget -= ρe * Δ
             s = Int(_exit_to(rng, ps, s))
             clock = randexp(rng)
         elseif Δ0 == tsw && Δ0 < trem
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
             budget -= ρe * Δ
             clock -= λx * Δ
             τ = ts - t0
             I = _excite(excitation, x, y, z, ts)
             ts = _next_switch(excitation, ts)
+        elseif Δ0 == tbk && Δ0 < trem
+            e += ρe * Δ
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
+            budget -= ρe * Δ
+            clock -= λx * Δ
+            τ += Δ
+            phase += 1
         else
             e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ)
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ)
             budget -= ρe * Δ
             clock -= λx * Δ
             break
@@ -209,6 +233,7 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
     ps.t_lit[i] = tl
     ps.sI[i] = sI
     ps.t_bleach_f[i] = tbf
+    ps.t_bound[i] = tb
     if alive
         ps.state[i] = UInt8(s)
         ps.clock[i] = clock
@@ -234,11 +259,15 @@ end
 @inline _fold(x::Float64, lo::Float64, hi::Float64, periodic::Bool) =
     periodic ? _wrap(x, lo, hi) : _reflect(x, lo, hi)
 
-function _move!(w::SimWorld, ps::PopState, h::Float64)
+function _move!(w::SimWorld, k::Int, ps::PopState, h::Float64)
     rng = w.rng
     xmin, xmax, ymin, ymax = w.box
     periodic = w.boundary === :periodic
     @inbounds for i in 1:ps.n
+        if ps.partner[i] != 0
+            _move_pair!(w, k, ps, i, h)
+            continue
+        end
         D = ps.D[i]
         D > 0 || continue
         sd = sqrt(2 * D * h)
@@ -284,6 +313,7 @@ end
 
 # One sub-step [t0, t0 + h) of every population: kinetics and rendering, births, removal, motion
 function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::Bool) where {E}
+    w.dimers === nothing || _dimer_events!(w, t0, h)
     for (k, ps) in enumerate(w.pops)
         i = 1
         while i <= ps.n
@@ -293,7 +323,7 @@ function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::
                 i += 1
             else
                 record && _write_row!(w, k, ps, i, departed)
-                _remove!(ps, i)
+                _remove!(w, ps, i)
             end
         end
         if ps.t_next_birth < t0 + h
@@ -306,12 +336,12 @@ function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::
                 record && e > 0 && _render!(w, ps, j, e)
                 if !alive
                     record && _write_row!(w, k, ps, j, departed)
-                    _remove!(ps, j)
+                    _remove!(w, ps, j)
                 end
                 ps.t_next_birth += randexp(w.rng) * gap_scale
             end
         end
-        _move!(w, ps, h)
+        _move!(w, k, ps, h)
         ps.p.brightness_jitter > 0 && _jitter!(w, ps, h)
     end
     return nothing
