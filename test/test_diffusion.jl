@@ -467,6 +467,72 @@ end
         @test sm2.metadata["γ"] == 3e4
     end
 
+    @testset "(k) review fixes" begin
+        SD = SMLMSim.SMLMData
+        p = static_params(dt=1.25e-3, diff_monomer=0.5, t_max=0.1)
+        Random.seed!(21)
+        smld, _ = simulate(p; γ=1e4, override_count=5, camera=cam32)
+        @test smld.metadata["n_records"] == length(smld.emitters)
+        # unfiltered SMLD resumes at the exact stored end state
+        @test [(e.x, e.y) for e in extract_end_state(smld).emitters] ==
+              [(e.x, e.y) for e in smld.metadata["final_state"]]
+
+        # filter_frames: latest frame-5 record per track, same number of tracks
+        sf = SD.filter_frames(smld, 1:5)
+        es = extract_end_state(sf)
+        @test length(es.emitters) == 5
+        for e in es.emitters
+            recs = filter(r -> r.frame == 5 && r.track_id == e.track_id, sf.emitters)
+            latest = recs[argmax([r.timestamp for r in recs])]
+            @test (e.x, e.y, e.photons) == (latest.x, latest.y, latest.photons)
+        end
+
+        # ROI filter that leaves k tracks in the last frame
+        lastf = [e for e in smld.emitters if e.frame == smld.n_frames]
+        cut = sort([e.x for e in lastf])[length(lastf) ÷ 2]
+        sr = typeof(smld)(filter(e -> e.x <= cut, smld.emitters), smld.camera, smld.n_frames, smld.n_datasets, copy(smld.metadata))  # as @filter does
+        k = length(unique(e.track_id for e in sr.emitters if e.frame == maximum(r.frame for r in sr.emitters)))
+        @test 0 < k
+        @test length(extract_end_state(sr).emitters) == k
+
+        # concatenation falls back and does not throw
+        sc = SD.cat_smld([smld, smld])
+        @test length(extract_end_state(sc).emitters) == 5
+
+        # deprecated photons keyword behaves as in 0.7: no validation
+        sn, _ = @test_logs (:warn, r"photons keyword is deprecated") match_mode=:any simulate(
+            p; photons=-1.0, override_count=2, camera=cam32)
+        @test all(e -> e.photons == -1.0, sn.emitters)
+
+        # deprecated add_camera_frame_emitters! keeps the 0.7 signature and window
+        ce = similar(smld.emitters, 0)
+        em = smld.metadata["final_state"]
+        @test_logs (:warn, r"add_camera_frame_emitters! is internal and deprecated") match_mode=:any begin
+            SMLMSim.InteractionDiffusion.add_camera_frame_emitters!(ce, em, 0.005, 1, p)
+            SMLMSim.InteractionDiffusion.add_camera_frame_emitters!(ce, em, 0.05, 1, p)
+        end
+        @test length(ce) == length(em) && all(e -> e.timestamp == 0.005, ce)
+
+        # update_system with an orphan dimer warns and drops it
+        orphan = DiffusingEmitter2D{Float64}(1.0, 1.0, 1.0, 0.0, 1, 1, 1, :dimer, 99)
+        out = @test_logs (:warn, r"dimer partner 99 of track 1 not found") SMLMSim.InteractionDiffusion.update_system([orphan], p, p.dt)
+        @test isempty(out)
+
+        # γ metadata is true or absent
+        s5, _ = simulate(p; starting_conditions=smld, photons=5.0, camera=cam32)
+        @test s5.metadata["γ"] == 1e4
+        st = [DiffusingEmitter2D{Float64}(1.0, 1.0, 77.0, 0.0, 1, 1, i, :monomer, nothing) for i in 1:2]
+        sv, _ = simulate(p; starting_conditions=st, camera=cam32)
+        @test sv.metadata["γ"] ≈ 77.0 / p.dt
+        st[2] = DiffusingEmitter2D{Float64}(1.0, 1.0, 50.0, 0.0, 1, 1, 2, :monomer, nothing)
+        sm, _ = simulate(p; starting_conditions=st, camera=cam32)
+        @test !haskey(sm.metadata, "γ")
+
+        # zero emitters: the movie still has its frames
+        s0, i0 = simulate(p; override_count=0, camera=cam32)
+        @test i0.n_frames == s0.n_frames == 10
+    end
+
     @testset "(f) motion blur" begin
         cam64 = IdealCamera(1:64, 1:64, 0.078)
         box = 64 * 0.078

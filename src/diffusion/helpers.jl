@@ -678,14 +678,17 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 - `camera::AbstractCamera`: Camera model for imaging
 - `params::DiffusionSMLMConfig`: Simulation parameters
 - `track_D::Dict{Int,Float64}`: Per-track monomer diffusion coefficients, stored as `metadata["monomer_D"]`
+- `γ::Union{Nothing,Real}=nothing`: Emission rate, photons/s, stored as `metadata["γ"]`; no key when `nothing`
+- `n_frames::Union{Nothing,Int}=nothing`: Frame count of the movie; the largest frame present when `nothing`
 
 # Returns
 - `BasicSMLD`: SMLD containing all emitters for further analysis or visualization
 """
 function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::DiffusionSMLMConfig;
-                     track_D::Dict{Int,Float64}=Dict{Int,Float64}(), γ::Real=1e4)
+                     track_D::Dict{Int,Float64}=Dict{Int,Float64}(),
+                     γ::Union{Nothing,Real}=nothing, n_frames::Union{Nothing,Int}=nothing)
     # Determine max frame number
-    max_frame = isempty(emitters) ? 0 : maximum(e -> e.frame, emitters)
+    max_frame = n_frames !== nothing ? n_frames : isempty(emitters) ? 0 : maximum(e -> e.frame, emitters)
     
     # Create metadata
     metadata = Dict{String,Any}(
@@ -694,9 +697,9 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
         "camera_framerate" => params.camera_framerate,
         "camera_exposure" => params.camera_exposure,
         "n_substeps" => substeps_per_frame(params)[1],
-        "γ" => γ,
         "monomer_D" => track_D
     )
+    γ === nothing || (metadata["γ"] = γ)
     
     # Create SMLD object
     return BasicSMLD(

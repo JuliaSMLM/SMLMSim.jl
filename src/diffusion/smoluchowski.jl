@@ -159,26 +159,26 @@ DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
                         camera_framerate, camera_exposure, Tuple{Float64,Float64}[])
 
 """
-    substeps_per_frame(params::DiffusionSMLMConfig; warn=true) -> (n_sub, steps_per_frame)
+    substeps_per_frame(params::DiffusionSMLMConfig) -> (n_sub, steps_per_frame)
 
 Number of physics steps `dt` inside one exposure (`n_sub`) and in one frame period
 (`steps_per_frame`). Internal. Timing that is not an integer multiple of `dt` is rounded
 to the nearest step count, and an exposure longer than the frame period is capped at the
 frame period; each case warns (once) with the rule applied.
 """
-function substeps_per_frame(params::DiffusionSMLMConfig; warn::Bool=true)
+function substeps_per_frame(params::DiffusionSMLMConfig)
     r_sub = params.camera_exposure / params.dt
     r_frame = 1 / (params.camera_framerate * params.dt)
     n_sub = max(1, round(Int, r_sub))
     steps_per_frame = max(1, round(Int, r_frame))
-    if warn && abs(r_sub - n_sub) > 1e-9 * max(1, r_sub)
+    if abs(r_sub - n_sub) > 1e-9 * max(1, r_sub)
         @warn "camera_exposure=$(params.camera_exposure) is not an integer multiple of dt=$(params.dt); using n_sub=$n_sub sub-steps per frame (effective exposure $(n_sub * params.dt) s)" maxlog=1
     end
-    if warn && abs(r_frame - steps_per_frame) > 1e-9 * max(1, r_frame)
+    if abs(r_frame - steps_per_frame) > 1e-9 * max(1, r_frame)
         @warn "the frame period 1/camera_framerate=$(1 / params.camera_framerate) is not an integer multiple of dt=$(params.dt); using $steps_per_frame steps per frame (effective frame period $(steps_per_frame * params.dt) s)" maxlog=1
     end
     if n_sub > steps_per_frame
-        warn && @warn "camera_exposure=$(params.camera_exposure) is longer than the frame period 1/camera_framerate=$(1 / params.camera_framerate); capping the exposure at the frame period ($steps_per_frame sub-steps); use camera_exposure ≤ 1/camera_framerate" maxlog=1
+        @warn "camera_exposure=$(params.camera_exposure) is longer than the frame period 1/camera_framerate=$(1 / params.camera_framerate); capping the exposure at the frame period ($steps_per_frame sub-steps); use camera_exposure ≤ 1/camera_framerate" maxlog=1
         n_sub = steps_per_frame
     end
     return n_sub, steps_per_frame
@@ -388,7 +388,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     push!(new_emitters, d1, d2)
                     push!(processed, e1.track_id, e2.track_id)
                 else
-                    error("dimer partner $(e1.partner_id) of track $(e1.track_id) not found")
+                    @warn "dimer partner $(e1.partner_id) of track $(e1.track_id) not found; the emitter is dropped, as in 0.7" maxlog=1
                 end
             end
         end
@@ -410,27 +410,49 @@ restamp(e::DiffusingEmitter3D{T}; photons=e.photons, timestamp=e.timestamp, fram
     DiffusingEmitter3D{T}(e.x, e.y, e.z, photons, timestamp, frame, e.dataset, e.track_id, state, partner_id)
 
 """
-    add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, n_sub)
+    add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params)
 
-Record the current emitters as one sub-step record of camera frame `frame_num`.
-Each record carries the live emitter's photons (`γ·dt` for a rate `γ`), so the `n_sub`
-records of a frame sum to `γ·camera_exposure`. Internal.
+Deprecated, removed in 0.8.0 (internal). Add emitters to camera frames when `time` falls
+within the exposure window of frame `frame_num`; `simulate` no longer calls it.
 
 # Arguments
 - `camera_emitters::Vector{<:AbstractDiffusingEmitter}`: Collection of emitters for camera frames
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters from simulation
 - `time::Float64`: Current simulation time
 - `frame_num::Int`: Current frame number
-- `n_sub::Int`: Number of sub-step records per frame
+- `params::DiffusionSMLMConfig`: Simulation parameters
 
 # Returns
 - `Nothing`
 """
-function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, n_sub)
+function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params::DiffusionSMLMConfig)
+    Base.depwarn("add_camera_frame_emitters! is internal and deprecated; it will be removed in 0.8.0", :add_camera_frame_emitters!; force=true)
+    # Check if this timepoint falls within a camera exposure window
+    exposure_start = (frame_num - 1) / params.camera_framerate
+    exposure_end = exposure_start + params.camera_exposure
+
+    if time >= exposure_start && time <= exposure_end
+        # Add all current emitters to the camera frame
+        for e in emitters
+            push!(camera_emitters, restamp(e; timestamp=time, frame=frame_num))
+        end
+    end
+
+    return nothing
+end
+
+"""
+    _record_frame!(camera_emitters, emitters, time, frame_num)
+
+Record the current emitters as one sub-step record of camera frame `frame_num`.
+Each record carries the live emitter's photons (`γ·dt` for a rate `γ`), so the `n_sub`
+records of a frame sum to `γ·camera_exposure`. `simulate` decides by integer step which
+sub-steps to record. Internal.
+"""
+function _record_frame!(camera_emitters, emitters, time, frame_num)
     for e in emitters
         push!(camera_emitters, restamp(e; timestamp=time, frame=frame_num))
     end
-    
     return nothing
 end
 
@@ -514,8 +536,6 @@ function simulate(params::DiffusionSMLMConfig;
     γ === nothing || (isfinite(γ) && γ >= 0) ||
         throw(ArgumentError("γ must be finite and >= 0 (photons/s), got $γ"))
     if photons !== nothing
-        (isfinite(photons) && photons >= 0) ||
-            throw(ArgumentError("photons must be finite and >= 0, got $photons"))
         Base.depwarn("the photons keyword is deprecated and will be removed in 0.8.0; pass γ, the emission rate in photons/s (γ = photons/dt gives identical output)", :simulate; force=true)
     end
 
@@ -552,20 +572,18 @@ function simulate(params::DiffusionSMLMConfig;
             start_emitters = start_smld.emitters
             prior_D = get(start_smld.metadata, "monomer_D", nothing)
             prior_γ = get(start_smld.metadata, "γ", nothing)
-            (γ === nothing && photons === nothing && prior_γ !== nothing) && (γ_val = Float64(prior_γ))
+            γ === nothing && (γ_val = prior_γ === nothing ? nothing : Float64(prior_γ))
         else
             # Already a vector of emitters
             start_emitters = starting_conditions
             ids = [e.track_id for e in start_emitters]
             if length(unique(ids)) != length(ids)
                 @warn "starting_conditions has repeated track_id values; deduplicated to the latest record per track; pass the SMLD or extract_end_state(smld)" maxlog=1
-                latest = Dict{Int,eltype(start_emitters)}()
-                for e in start_emitters
-                    if !haskey(latest, e.track_id) || e.timestamp > latest[e.track_id].timestamp
-                        latest[e.track_id] = e
-                    end
-                end
-                start_emitters = [latest[id] for id in sort!(collect(keys(latest)))]
+                start_emitters = _latest_per_track(start_emitters)
+            end
+            if γ === nothing && !isempty(start_emitters)
+                p1 = start_emitters[1].photons
+                γ_val = all(e -> e.photons == p1, start_emitters) ? Float64(p1) / params.dt : nothing
             end
             isempty(params.monomer_mobility) || @warn "Vector starting_conditions get fresh monomer_mobility draws; pass the SMLD from simulate (or extract_end_state(smld)) to keep each track's D" maxlog=1
         end
@@ -615,15 +633,16 @@ function simulate(params::DiffusionSMLMConfig;
     # Simulation loop in integer steps; the first n_sub steps of each frame are recorded
     for f in 1:n_frames, j in 0:steps_per_frame-1
         k = (f - 1) * steps_per_frame + j
-        j < n_sub && add_camera_frame_emitters!(camera_emitters, emitters, k * params.dt, f, n_sub)
+        j < n_sub && _record_frame!(camera_emitters, emitters, k * params.dt, f)
         emitters = update_system(emitters, params, params.dt; track_D=isempty(track_D) ? nothing : track_D)
     end
 
     # Convert to SMLD
-    smld = create_smld(camera_emitters, camera, params; track_D=track_D, γ=γ_val)
+    smld = create_smld(camera_emitters, camera, params; track_D=track_D, γ=γ_val, n_frames=n_frames)
 
     # Live emitters are now at the start of the next frame: the exact end state for continuation
     t_end = n_frames * steps_per_frame * params.dt
+    smld.metadata["n_records"] = length(smld.emitters)
     smld.metadata["final_state"] = [restamp(e; timestamp=t_end, frame=n_frames) for e in emitters]
 
     elapsed_s = (time_ns() - start_time) / 1e9
@@ -714,9 +733,10 @@ Reduce a diffusion simulation to its exact end state, for use as `starting_condi
 Returns a `BasicSMLD` with one emitter per track and photons unchanged.
 
 `simulate` stores the exact end state (the live emitters at the start of the frame after
-the last) in `smld.metadata["final_state"]`, and that is returned when present. Without it
-(for example an SMLD re-wrapped without metadata) the record with the largest timestamp
-per track in the last frame is used, with its photons as they are. The result carries
+the last) in `smld.metadata["final_state"]`, and that is returned when the SMLD still holds
+all the records of that run. Otherwise (filtered, concatenated or re-wrapped without
+metadata) the record with the largest timestamp per track in the last frame present is
+used, with its photons as they are; tracks absent from that frame are not resumed. The result carries
 `"γ"` and `"monomer_D"` when present, so continuation keeps the emission rate and each
 track's D, and extracting twice gives the same result.
 
@@ -738,22 +758,10 @@ smld_continued, info = simulate(params_new; starting_conditions=extract_end_stat
 """
 function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
     final = get(smld.metadata, "final_state", nothing)
-    if final !== nothing
+    if final !== nothing && _final_state_matches(smld, final)
         final_emitters = [restamp(e; frame=1) for e in final]
     else
-        max_frame = maximum(e -> e.frame, smld.emitters)
-
-        # Latest record of each track in the last frame
-        latest = Dict{Int,E}()
-        for e in smld.emitters
-            e.frame == max_frame || continue
-            if !haskey(latest, e.track_id) || e.timestamp > latest[e.track_id].timestamp
-                latest[e.track_id] = e
-            end
-        end
-
-        final_emitters = [restamp(latest[id]; frame=1)
-                          for id in sort!(collect(keys(latest)))]
+        final_emitters = [restamp(e; frame=1) for e in _last_frame_latest(smld.emitters)]
     end
 
     metadata = Dict{String,Any}("n_substeps" => 1, "final_state" => final_emitters)
@@ -761,6 +769,33 @@ function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingE
         haskey(smld.metadata, key) && (metadata[key] = smld.metadata[key])
     end
     return BasicSMLD(final_emitters, smld.camera, 1, smld.n_datasets, metadata)
+end
+
+# The stored final state belongs to the emitters only if nothing was filtered or concatenated:
+# same record count, and the last frame holds the tracks of the final state. Internal.
+function _final_state_matches(smld::SMLD, final)
+    (haskey(smld.metadata, "n_records") && length(smld.emitters) == smld.metadata["n_records"]) || return false
+    (isempty(smld.emitters) || isempty(final)) && return false
+    max_frame = maximum(e -> e.frame, smld.emitters)
+    max_frame == first(final).frame || return false
+    return Set(e.track_id for e in smld.emitters if e.frame == max_frame) == Set(e.track_id for e in final)
+end
+
+# One emitter per track: the record with the largest timestamp, sorted by track_id. Internal.
+function _latest_per_track(emitters)
+    latest = Dict{Int,eltype(emitters)}()
+    for e in emitters
+        if !haskey(latest, e.track_id) || e.timestamp > latest[e.track_id].timestamp
+            latest[e.track_id] = e
+        end
+    end
+    return [latest[id] for id in sort!(collect(keys(latest)))]
+end
+
+# Latest record of each track in the largest frame present. Internal.
+function _last_frame_latest(emitters)
+    max_frame = maximum(e -> e.frame, emitters)
+    return _latest_per_track([e for e in emitters if e.frame == max_frame])
 end
 
 """
@@ -774,13 +809,5 @@ last frame, photons unchanged, sorted by track_id.
 """
 function extract_final_state(smld::SMLD)
     Base.depwarn("extract_final_state is deprecated and will be removed in 0.8.0; use extract_end_state(smld), which returns the exact end state as an SMLD and carries each track's D", :extract_final_state; force=true)
-    max_frame = maximum(e -> e.frame, smld.emitters)
-    latest = Dict{Int,eltype(smld.emitters)}()
-    for e in smld.emitters
-        e.frame == max_frame || continue
-        if !haskey(latest, e.track_id) || e.timestamp > latest[e.track_id].timestamp
-            latest[e.track_id] = e
-        end
-    end
-    return [latest[id] for id in sort!(collect(keys(latest)))]
+    return _last_frame_latest(smld.emitters)
 end
