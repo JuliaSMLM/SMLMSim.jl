@@ -213,17 +213,6 @@ function substeps_per_frame(params::DiffusionSMLMConfig)
 end
 
 """
-    draw_monomer_D(params::DiffusionSMLMConfig) -> Float64
-
-Draw a monomer diffusion coefficient from `params.monomer_mobility`
-(`params.diff_monomer` when the mixture is empty). Internal.
-"""
-function draw_monomer_D(params::DiffusionSMLMConfig)
-    isempty(params.monomer_mobility) && return params.diff_monomer
-    return params.monomer_mobility[draw_monomer_class(params)][2]
-end
-
-"""
     draw_monomer_class(params::DiffusionSMLMConfig) -> Int
 
 Draw the index of the `params.monomer_mobility` component a monomer belongs to (`1` when
@@ -241,16 +230,19 @@ function draw_monomer_class(params::DiffusionSMLMConfig)
 end
 
 """
-    _pair_D(params::DiffusionSMLMConfig, D1::Real, D2::Real) -> Float64
+    _pair_motion(params::DiffusionSMLMConfig, D1::Real, D2::Real) -> (D, D_rot)
 
-Translational diffusion coefficient of a bound pair whose partners have monomer
-coefficients `D1` and `D2`. `:fixed` gives `diff_dimer`. `:min` gives `0` when either
-partner is immobile, otherwise `min(D1, D2) * diff_dimer / diff_monomer`. Internal.
+Translational and rotational diffusion coefficients of a bound pair whose partners have
+monomer coefficients `D1` and `D2`. `:fixed` gives `(diff_dimer, diff_dimer_rot)`. `:min` gives
+`(0, 0)` when either partner is immobile (the pair is anchored), otherwise
+`D = min(D1, D2) * diff_dimer / diff_monomer` and `D_rot = diff_dimer_rot * D / diff_dimer`
+(`0` when `diff_dimer == 0`). Internal.
 """
-function _pair_D(params::DiffusionSMLMConfig, D1::Real, D2::Real)
-    params.pair_mobility == :min || return params.diff_dimer
-    (D1 == 0 || D2 == 0) && return 0.0
-    return min(D1, D2) * params.diff_dimer / params.diff_monomer
+function _pair_motion(params::DiffusionSMLMConfig, D1::Real, D2::Real)
+    params.pair_mobility == :min || return params.diff_dimer, params.diff_dimer_rot
+    (D1 == 0 || D2 == 0) && return 0.0, 0.0
+    D = min(D1, D2) * params.diff_dimer / params.diff_monomer
+    return D, params.diff_dimer > 0 ? params.diff_dimer_rot * (D / params.diff_dimer) : 0.0
 end
 
 """
@@ -344,17 +336,6 @@ function build_emitters(params::DiffusionSMLMConfig, photons::Float64, override_
     return emitters
 end
 
-# Track_id of the partner that keeps its position when a pair forms under pair_mobility = :min
-# (0: snap both to the midpoint, as in 0.7). Internal.
-function _anchor(params::DiffusionSMLMConfig, e1, e2, monomer_D)
-    params.pair_mobility == :min || return 0
-    D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
-    D1 == 0 && D2 == 0 && return min(e1.track_id, e2.track_id)
-    D1 == 0 && return e1.track_id
-    D2 == 0 && return e2.track_id
-    return 0
-end
-
 """
     update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
                   track_D=nothing)
@@ -394,7 +375,21 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                 
                 if can_dimerize(e1, e2, params.r_react)
                     # Create new dimer pair
-                    d1, d2 = dimerize(e1, e2, params.d_dimer; anchor=_anchor(params, e1, e2, monomer_D))
+                    D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
+                    # Under :min an immobile partner keeps its position (both immobile: the lower track_id)
+                    anchor = nothing
+                    if params.pair_mobility == :min && (D1 == 0 || D2 == 0)
+                        anchor = D1 == 0 && (D2 != 0 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
+                    end
+                    d1, d2 = dimerize(e1, e2, params.d_dimer; anchor=anchor)
+                    if anchor !== nothing
+                        # The placed partner never reaches apply_boundary while the pair is pinned
+                        if anchor == d1.track_id
+                            d2 = apply_boundary(d2, params.box_size, params.boundary)
+                        else
+                            d1 = apply_boundary(d1, params.box_size, params.boundary)
+                        end
+                    end
                     push!(new_emitters, d1, d2)
                     push!(processed, e1.track_id, e2.track_id)
                     found_dimer = true
@@ -436,16 +431,13 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     e2 = emitters[partner_idx]
                     
                     D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
+                    D_pair, rot = _pair_motion(params, D1, D2)
                     if params.pair_mobility == :min && (D1 == 0 || D2 == 0)
                         # An immobile partner pins the pair: no translation, rotation or RNG draws
                         d1 = restamp(e1; timestamp=e1.timestamp + dt)
                         d2 = restamp(e2; timestamp=e2.timestamp + dt)
                     else
                         # Apply dimer diffusion
-                        D_pair = _pair_D(params, D1, D2)
-                        rot = params.pair_mobility == :min ?
-                              (params.diff_dimer > 0 ? params.diff_dimer_rot * D_pair / params.diff_dimer : 0.0) :
-                              params.diff_dimer_rot
                         d1, d2 = diffuse_dimer(e1, e2, D_pair, rot, params.d_dimer, dt)
 
                         # Apply boundary conditions
@@ -696,7 +688,8 @@ function simulate(params::DiffusionSMLMConfig;
             if prior_D !== nothing && haskey(prior_D, e.track_id)
                 track_D[e.track_id] = Float64(prior_D[e.track_id])
                 track_class[e.track_id] = prior_class !== nothing && haskey(prior_class, e.track_id) ?
-                    Int(prior_class[e.track_id]) : 1
+                    Int(prior_class[e.track_id]) :
+                    something(findfirst(c -> c[2] == track_D[e.track_id], params.monomer_mobility), 1)
             else
                 k = draw_monomer_class(params)
                 track_D[e.track_id] = params.monomer_mobility[k][2]

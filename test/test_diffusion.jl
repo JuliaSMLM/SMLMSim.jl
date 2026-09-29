@@ -681,54 +681,93 @@ end
         @test fx(monomer_mobility=mob, pair_mobility=:fixed) == GOLD_MIXED
         @test fx(pair_mobility=:fixed) == GOLD_DEFAULT
 
-        # Mobile-immobile pairs stay put
-        Random.seed!(11)
-        p = DiffusionSMLMConfig(density=40.0, box_size=2.0, diff_monomer=0.3, diff_dimer=0.1, diff_dimer_rot=0.5,
-            k_off=0.5, r_react=0.05, d_dimer=0.03, dt=0.001, t_max=0.2, camera_framerate=100.0,
-            camera_exposure=0.01, monomer_mobility=[(0.5, 0.3), (0.5, 0.0)], pair_mobility=:min)
-        smld, _ = simulate(p; γ=500.0, camera=cam)
-        cls = smld.metadata["monomer_class"]
-        @test smld.metadata["pair_mobility"] == :min
-        recs = Dict{Int,Vector{Any}}()
-        for e in smld.emitters
-            push!(get!(recs, e.track_id, Any[]), e)
-        end
-        n_mixed = 0
-        for (id, r) in recs
-            sort!(r, by = e -> e.timestamp)
-            cls[id] == 2 || continue   # class 2 is the immobile one
-            for k in 2:length(r)
-                (r[k].state == :dimer && r[k-1].state == :dimer && r[k].partner_id == r[k-1].partner_id) || continue
-                cls[r[k].partner_id] == 1 || continue
-                n_mixed += 1
-                @test r[k].x == r[k-1].x && r[k].y == r[k-1].y
-                pr = recs[r[k].partner_id]
-                j = findfirst(e -> e.timestamp == r[k].timestamp, pr)
-                jp = findfirst(e -> e.timestamp == r[k-1].timestamp, pr)
-                @test pr[j].x == pr[jp].x && pr[j].y == pr[jp].y
+        # Mobile-immobile pairs stay put, and the formation rule holds in 2D and 3D
+        for nd in (2, 3)
+            Random.seed!(11)
+            p = DiffusionSMLMConfig(density=nd == 2 ? 40.0 : 8.0, box_size=2.0, diff_monomer=0.3, diff_dimer=0.1, diff_dimer_rot=0.5,
+                k_off=0.5, r_react=0.05, d_dimer=0.03, dt=0.001, t_max=0.2, camera_framerate=100.0,
+                camera_exposure=0.01, ndims=nd, monomer_mobility=[(0.5, 0.3), (0.5, 0.0)], pair_mobility=:min)
+            smld, _ = simulate(p; γ=500.0, camera=cam)
+            cls = smld.metadata["monomer_class"]
+            @test smld.metadata["pair_mobility"] == :min
+            pos(e) = nd == 2 ? (e.x, e.y) : (e.x, e.y, e.z)
+            recs = Dict{Int,Vector{Any}}()
+            for e in smld.emitters
+                push!(get!(recs, e.track_id, Any[]), e)
+            end
+            n_mixed = 0
+            n_formed = 0
+            n_bad = 0
+            n_bad_form = 0
+            for (id, r) in recs
+                sort!(r, by = e -> e.timestamp)
+                cls[id] == 2 || continue   # class 2 is the immobile one
+                for k in 2:length(r)
+                    r[k].state == :dimer && cls[r[k].partner_id] == 1 || continue
+                    pr = recs[r[k].partner_id]
+                    j = findfirst(e -> e.timestamp == r[k].timestamp, pr)
+                    if r[k-1].state == :dimer && r[k].partner_id == r[k-1].partner_id
+                        n_mixed += 1
+                        jp = findfirst(e -> e.timestamp == r[k-1].timestamp, pr)
+                        (pos(r[k]) == pos(r[k-1]) && pos(pr[j]) == pos(pr[jp])) || (n_bad += 1)
+                    elseif r[k-1].state == :monomer
+                        # Formation record: the immobile partner stays; the other is d_dimer away unless a
+                        # boundary may have acted (a pair near a box edge is skipped)
+                        near_edge = any(c -> c < 2p.d_dimer || c > p.box_size - 2p.d_dimer, (pos(r[k])..., pos(pr[j])...))
+                        near_edge && continue
+                        n_formed += 1
+                        (pos(r[k]) == pos(r[k-1]) &&
+                         isapprox(sqrt(sum(abs2, pos(r[k]) .- pos(pr[j]))), p.d_dimer; rtol=1e-12)) || (n_bad_form += 1)
+                    end
+                end
+            end
+            @test n_mixed > 0
+            @test n_bad == 0
+            @test n_formed > 0
+            @test n_bad_form == 0
+
+            # Continuation keeps classes, and recovers them from D for 0.7.2 output
+            @test extract_end_state(smld).metadata["monomer_class"] == cls
+            smld2, _ = simulate(p; starting_conditions=smld, γ=500.0, camera=cam)
+            @test smld2.metadata["monomer_class"] == cls
+            old = deepcopy(smld)
+            delete!(old.metadata, "monomer_class")
+            smld3, _ = simulate(p; starting_conditions=old, γ=500.0, camera=cam)
+            @test smld3.metadata["monomer_class"] == cls
+            if nd == 2
+                rows = frame_dimer_truth(smld)
+                @test all(r -> r.mixed == (r.partner_id != 0 && cls[r.track_id] != cls[r.partner_id]), rows)
+                @test any(r -> r.mixed, rows)
             end
         end
-        @test n_mixed > 0
 
         # Mixed flags
-        rows = frame_dimer_truth(smld)
-        @test all(r -> r.mixed == (r.partner_id != 0 && cls[r.track_id] != cls[r.partner_id]), rows)
-        @test any(r -> r.mixed, rows)
         smld0, _ = simulate(DiffusionSMLMConfig(density=40.0, box_size=2.0, r_react=0.05, dt=0.001, t_max=0.05,
             camera_framerate=100.0, camera_exposure=0.01); γ=500.0, camera=cam)
         rows0 = frame_dimer_truth(smld0)
         @test any(r -> r.partner_id != 0, rows0)
         @test all(r -> !r.mixed, rows0)
 
-        # Pair D
-        pm = DiffusionSMLMConfig(diff_monomer=0.4, diff_dimer=0.1, pair_mobility=:min)
-        @test SMLMSim.InteractionDiffusion._pair_D(pm, 0.4, 0.2) ≈ 0.05
-        @test SMLMSim.InteractionDiffusion._pair_D(pm, 0.2, 0.4) ≈ 0.05
-        @test SMLMSim.InteractionDiffusion._pair_D(pm, 0.0, 0.4) == 0.0
-        @test SMLMSim.InteractionDiffusion._pair_D(DiffusionSMLMConfig(diff_dimer=0.1), 0.0, 0.4) == 0.1
+        # Pair motion
+        pm = DiffusionSMLMConfig(diff_monomer=0.4, diff_dimer=0.1, diff_dimer_rot=0.5, pair_mobility=:min)
+        pmot = SMLMSim.InteractionDiffusion._pair_motion
+        @test all(pmot(pm, 0.4, 0.2) .≈ (0.05, 0.25))
+        @test all(pmot(pm, 0.2, 0.4) .≈ (0.05, 0.25))
+        @test pmot(pm, 0.0, 0.4) == (0.0, 0.0)
+        @test pmot(pm, 0.4, 0.0) == (0.0, 0.0)
+        @test pmot(DiffusionSMLMConfig(diff_dimer=0.1, diff_dimer_rot=0.5), 0.0, 0.4) == (0.1, 0.5)
+        @test pmot(DiffusionSMLMConfig(diff_monomer=0.4, diff_dimer=0.0, diff_dimer_rot=0.5, pair_mobility=:min), 0.4, 0.2) == (0.0, 0.0)
 
-        # Continuation keeps classes
-        @test extract_end_state(smld).metadata["monomer_class"] == cls
+        # Anchored pairs stay inside the box
+        for bnd in ("reflecting", "periodic")
+            Random.seed!(3)
+            pb = DiffusionSMLMConfig(density=150.0, box_size=0.6, diff_monomer=0.3, diff_dimer=0.1, diff_dimer_rot=0.5, k_off=2.0,
+                r_react=0.05, d_dimer=0.04, dt=0.001, t_max=0.1, camera_framerate=100.0, camera_exposure=0.01,
+                boundary=bnd, monomer_mobility=[(0.4, 0.3), (0.6, 0.0)], pair_mobility=:min)
+            smldb, _ = simulate(pb; γ=500.0, camera=cam)
+            n_out = count(e -> e.x < 0 || e.x > 0.6 || e.y < 0 || e.y > 0.6, smldb.emitters)
+            @test n_out == 0
+        end
 
         # Validation
         @test_throws ArgumentError DiffusionSMLMConfig(pair_mobility=:bogus)

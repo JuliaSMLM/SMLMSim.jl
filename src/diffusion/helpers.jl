@@ -109,7 +109,7 @@ function can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter
 end
 
 """
-    dimerize(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, d_dimer::Float64; anchor::Int=0)
+    dimerize(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing)
 
 Create two new emitters in dimer state from two monomers.
 
@@ -117,13 +117,13 @@ Create two new emitters in dimer state from two monomers.
 - `e1::DiffusingEmitter2D`: First emitter
 - `e2::DiffusingEmitter2D`: Second emitter
 - `d_dimer::Float64`: Dimer separation distance in microns
-- `anchor::Int=0`: `track_id` of the emitter that keeps its position; the other is placed
-  `d_dimer` from it along the axis between them. `0` snaps both to the midpoint ± `d_dimer/2`.
+- `anchor::Union{Nothing,Int}=nothing`: `track_id` of the emitter that keeps its position; the other is placed
+  `d_dimer` from it along the axis between them. `nothing` snaps both to the midpoint ± `d_dimer/2`.
 
 # Returns
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64; anchor::Int=0) where T <: AbstractFloat
+function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
@@ -171,7 +171,7 @@ function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer:
 end
 
 """
-    dimerize(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, d_dimer::Float64; anchor::Int=0)
+    dimerize(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing)
 
 Create two new emitters in dimer state from two monomers in 3D.
 
@@ -179,13 +179,13 @@ Create two new emitters in dimer state from two monomers in 3D.
 - `e1::DiffusingEmitter3D`: First emitter
 - `e2::DiffusingEmitter3D`: Second emitter
 - `d_dimer::Float64`: Dimer separation distance in microns
-- `anchor::Int=0`: `track_id` of the emitter that keeps its position; the other is placed
-  `d_dimer` from it along the axis between them. `0` snaps both to the midpoint ± `d_dimer/2`.
+- `anchor::Union{Nothing,Int}=nothing`: `track_id` of the emitter that keeps its position; the other is placed
+  `d_dimer` from it along the axis between them. `nothing` snaps both to the midpoint ± `d_dimer/2`.
 
 # Returns
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64; anchor::Int=0) where T <: AbstractFloat
+function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
