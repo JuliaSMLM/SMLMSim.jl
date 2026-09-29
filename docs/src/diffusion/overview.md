@@ -103,14 +103,33 @@ than the frame period `1/camera_framerate`; otherwise `n_sub = round(camera_expo
 deprecated (γ = photons/dt) and is removed in 0.8.0.
 
 To continue a run, pass `starting_conditions=smld` or `extract_end_state(smld)`; both resume
-at the exact end state and keep each track's D and γ. A continuation with a different `dt` keeps
-each track's emission rate, so a frame's brightness does not depend on `dt`. `extract_final_state` is deprecated.
+at the exact end state and keep each track's D, mobility class and γ. A continuation with a different
+`dt` keeps each track's emission rate (photons per record scale with `dt`), so a frame's brightness is
+unchanged as long as the effective exposure `n_sub·dt` is unchanged; a new `dt` that changes `n_sub·dt`
+(an exposure that is not a whole number of steps, or one capped at the frame period) changes the
+brightness with it. Two limitations: an SMLD that was filtered, concatenated or edited resumes from each
+track's latest record in its last frame, which is not the exact end state and carries no per-molecule
+history beyond that record (blinking, bleaching or brightness-jitter state is not rebuilt); and an SMLD
+from SMLMSim 0.7.1 or earlier has no saved `dt`, so its step is read from the saved config, and if that
+config's `dt` was changed in place after the run the original step cannot be recovered.
+`extract_final_state` is deprecated.
 
 Monomers can be given a mixture of mobility populations with
 `monomer_mobility = [(0.85, 0.0), (0.05, 0.08), (0.10, 0.38)]` (entries are
 `(fraction, D)`); the drawn coefficient per molecule is stored in
 `smld.metadata["monomer_D"]`. `frame_dimer_truth(smld)` returns per-frame, per-molecule
-dimer ground truth.
+dimer ground truth; its `mixed` field is `true` when exactly one of a molecule and its partner is
+immobile (monomer D = 0).
+
+A bound pair diffuses with `diff_dimer` by default (`pair_mobility = :fixed`, the 0.7 behaviour).
+With `pair_mobility = :min` a pair moves at `min(D1, D2) × diff_dimer/diff_monomer`, where `D1`, `D2`
+are its partners' monomer D, so two partners at `diff_monomer` move at `diff_dimer` (as under `:fixed`)
+and a pair with an immobile partner (D = 0) does not move or rotate while bound: the immobile partner
+keeps its position when the pair forms, and the mobile partner is placed `d_dimer` from it (in a
+reflecting box, mirrored across the immobile partner on each axis it would leave, so the bond keeps its
+length).
+On dissociation the partners are placed at least `r_react` apart along the pair axis (under `pair_mobility = :min` an immobile partner stays put; near a reflecting wall the placement stays inside the box, mirrored across an immobile partner on each axis it would leave, otherwise with the pair's midpoint shifted inward), so a pair does not re-form at the next step only because `d_dimer < r_react`; a mobile partner can still diffuse back and re-form (geminate re-encounter).
+The one exception to "an immobile partner stays put": when both partners are immobile, the one with the higher `track_id` is moved, because a pair closer than `r_react` must be separated to `r_react` and neither partner could otherwise ever move apart. A box with side at most `2·r_react` cannot hold the placement; the partners then stay where they are (the 0.7.2 behaviour, with a warning).
 
 
 ## Microscope Image Generation
