@@ -721,7 +721,8 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 - `camera::AbstractCamera`: Camera model for imaging
 - `params::DiffusionSMLMConfig`: Simulation parameters, stored as `metadata["simulation_parameters"]`; its `dt`
   is also stored as `metadata["dt"]`, a snapshot that later edits of the mutable config do not change
-- `track_D::Dict{Int,Float64}`: Per-track monomer diffusion coefficients, stored as `metadata["monomer_D"]`
+- `track_D::Dict{Int,Float64}`: Per-track monomer diffusion coefficients, stored as `metadata["monomer_D"]`; the
+  config's mixture is stored as `metadata["monomer_mobility"]`, a copy that later edits of the config do not change
 - `track_class::Dict{Int,Int}`: Per-track mobility class (index into `monomer_mobility`), stored as `metadata["monomer_class"]`
 - `γ::Union{Nothing,Real}=nothing`: Emission rate, photons/s, stored as `metadata["γ"]`; no key when `nothing`
 - `rate_source::Union{Nothing,String}=nothing`: How the rate was set (`"γ"`, `"photons"` or `"default"`), stored as
@@ -749,6 +750,7 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
         "n_substeps" => substeps_per_frame(params)[1],
         "monomer_D" => track_D,
         "monomer_class" => track_class,
+        "monomer_mobility" => copy(params.monomer_mobility),
         "pair_mobility" => params.pair_mobility
     )
     γ === nothing || (metadata["γ"] = γ)
