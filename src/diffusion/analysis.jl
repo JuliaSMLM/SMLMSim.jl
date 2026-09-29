@@ -256,7 +256,7 @@ end
 
 Per-frame dimer ground truth for every molecule in a diffusion simulation.
 
-Returns a `Vector` of `NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break)}`,
+Returns a `Vector` of `NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break, :mixed)}`,
 one row per (frame, track_id) present, sorted by (frame, track_id).
 
 - `bound_fraction`: fraction of the track's records in that frame with `state == :dimer`
@@ -264,6 +264,9 @@ one row per (frame, track_id) present, sorted by (frame, track_id).
 - `t_form::Float64`: timestamp of the first record in the frame that is `:dimer` while the
   track's previous record (in time, across frames) was `:monomer`; `NaN` if none
 - `t_break::Float64`: the same for `:monomer` after `:dimer`
+- `mixed::Bool`: `true` when the row's `partner_id` is nonzero and the track and its partner have
+  different mobility classes in `smld.metadata["monomer_class"]` (the `monomer_mobility` component
+  each was drawn from); `false` when unbound or when `"monomer_class"` is absent
 
 This is sub-step resolution. With exposure shorter than the frame period, a change that
 happens during the gap between exposures shows at the next frame's first record.
@@ -274,8 +277,12 @@ function frame_dimer_truth(smld::BasicSMLD)
         push!(get!(by_track, e.track_id, Int[]), i)
     end
 
-    rows = NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break),
-                      Tuple{Int,Int,Int,Float64,Float64,Float64}}[]
+    class = get(smld.metadata, "monomer_class", nothing)
+    is_mixed(id, partner) = class !== nothing && partner != 0 && haskey(class, id) &&
+                            haskey(class, partner) && class[id] != class[partner]
+
+    rows = NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break, :mixed),
+                      Tuple{Int,Int,Int,Float64,Float64,Float64,Bool}}[]
     for (id, idx) in by_track
         sort!(idx, by = i -> smld.emitters[i].timestamp)
         recs = smld.emitters[idx]
@@ -288,7 +295,8 @@ function frame_dimer_truth(smld::BasicSMLD)
         for (k, e) in enumerate(recs)
             if k > 1 && e.frame != recs[k-1].frame
                 push!(rows, (frame=recs[k-1].frame, track_id=id, partner_id=partner,
-                             bound_fraction=n_bound / n, t_form=t_form, t_break=t_break))
+                             bound_fraction=n_bound / n, t_form=t_form, t_break=t_break,
+                             mixed=is_mixed(id, partner)))
                 n = 0
                 n_bound = 0
                 partner = 0
@@ -310,7 +318,8 @@ function frame_dimer_truth(smld::BasicSMLD)
             end
         end
         push!(rows, (frame=recs[end].frame, track_id=id, partner_id=partner,
-                     bound_fraction=n_bound / n, t_form=t_form, t_break=t_break))
+                     bound_fraction=n_bound / n, t_form=t_form, t_break=t_break,
+                     mixed=is_mixed(id, partner)))
     end
     sort!(rows, by = r -> (r.frame, r.track_id))
     return rows

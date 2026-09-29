@@ -107,7 +107,14 @@ Monomers can be given a mixture of mobility populations with
 `monomer_mobility = [(0.85, 0.0), (0.05, 0.08), (0.10, 0.38)]` (entries are
 `(fraction, D)`); the drawn coefficient per molecule is stored in
 `smld.metadata["monomer_D"]`. `frame_dimer_truth(smld)` returns per-frame, per-molecule
-dimer ground truth.
+dimer ground truth; its `mixed` field is `true` when a molecule and its partner were drawn from
+different mobility populations (`smld.metadata["monomer_class"]`).
+
+A bound pair diffuses with `diff_dimer` by default (`pair_mobility = :fixed`, the 0.7 behaviour).
+With `pair_mobility = :min` the pair's D is the smaller of its two partners' monomer D, times
+`diff_dimer/diff_monomer` when both move. A pair with an immobile partner (D = 0) does not move or
+rotate while bound: the immobile partner keeps its position when the pair forms, and the mobile
+partner is placed `d_dimer` from it.
 
 
 ## Microscope Image Generation

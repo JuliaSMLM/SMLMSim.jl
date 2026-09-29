@@ -660,4 +660,78 @@ end
         # positional construction without a mixture still works
         @test DiffusionSMLMConfig(1.0, 10.0, 0.1, 0.05, 0.5, 0.2, 0.01, 0.05, 0.01, 10.0, 2, "periodic", 10.0, 0.1) isa DiffusionSMLMConfig
     end
+
+    @testset "(l) pair mobility" begin
+        cam = IdealCamera(1:32, 1:32, 0.078)
+        fx(; kw...) = begin
+            Random.seed!(20260929)
+            p = DiffusionSMLMConfig(density=40.0, box_size=2.0, diff_monomer=0.3, diff_dimer=0.1, diff_dimer_rot=0.5,
+                k_off=5.0, r_react=0.05, d_dimer=0.03, dt=0.001, t_max=0.05, camera_framerate=100.0,
+                camera_exposure=0.01; kw...)
+            smld, _ = simulate(p; γ=500.0, camera=cam)
+            es = smld.emitters
+            (length(es), sum(e -> e.x, es), sum(e -> e.y, es), sum(e -> e.photons, es), count(e -> e.state == :dimer, es))
+        end
+        # Recorded from 0.7.2 (97880c1) before the change
+        GOLD_MIXED = (8000, 8213.209547718594, 8116.742301806108, 4000.0, 4340)
+        GOLD_DEFAULT = (8000, 8280.728978993655, 8287.913871628487, 4000.0, 5462)
+        mob = [(0.5, 0.2), (0.5, 0.0)]
+        @test fx(monomer_mobility=mob) == GOLD_MIXED
+        @test fx() == GOLD_DEFAULT
+        @test fx(monomer_mobility=mob, pair_mobility=:fixed) == GOLD_MIXED
+        @test fx(pair_mobility=:fixed) == GOLD_DEFAULT
+
+        # Mobile-immobile pairs stay put
+        Random.seed!(11)
+        p = DiffusionSMLMConfig(density=40.0, box_size=2.0, diff_monomer=0.3, diff_dimer=0.1, diff_dimer_rot=0.5,
+            k_off=0.5, r_react=0.05, d_dimer=0.03, dt=0.001, t_max=0.2, camera_framerate=100.0,
+            camera_exposure=0.01, monomer_mobility=[(0.5, 0.3), (0.5, 0.0)], pair_mobility=:min)
+        smld, _ = simulate(p; γ=500.0, camera=cam)
+        cls = smld.metadata["monomer_class"]
+        @test smld.metadata["pair_mobility"] == :min
+        recs = Dict{Int,Vector{Any}}()
+        for e in smld.emitters
+            push!(get!(recs, e.track_id, Any[]), e)
+        end
+        n_mixed = 0
+        for (id, r) in recs
+            sort!(r, by = e -> e.timestamp)
+            cls[id] == 2 || continue   # class 2 is the immobile one
+            for k in 2:length(r)
+                (r[k].state == :dimer && r[k-1].state == :dimer && r[k].partner_id == r[k-1].partner_id) || continue
+                cls[r[k].partner_id] == 1 || continue
+                n_mixed += 1
+                @test r[k].x == r[k-1].x && r[k].y == r[k-1].y
+                pr = recs[r[k].partner_id]
+                j = findfirst(e -> e.timestamp == r[k].timestamp, pr)
+                jp = findfirst(e -> e.timestamp == r[k-1].timestamp, pr)
+                @test pr[j].x == pr[jp].x && pr[j].y == pr[jp].y
+            end
+        end
+        @test n_mixed > 0
+
+        # Mixed flags
+        rows = frame_dimer_truth(smld)
+        @test all(r -> r.mixed == (r.partner_id != 0 && cls[r.track_id] != cls[r.partner_id]), rows)
+        @test any(r -> r.mixed, rows)
+        smld0, _ = simulate(DiffusionSMLMConfig(density=40.0, box_size=2.0, r_react=0.05, dt=0.001, t_max=0.05,
+            camera_framerate=100.0, camera_exposure=0.01); γ=500.0, camera=cam)
+        rows0 = frame_dimer_truth(smld0)
+        @test any(r -> r.partner_id != 0, rows0)
+        @test all(r -> !r.mixed, rows0)
+
+        # Pair D
+        pm = DiffusionSMLMConfig(diff_monomer=0.4, diff_dimer=0.1, pair_mobility=:min)
+        @test SMLMSim.InteractionDiffusion._pair_D(pm, 0.4, 0.2) ≈ 0.05
+        @test SMLMSim.InteractionDiffusion._pair_D(pm, 0.2, 0.4) ≈ 0.05
+        @test SMLMSim.InteractionDiffusion._pair_D(pm, 0.0, 0.4) == 0.0
+        @test SMLMSim.InteractionDiffusion._pair_D(DiffusionSMLMConfig(diff_dimer=0.1), 0.0, 0.4) == 0.1
+
+        # Continuation keeps classes
+        @test extract_end_state(smld).metadata["monomer_class"] == cls
+
+        # Validation
+        @test_throws ArgumentError DiffusionSMLMConfig(pair_mobility=:bogus)
+        @test_throws ArgumentError DiffusionSMLMConfig(pair_mobility=:min, diff_monomer=0.0)
+    end
 end

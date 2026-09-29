@@ -109,7 +109,7 @@ function can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter
 end
 
 """
-    dimerize(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, d_dimer::Float64)
+    dimerize(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, d_dimer::Float64; anchor::Int=0)
 
 Create two new emitters in dimer state from two monomers.
 
@@ -117,11 +117,13 @@ Create two new emitters in dimer state from two monomers.
 - `e1::DiffusingEmitter2D`: First emitter
 - `e2::DiffusingEmitter2D`: Second emitter
 - `d_dimer::Float64`: Dimer separation distance in microns
+- `anchor::Int=0`: `track_id` of the emitter that keeps its position; the other is placed
+  `d_dimer` from it along the axis between them. `0` snaps both to the midpoint ± `d_dimer/2`.
 
 # Returns
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64) where T <: AbstractFloat
+function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64; anchor::Int=0) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
@@ -133,10 +135,18 @@ function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer:
     # Calculate new positions
     dx = r * cos(ϕ)
     dy = r * sin(ϕ)
+    x1, y1, x2, y2 = com_x - dx, com_y - dy, com_x + dx, com_y + dy
+    if anchor == e1.track_id
+        x1, y1 = e1.x, e1.y
+        x2, y2 = e1.x + 2dx, e1.y + 2dy
+    elseif anchor == e2.track_id
+        x2, y2 = e2.x, e2.y
+        x1, y1 = e2.x - 2dx, e2.y - 2dy
+    end
     
     # Create new dimer emitters
     d1 = DiffusingEmitter2D{T}(
-        com_x - dx, com_y - dy,  # Position
+        x1, y1,                  # Position
         e1.photons,              # Photons
         e1.timestamp,            # Timestamp
         e1.frame,                # Frame
@@ -147,7 +157,7 @@ function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer:
     )
     
     d2 = DiffusingEmitter2D{T}(
-        com_x + dx, com_y + dy,  # Position
+        x2, y2,                  # Position
         e2.photons,              # Photons
         e2.timestamp,            # Timestamp
         e2.frame,                # Frame
@@ -161,7 +171,7 @@ function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer:
 end
 
 """
-    dimerize(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, d_dimer::Float64)
+    dimerize(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, d_dimer::Float64; anchor::Int=0)
 
 Create two new emitters in dimer state from two monomers in 3D.
 
@@ -169,11 +179,13 @@ Create two new emitters in dimer state from two monomers in 3D.
 - `e1::DiffusingEmitter3D`: First emitter
 - `e2::DiffusingEmitter3D`: Second emitter
 - `d_dimer::Float64`: Dimer separation distance in microns
+- `anchor::Int=0`: `track_id` of the emitter that keeps its position; the other is placed
+  `d_dimer` from it along the axis between them. `0` snaps both to the midpoint ± `d_dimer/2`.
 
 # Returns
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64) where T <: AbstractFloat
+function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64; anchor::Int=0) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
@@ -187,10 +199,19 @@ function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer:
     dx = r * sin(θ) * cos(ϕ)
     dy = r * sin(θ) * sin(ϕ)
     dz = r * cos(θ)
+    x1, y1, z1 = com_x - dx, com_y - dy, com_z - dz
+    x2, y2, z2 = com_x + dx, com_y + dy, com_z + dz
+    if anchor == e1.track_id
+        x1, y1, z1 = e1.x, e1.y, e1.z
+        x2, y2, z2 = e1.x + 2dx, e1.y + 2dy, e1.z + 2dz
+    elseif anchor == e2.track_id
+        x2, y2, z2 = e2.x, e2.y, e2.z
+        x1, y1, z1 = e2.x - 2dx, e2.y - 2dy, e2.z - 2dz
+    end
     
     # Create new dimer emitters
     d1 = DiffusingEmitter3D{T}(
-        com_x - dx, com_y - dy, com_z - dz,  # Position
+        x1, y1, z1,                          # Position
         e1.photons,                          # Photons
         e1.timestamp,                        # Timestamp
         e1.frame,                            # Frame
@@ -201,7 +222,7 @@ function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer:
     )
     
     d2 = DiffusingEmitter3D{T}(
-        com_x + dx, com_y + dy, com_z + dz,  # Position
+        x2, y2, z2,                          # Position
         e2.photons,                          # Photons
         e2.timestamp,                        # Timestamp
         e2.frame,                            # Frame
@@ -678,6 +699,7 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 - `camera::AbstractCamera`: Camera model for imaging
 - `params::DiffusionSMLMConfig`: Simulation parameters
 - `track_D::Dict{Int,Float64}`: Per-track monomer diffusion coefficients, stored as `metadata["monomer_D"]`
+- `track_class::Dict{Int,Int}`: Per-track mobility class (index into `monomer_mobility`), stored as `metadata["monomer_class"]`
 - `γ::Union{Nothing,Real}=nothing`: Emission rate, photons/s, stored as `metadata["γ"]`; no key when `nothing`
 - `n_frames::Union{Nothing,Int}=nothing`: Frame count of the movie; the largest frame present when `nothing`
 
@@ -686,6 +708,7 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 """
 function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::DiffusionSMLMConfig;
                      track_D::Dict{Int,Float64}=Dict{Int,Float64}(),
+                     track_class::Dict{Int,Int}=Dict{Int,Int}(),
                      γ::Union{Nothing,Real}=nothing, n_frames::Union{Nothing,Int}=nothing)
     # Determine max frame number
     max_frame = n_frames !== nothing ? n_frames : isempty(emitters) ? 0 : maximum(e -> e.frame, emitters)
@@ -697,7 +720,9 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
         "camera_framerate" => params.camera_framerate,
         "camera_exposure" => params.camera_exposure,
         "n_substeps" => substeps_per_frame(params)[1],
-        "monomer_D" => track_D
+        "monomer_D" => track_D,
+        "monomer_class" => track_class,
+        "pair_mobility" => params.pair_mobility
     )
     γ === nothing || (metadata["γ"] = γ)
     
