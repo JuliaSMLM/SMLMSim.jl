@@ -110,7 +110,9 @@ concatenated SMLD) each molecule keeps its photons per record, as in 0.7.1, with
 rate could not be kept. D: a track keeps its saved D (drawn from a `monomer_mobility` mixture) when its
 record is the run's own, with a warning when the new mixture differs from the run's; every other track
 draws from the new mixture or uses `diff_monomer` at run time, which is never saved, so a later change
-applies. `extract_final_state` is deprecated.
+applies. Continuation assumes the SMLD comes from one simulation run, or a filtered
+subset of one; continuing a concatenation of different runs is unsupported, and the γ check cannot
+detect a molecule from another run that happens to carry γ·dt. `extract_final_state` is deprecated.
 
 Monomers can be given a mixture of mobility populations with
 `monomer_mobility = [(0.85, 0.0), (0.05, 0.08), (0.10, 0.38)]` (entries are

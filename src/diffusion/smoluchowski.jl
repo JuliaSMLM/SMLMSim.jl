@@ -780,7 +780,9 @@ equal, to a relative 1e-6, to the run's stored last-frame record for that track;
 records is taken as written), with one warning when a saved D is dropped. `simulate` then applies the
 continuation rule: a γ-set rate is restamped to γ·dt only if every molecule carries γ·dt at the saved
 dt, and otherwise photons per record are kept; a kept D stays, other tracks take the current setting.
-Extracting twice gives the same result.
+Extracting twice gives the same result. Continuation assumes the SMLD comes from one simulation run, or
+a filtered subset of one; continuing a concatenation of different runs is unsupported, and the γ check
+is a consistency check that cannot detect a molecule from another run that happens to carry γ·dt.
 
 # Arguments
 - `smld::BasicSMLD`: SMLD of diffusing emitters from `simulate`
