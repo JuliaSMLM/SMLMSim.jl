@@ -77,6 +77,7 @@ export
     
     # Analysis functions
     get_dimers,
+    frame_dimer_truth,
     get_monomers,
     analyze_dimer_fraction,
     analyze_dimer_lifetime,

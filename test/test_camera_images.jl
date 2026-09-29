@@ -167,3 +167,13 @@ end
     @test smld_default.camera isa IdealCamera
     @test isa(info_default, SimInfo)
 end
+
+@testset "sCMOS noise statistics" begin
+    Random.seed!(8)
+    cam = SCMOSCamera(256, 256, 0.1, 0.7; offset=100.0, gain=0.24, qe=1.0)
+    img = fill(50.0, 256, 256)
+    out = scmos_noise(img, cam)
+    # sd of the mean over 65536 pixels is about 0.115 ADU, so 0.5 is about 4 sigma
+    @test mean(out) ≈ 100.0 + 50.0 / 0.24 atol=0.5
+    @test var(out) ≈ (50.0 + 0.7^2) / 0.24^2 rtol=0.03
+end

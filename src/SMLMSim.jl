@@ -77,7 +77,7 @@ include("camera_images/CameraImages.jl")
 include("api.jl")
 
 # Import specific functions from InteractionDiffusion
-using .InteractionDiffusion: DiffusionSMLMConfig, get_dimers, 
+using .InteractionDiffusion: DiffusionSMLMConfig, get_dimers, frame_dimer_truth,
                             get_monomers, analyze_dimer_fraction, analyze_dimer_lifetime,
                             DiffusingEmitter2D, DiffusingEmitter3D, extract_final_state
 
@@ -121,6 +121,7 @@ export
     
     # Analysis functions
     get_dimers,
+    frame_dimer_truth,
     get_monomers,
     analyze_dimer_fraction,
     analyze_dimer_lifetime,

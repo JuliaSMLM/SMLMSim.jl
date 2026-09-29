@@ -677,11 +677,13 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Collection of emitters from simulation
 - `camera::AbstractCamera`: Camera model for imaging
 - `params::DiffusionSMLMConfig`: Simulation parameters
+- `track_D::Dict{Int,Float64}`: Per-track monomer diffusion coefficients, stored as `metadata["monomer_D"]`
 
 # Returns
 - `BasicSMLD`: SMLD containing all emitters for further analysis or visualization
 """
-function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::DiffusionSMLMConfig)
+function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::AbstractCamera, params::DiffusionSMLMConfig;
+                     track_D::Dict{Int,Float64}=Dict{Int,Float64}())
     # Determine max frame number
     max_frame = isempty(emitters) ? 0 : maximum(e -> e.frame, emitters)
     
@@ -690,7 +692,9 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
         "simulation_type" => "diffusion",
         "simulation_parameters" => params,
         "camera_framerate" => params.camera_framerate,
-        "camera_exposure" => params.camera_exposure
+        "camera_exposure" => params.camera_exposure,
+        "n_substeps" => substeps_per_frame(params)[1],
+        "monomer_D" => track_D
     )
     
     # Create SMLD object

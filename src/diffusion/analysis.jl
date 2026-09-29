@@ -250,3 +250,61 @@ function analyze_dimer_lifetime(smld::BasicSMLD)
     # Calculate average lifetime
     return isempty(lifetimes) ? 0.0 : mean(lifetimes)
 end
+"""
+    frame_dimer_truth(smld::BasicSMLD)
+
+Per-frame dimer ground truth for every molecule in a diffusion simulation.
+
+Returns a `Vector` of `NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break)}`,
+one row per (frame, track_id) present, sorted by (frame, track_id).
+
+- `bound_fraction`: fraction of the track's records in that frame with `state == :dimer`
+- `partner_id::Int`: partner of the last bound record in the frame, or `0` if none was bound
+- `t_form::Float64`: timestamp of the first record in the frame that is `:dimer` while the
+  track's previous record (in time, across frames) was `:monomer`; `NaN` if none
+- `t_break::Float64`: the same for `:monomer` after `:dimer`
+
+This is sub-step resolution. With exposure shorter than the frame period, a change that
+happens during the gap between exposures shows at the next frame's first record.
+"""
+function frame_dimer_truth(smld::BasicSMLD)
+    by_track = Dict{Int,Vector{Int}}()
+    for (i, e) in enumerate(smld.emitters)
+        push!(get!(by_track, e.track_id, Int[]), i)
+    end
+
+    rows = NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break),
+                      Tuple{Int,Int,Int,Float64,Float64,Float64}}[]
+    for (id, idx) in by_track
+        sort!(idx, by = i -> smld.emitters[i].timestamp)
+        recs = smld.emitters[idx]
+        frames = sort!(unique(e.frame for e in recs))
+        for f in frames
+            n = 0
+            n_bound = 0
+            partner = 0
+            t_form = NaN
+            t_break = NaN
+            for (k, e) in enumerate(recs)
+                e.frame == f || continue
+                n += 1
+                if e.state == :dimer
+                    n_bound += 1
+                    partner = something(e.partner_id, 0)
+                end
+                if k > 1
+                    prev = recs[k-1].state
+                    if isnan(t_form) && e.state == :dimer && prev == :monomer
+                        t_form = Float64(e.timestamp)
+                    elseif isnan(t_break) && e.state == :monomer && prev == :dimer
+                        t_break = Float64(e.timestamp)
+                    end
+                end
+            end
+            push!(rows, (frame=f, track_id=id, partner_id=partner,
+                         bound_fraction=n_bound / n, t_form=t_form, t_break=t_break))
+        end
+    end
+    sort!(rows, by = r -> (r.frame, r.track_id))
+    return rows
+end

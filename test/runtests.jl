@@ -4,6 +4,7 @@ using Distributions
 using LinearAlgebra
 using Statistics
 using MicroscopePSFs
+using Random
 
 # Main test set
 @testset "SMLMSim.jl" begin

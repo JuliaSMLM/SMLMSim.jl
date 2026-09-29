@@ -12,12 +12,22 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `k_off::Float64`: dimer dissociation rate (s⁻¹)
 - `r_react::Float64`: reaction radius (μm)
 - `d_dimer::Float64`: monomer separation in dimer (μm)
-- `dt::Float64`: time step (s)
+- `dt::Float64`: physics step (s); also sets the sub-steps per frame (motion blur):
+  camera_exposure and 1/camera_framerate must be integer multiples of dt
 - `t_max::Float64`: total simulation time (s)
 - `ndims::Int`: number of dimensions (2 or 3)
 - `boundary::String`: boundary condition type ("periodic" or "reflecting")
 - `camera_framerate::Float64`: camera frames per second (Hz)
 - `camera_exposure::Float64`: camera exposure time per frame (s)
+- `monomer_mobility::Vector{Tuple{Float64,Float64}}`: optional mixture of monomer mobility
+  populations, each entry `(fraction, D)` with fractions summing to 1 and `D` in μm²/s.
+  Each molecule draws its population once, at initialization (or when it enters through
+  `starting_conditions`), and keeps its own `D` as a monomer, including after dissociation.
+  Empty (default) means every monomer uses `diff_monomer`. Dimers always use `diff_dimer`.
+  The drawn values are stored in `smld.metadata["monomer_D"]` (track_id => D).
+
+Photons: the `photons` given to `simulate` is photons per emitter per frame (exposure).
+Each of the `n_sub = camera_exposure/dt` records of a frame carries `photons/n_sub`.
 
 # Examples
 ```julia
@@ -41,6 +51,11 @@ params = DiffusionSMLMConfig(
     camera_framerate = 20.0, # 20 frames per second
     camera_exposure = 0.04   # 40ms exposure per frame
 )
+
+# Mixed mobility: 85% immobile, 5% slow, 10% mobile monomers
+params = DiffusionSMLMConfig(
+    monomer_mobility = [(0.85, 0.0), (0.05, 0.08), (0.10, 0.38)]
+)
 ```
 """
 Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
@@ -60,11 +75,14 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     # Camera imaging parameters
     camera_framerate::Float64 = 10.0     # Frames per second
     camera_exposure::Float64 = 0.1       # Exposure time in seconds
+
+    # Monomer mobility mixture: (fraction, D) entries; empty means diff_monomer for all
+    monomer_mobility::Vector{Tuple{Float64,Float64}} = Tuple{Float64,Float64}[]
     
     function DiffusionSMLMConfig(
         density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
         k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
-        camera_framerate, camera_exposure
+        camera_framerate, camera_exposure, monomer_mobility
     )
         # Input validation
         if density <= 0
@@ -110,11 +128,71 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         if camera_exposure <= 0
             throw(ArgumentError("Camera exposure time must be positive"))
         end
+        # Monomer mobility mixture validation
+        if !isempty(monomer_mobility)
+            if any(m -> m[1] <= 0, monomer_mobility)
+                throw(ArgumentError("Monomer mobility fractions must be positive"))
+            end
+            if any(m -> m[2] < 0, monomer_mobility)
+                throw(ArgumentError("Monomer mobility diffusion coefficients must be non-negative"))
+            end
+            if abs(sum(m -> m[1], monomer_mobility) - 1) > 1e-9
+                throw(ArgumentError("Monomer mobility fractions must sum to 1"))
+            end
+        end
         
         new(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
             k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
-            camera_framerate, camera_exposure)
+            camera_framerate, camera_exposure, monomer_mobility)
     end
+end
+
+# Positional construction without a mobility mixture (pre-0.8 signature)
+DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
+                    k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
+                    camera_framerate, camera_exposure) =
+    DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
+                        k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
+                        camera_framerate, camera_exposure, Tuple{Float64,Float64}[])
+
+"""
+    substeps_per_frame(params::DiffusionSMLMConfig) -> (n_sub, steps_per_frame)
+
+Number of physics steps `dt` inside one exposure (`n_sub`) and in one frame period
+(`steps_per_frame`). Internal. Throws `ArgumentError` unless `camera_exposure` and
+`1/camera_framerate` are integer multiples of `dt` and the exposure does not exceed
+the frame period.
+"""
+function substeps_per_frame(params::DiffusionSMLMConfig)
+    r_sub = params.camera_exposure / params.dt
+    r_frame = 1 / (params.camera_framerate * params.dt)
+    n_sub = round(Int, r_sub)
+    steps_per_frame = round(Int, r_frame)
+    if abs(r_sub - n_sub) > 1e-9 * max(1, r_sub) ||
+       abs(r_frame - steps_per_frame) > 1e-9 * max(1, r_frame) ||
+       n_sub < 1 || n_sub > steps_per_frame
+        throw(ArgumentError("dt=$(params.dt), camera_exposure=$(params.camera_exposure), " *
+            "camera_framerate=$(params.camera_framerate): camera_exposure and 1/camera_framerate " *
+            "must be integer multiples of dt (and exposure no longer than the frame period)"))
+    end
+    return n_sub, steps_per_frame
+end
+
+"""
+    draw_monomer_D(params::DiffusionSMLMConfig) -> Float64
+
+Draw a monomer diffusion coefficient from `params.monomer_mobility`
+(`params.diff_monomer` when the mixture is empty). Internal.
+"""
+function draw_monomer_D(params::DiffusionSMLMConfig)
+    isempty(params.monomer_mobility) && return params.diff_monomer
+    u = rand()
+    c = 0.0
+    for (frac, D) in params.monomer_mobility
+        c += frac
+        u < c && return D
+    end
+    return params.monomer_mobility[end][2]
 end
 
 """
@@ -124,7 +202,8 @@ Create initial emitter positions for the simulation.
 
 # Arguments
 - `params::DiffusionSMLMConfig`: Simulation parameters
-- `photons::Float64=1000.0`: Number of photons per emitter
+- `photons::Float64=1000.0`: Photons per emitter per frame (exposure); each of the
+  n_sub = camera_exposure/dt records in a frame carries photons/n_sub
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 
 # Returns
@@ -186,19 +265,24 @@ function initialize_emitters(params::DiffusionSMLMConfig, photons::Float64=1000.
 end
 
 """
-    update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64) 
+    update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
+                  track_D=nothing)
 
-Update all emitters based on Smoluchowski diffusion dynamics.
+Update all emitters based on Smoluchowski diffusion dynamics. Monomers diffuse with
+`track_D[track_id]` when given, otherwise with `params.diff_monomer`.
 
 # Arguments
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters state
 - `params::DiffusionSMLMConfig`: Simulation parameters
 - `dt::Float64`: Time step
+- `track_D::Union{Nothing,Dict{Int,Float64}}=nothing`: Per-track monomer diffusion coefficients
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Updated emitters
 """
-function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64)
+function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
+                       track_D::Union{Nothing,Dict{Int,Float64}}=nothing)
+    monomer_D(id) = track_D === nothing ? params.diff_monomer : get(track_D, id, params.diff_monomer)
     # Create new array for updated emitters
     new_emitters = Vector{eltype(emitters)}()
     
@@ -230,7 +314,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
             # If didn't form a dimer, update as monomer
             if !found_dimer
                 # Apply diffusion
-                new_e = diffuse(e1, params.diff_monomer, dt)
+                new_e = diffuse(e1, monomer_D(e1.track_id), dt)
                 
                 # Apply boundary conditions
                 new_e = apply_boundary(new_e, params.box_size, params.boundary)
@@ -245,8 +329,8 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                 m1, m2 = dissociate(e1, emitters)
                 
                 # Apply diffusion to each new monomer
-                m1 = diffuse(m1, params.diff_monomer, dt)
-                m2 = diffuse(m2, params.diff_monomer, dt)
+                m1 = diffuse(m1, monomer_D(m1.track_id), dt)
+                m2 = diffuse(m2, monomer_D(m2.track_id), dt)
                 
                 # Apply boundary conditions
                 m1 = apply_boundary(m1, params.box_size, params.boundary)
@@ -275,6 +359,8 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     
                     push!(new_emitters, d1, d2)
                     push!(processed, e1.track_id, e2.track_id)
+                else
+                    error("dimer partner $(e1.partner_id) of track $(e1.track_id) not found")
                 end
             end
         end
@@ -284,54 +370,48 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
 end
 
 """
-    add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params)
+    add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, n_sub)
 
-Add emitters to camera frames when they fall within an exposure window.
+Record the current emitters as one sub-step record of camera frame `frame_num`.
+Each record carries `photons / n_sub`, so the `n_sub` records of a frame sum to the
+per-frame photons.
 
 # Arguments
 - `camera_emitters::Vector{<:AbstractDiffusingEmitter}`: Collection of emitters for camera frames
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: Current emitters from simulation
 - `time::Float64`: Current simulation time
 - `frame_num::Int`: Current frame number
-- `params::DiffusionSMLMConfig`: Simulation parameters
+- `n_sub::Int`: Number of sub-step records per frame
 
 # Returns
 - `Nothing`
 """
-function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params::DiffusionSMLMConfig)
-    # Check if this timepoint falls within a camera exposure window
-    exposure_start = (frame_num - 1) / params.camera_framerate
-    exposure_end = exposure_start + params.camera_exposure
-    
-    if time >= exposure_start && time <= exposure_end
-        # Add all current emitters to the camera frame
-        for e in emitters
-            # Create a copy with the correct frame number
-            if isa(e, DiffusingEmitter2D)
-                camera_emitter = DiffusingEmitter2D{typeof(e.x)}(
-                    e.x, e.y,           # Position
-                    e.photons,          # Photons
-                    time,               # Current timestamp
-                    frame_num,          # Frame number
-                    e.dataset,          # Dataset
-                    e.track_id,               # ID
-                    e.state,            # State
-                    e.partner_id        # Partner ID
-                )
-            else  # 3D
-                camera_emitter = DiffusingEmitter3D{typeof(e.x)}(
-                    e.x, e.y, e.z,      # Position
-                    e.photons,          # Photons
-                    time,               # Current timestamp
-                    frame_num,          # Frame number
-                    e.dataset,          # Dataset
-                    e.track_id,               # ID
-                    e.state,            # State
-                    e.partner_id        # Partner ID
-                )
-            end
-            push!(camera_emitters, camera_emitter)
+function add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, n_sub)
+    for e in emitters
+        if isa(e, DiffusingEmitter2D)
+            camera_emitter = DiffusingEmitter2D{typeof(e.x)}(
+                e.x, e.y,           # Position
+                e.photons / n_sub,  # Photons in this record
+                time,               # Current timestamp
+                frame_num,          # Frame number
+                e.dataset,          # Dataset
+                e.track_id,         # ID
+                e.state,            # State
+                e.partner_id        # Partner ID
+            )
+        else  # 3D
+            camera_emitter = DiffusingEmitter3D{typeof(e.x)}(
+                e.x, e.y, e.z,      # Position
+                e.photons / n_sub,  # Photons in this record
+                time,               # Current timestamp
+                frame_num,          # Frame number
+                e.dataset,          # Dataset
+                e.track_id,         # ID
+                e.state,            # State
+                e.partner_id        # Partner ID
+            )
         end
+        push!(camera_emitters, camera_emitter)
     end
     
     return nothing
@@ -352,7 +432,9 @@ with emitters that have both frame number and timestamp information.
 
 # Keyword Arguments
 - `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing`: Optional starting emitters
-- `photons::Float64=1000.0`: Number of photons per emitter
+  (an SMLD is reduced with `extract_final_state`; a Vector must have one record per track_id)
+- `photons::Float64=1000.0`: Photons per emitter per frame (exposure); each of the
+  n_sub = camera_exposure/dt records in a frame carries photons/n_sub
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 - `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model (default: IdealCamera with 100nm pixels)
   - If `nothing`, creates IdealCamera with dimensions matching box_size
@@ -381,9 +463,7 @@ smld, info = simulate(params)
 smld, info = simulate(params; override_count=2)
 
 # Use previous simulation state as starting conditions for a new simulation
-final_frame = maximum([e.frame for e in smld.emitters])
-final_state_emitters = filter(e -> e.frame == final_frame, smld.emitters)
-smld_continued, info = simulate(params; starting_conditions=final_state_emitters)
+smld_continued, info = simulate(params; starting_conditions=extract_final_state(smld))
 ```
 """
 function simulate(params::DiffusionSMLMConfig;
@@ -395,8 +475,9 @@ function simulate(params::DiffusionSMLMConfig;
 
     start_time = time_ns()
 
-    # Initialize
-    n_steps = round(Int, params.t_max / params.dt)
+    # Sub-steps per exposure and per frame period (validates dt against the camera timing)
+    n_sub, steps_per_frame = substeps_per_frame(params)
+    n_frames = floor(Int, params.t_max * params.camera_framerate + 1e-9)
 
     # Create camera if not provided
     if camera === nothing
@@ -410,12 +491,16 @@ function simulate(params::DiffusionSMLMConfig;
     if starting_conditions !== nothing
         # Extract emitters from starting_conditions
         if starting_conditions isa SMLD
-            # Get emitters from SMLD, using the most recent frame
-            max_frame = maximum([e.frame for e in starting_conditions.emitters])
-            start_emitters = filter(e -> e.frame == max_frame, starting_conditions.emitters)
+            # One record per molecule from the last frame, at per-frame photons
+            start_emitters = extract_final_state(starting_conditions)
         else
             # Already a vector of emitters
             start_emitters = starting_conditions
+            ids = [e.track_id for e in start_emitters]
+            if length(unique(ids)) != length(ids)
+                throw(ArgumentError("starting_conditions has repeated track_id values " *
+                    "(one record per molecule expected); pass extract_final_state(smld) or the SMLD itself"))
+            end
         end
 
         # Validate emitter types
@@ -463,35 +548,30 @@ function simulate(params::DiffusionSMLMConfig;
         n_initial_emitters = length(emitters)
     end
 
+    # Monomer diffusion coefficient per track, drawn once per molecule
+    prior_D = starting_conditions isa SMLD ? get(starting_conditions.metadata, "monomer_D", nothing) : nothing
+    track_D = Dict{Int,Float64}()
+    if !isempty(params.monomer_mobility)
+        for e in emitters
+            track_D[e.track_id] = prior_D !== nothing && haskey(prior_D, e.track_id) ?
+                Float64(prior_D[e.track_id]) : draw_monomer_D(params)
+        end
+    end
+
     # Store camera-frame emitters
     camera_emitters = Vector{eltype(emitters)}()
 
-    # Add initial state to camera frames if in exposure window
-    add_camera_frame_emitters!(camera_emitters, emitters, 0.0, 1, params)
-
-    # Simulation loop
-    time = 0.0
-    while time < params.t_max
-        # Update time
-        time += params.dt
-
-        # Update emitter states and positions
-        emitters = update_system(emitters, params, params.dt)
-
-        # Calculate frame number for this timepoint
-        frame_num = ceil(Int, time * params.camera_framerate)
-
-        # Add to camera frames if in exposure window
-        add_camera_frame_emitters!(camera_emitters, emitters, time, frame_num, params)
+    # Simulation loop in integer steps; the first n_sub steps of each frame are recorded
+    for f in 1:n_frames, j in 0:steps_per_frame-1
+        k = (f - 1) * steps_per_frame + j
+        j < n_sub && add_camera_frame_emitters!(camera_emitters, emitters, k * params.dt, f, n_sub)
+        emitters = update_system(emitters, params, params.dt; track_D=isempty(track_D) ? nothing : track_D)
     end
 
     # Convert to SMLD
-    smld = create_smld(camera_emitters, camera, params)
+    smld = create_smld(camera_emitters, camera, params; track_D=track_D)
 
     elapsed_s = (time_ns() - start_time) / 1e9
-
-    # Calculate number of frames
-    n_frames = isempty(smld.emitters) ? 0 : maximum(e.frame for e in smld.emitters)
 
     # Build SimInfo (diffusion doesn't have smld_true/smld_model)
     info = SimInfo(
@@ -575,34 +655,55 @@ end
 """
     extract_final_state(smld::SMLD)
 
-Extract the emitters from the final frame of a simulation to use as starting conditions.
+Extract one record per molecule from the final frame of a simulation, for use as
+starting conditions. For each `track_id` the record with the largest timestamp in the
+last frame is kept, and photons are returned to their per-frame value
+(`photons * n_sub`, from `smld.metadata["n_substeps"]`). The result can be passed as
+`starting_conditions` to `simulate`.
 
 # Arguments
 - `smld::SMLD`: SMLD containing emitters from a simulation
 
 # Returns
-- `Vector{<:AbstractEmitter}`: Emitters from the final frame
+- `Vector{<:AbstractEmitter}`: One emitter per track from the final frame
 
 # Example
 ```julia
 # Run a simulation
 params = DiffusionSMLMConfig(t_max=5.0)
-smld = simulate(params)
+smld, info = simulate(params)
 
 # Extract final state
 final_state = extract_final_state(smld)
 
 # Continue simulation with new parameters
 params_new = DiffusionSMLMConfig(t_max=10.0, diff_monomer=0.2)
-smld_continued = simulate(params_new; starting_conditions=final_state)
+smld_continued, info = simulate(params_new; starting_conditions=final_state)
 ```
 """
 function extract_final_state(smld::SMLD)
-    # Find the maximum frame number
     max_frame = maximum([e.frame for e in smld.emitters])
-    
-    # Filter emitters from the maximum frame
-    final_emitters = filter(e -> e.frame == max_frame, smld.emitters)
-    
+    n_sub = get(smld.metadata, "n_substeps", 1)
+
+    # Keep the latest record of each track in the last frame
+    latest = Dict{Int,Any}()
+    for e in smld.emitters
+        e.frame == max_frame || continue
+        if !haskey(latest, e.track_id) || e.timestamp > latest[e.track_id].timestamp
+            latest[e.track_id] = e
+        end
+    end
+
+    final_emitters = [scale_photons(latest[id], n_sub) for id in sort!(collect(keys(latest)))]
     return final_emitters
+end
+
+# Copy of a diffusing emitter with photons multiplied by `factor`
+function scale_photons(e::DiffusingEmitter2D{T}, factor) where T
+    DiffusingEmitter2D{T}(e.x, e.y, e.photons * factor, e.timestamp, e.frame,
+                          e.dataset, e.track_id, e.state, e.partner_id)
+end
+function scale_photons(e::DiffusingEmitter3D{T}, factor) where T
+    DiffusingEmitter3D{T}(e.x, e.y, e.z, e.photons * factor, e.timestamp, e.frame,
+                          e.dataset, e.track_id, e.state, e.partner_id)
 end

@@ -257,3 +257,159 @@
         end
     end
 end
+@testset "Diffusion photon accounting" begin
+    cam32 = IdealCamera(1:32, 1:32, 0.078)
+    psf = GaussianPSF(0.0936)
+    static_params(; dt, t_max=0.1, exposure=0.01, box_size=2.5, kwargs...) = DiffusionSMLMConfig(
+        density=1.0, box_size=box_size, diff_monomer=0.0, diff_dimer=0.0, dt=dt, t_max=t_max,
+        camera_framerate=100.0, camera_exposure=exposure; kwargs...)
+    nrec(smld, f) = count(e -> e.frame == f, smld.emitters)
+
+    @testset "(a) records per frame" begin
+        for dt in (1e-3, 1.25e-3, 2.5e-3)
+            Random.seed!(1)
+            smld, _ = simulate(static_params(dt=dt); photons=100.0, override_count=1, camera=cam32)
+            @test smld.n_frames == 10
+            @test all(nrec(smld, f) == round(Int, 0.01 / dt) for f in 1:10)
+            @test smld.metadata["n_substeps"] == round(Int, 0.01 / dt)
+        end
+        Random.seed!(1)
+        smld, _ = simulate(static_params(dt=1e-3, exposure=0.005); photons=100.0, override_count=1, camera=cam32)
+        @test smld.n_frames == 10
+        @test all(nrec(smld, f) == 5 for f in 1:10)
+    end
+
+    @testset "(b) photons in records" begin
+        Random.seed!(2)
+        smld, _ = simulate(static_params(dt=1.25e-3); photons=100.0, override_count=3, camera=cam32)
+        for f in 1:smld.n_frames, id in 1:3
+            @test sum(e.photons for e in smld.emitters if e.frame == f && e.track_id == id) ≈ 100.0 rtol=1e-12
+        end
+    end
+
+    @testset "(c) photons in images" begin
+        cam64 = IdealCamera(1:64, 1:64, 0.078)
+        c = 64 * 0.078 / 2
+        Random.seed!(3)
+        e0 = DiffusingEmitter2D{Float64}(c, c, 100.0, 0.0, 1, 1, 1, :monomer, nothing)
+        smld, _ = simulate(static_params(dt=1.25e-3, box_size=64 * 0.078); photons=100.0,
+                           starting_conditions=[e0], camera=cam64)
+        imgs, _ = gen_images(smld, psf; support=Inf)
+        for f in 1:smld.n_frames
+            @test sum(imgs[:, :, f]) ≈ 100.0 rtol=0.01
+        end
+    end
+
+    @testset "(d) continuation" begin
+        Random.seed!(4)
+        p = static_params(dt=1.25e-3)
+        smld, _ = simulate(p; photons=100.0, override_count=4, camera=cam32)
+        fs = extract_final_state(smld)
+        @test length(fs) == 4
+        @test sort([e.track_id for e in fs]) == 1:4
+        @test all(e -> e.photons ≈ 100.0, fs)
+        smld2, _ = simulate(p; starting_conditions=smld, camera=cam32)
+        @test all(nrec(smld2, f) == 4 * 8 for f in 1:smld2.n_frames)
+        @test all(e -> e.photons ≈ 100.0 / 8, smld2.emitters)
+        smld3, _ = simulate(p; starting_conditions=fs, camera=cam32)
+        @test all(e -> e.photons ≈ 100.0 / 8, smld3.emitters)
+        @test_throws ArgumentError simulate(p; starting_conditions=[fs[1], fs[1]], camera=cam32)
+    end
+
+    @testset "(e) validation" begin
+        @test_throws ArgumentError simulate(static_params(dt=0.003); override_count=1, camera=cam32)
+        @test_throws ArgumentError simulate(static_params(dt=0.003, exposure=0.009); override_count=1, camera=cam32)
+        @test_throws ArgumentError simulate(static_params(dt=1e-3, exposure=0.02); override_count=1, camera=cam32)
+    end
+
+    @testset "(f) motion blur" begin
+        cam64 = IdealCamera(1:64, 1:64, 0.078)
+        box = 64 * 0.078
+        mk(D) = DiffusionSMLMConfig(density=1.0, box_size=box, diff_monomer=D, diff_dimer=0.0,
+            dt=1.25e-3, t_max=2.0, camera_framerate=100.0, camera_exposure=0.01, boundary="reflecting")
+        function image_var(smld)
+            imgs, _ = gen_images(smld, psf; support=Inf)
+            vals = Float64[]
+            for f in 1:smld.n_frames
+                im = imgs[:, :, f]
+                m = sum(im)
+                m > 0 || continue
+                xs = [(i - 0.5) * 0.078 for i in 1:64, j in 1:64]
+                ys = [(j - 0.5) * 0.078 for i in 1:64, j in 1:64]
+                cx = sum(im .* xs) / m
+                cy = sum(im .* ys) / m
+                (min(cx, cy, box - cx, box - cy) < 0.5) && continue
+                push!(vals, sum(im .* ((xs .- cx) .^ 2 .+ (ys .- cy) .^ 2)) / m)
+            end
+            return mean(vals)
+        end
+        start() = [DiffusingEmitter2D{Float64}(box / 2, box / 2, 100.0, 0.0, 1, 1, 1, :monomer, nothing)]
+        Random.seed!(5)
+        smld1, _ = simulate(mk(1.0); photons=100.0, starting_conditions=start(), camera=cam64)
+        smld0, _ = simulate(mk(0.0); photons=100.0, starting_conditions=start(), camera=cam64)
+        excess = image_var(smld1) - image_var(smld0)
+        # within-frame positional variance of the records (x plus y)
+        pv = mean(begin
+            r = [e for e in smld1.emitters if e.frame == f]
+            var(getfield.(r, :x); corrected=false) + var(getfield.(r, :y); corrected=false)
+        end for f in 1:smld1.n_frames)
+        @test 0.8 <= excess / pv <= 1.25
+    end
+
+    @testset "(g) dimer truth" begin
+        cam = IdealCamera(1:32, 1:32, 0.078)
+        pair() = [DiffusingEmitter2D{Float64}(1.0, 1.0, 100.0, 0.0, 1, 1, 1, :dimer, 2),
+                  DiffusingEmitter2D{Float64}(1.03, 1.0, 100.0, 0.0, 1, 1, 2, :dimer, 1)]
+        Random.seed!(6)
+        p = static_params(dt=1.25e-3, k_off=0.0, d_dimer=0.03, r_react=0.01)
+        smld, _ = simulate(p; starting_conditions=pair(), camera=cam)
+        rows = frame_dimer_truth(smld)
+        @test length(rows) == 2 * smld.n_frames
+        @test all(r -> r.bound_fraction == 1.0, rows)
+        @test all(r -> r.partner_id == (r.track_id == 1 ? 2 : 1), rows)
+        @test issorted([(r.frame, r.track_id) for r in rows])
+
+        p = static_params(dt=1.25e-3, k_off=1 / 1.25e-3, d_dimer=0.03, r_react=0.01)
+        smld, _ = simulate(p; starting_conditions=pair(), camera=cam)
+        rows = frame_dimer_truth(smld)
+        r1 = filter(r -> r.frame == 1 && r.track_id == 1, rows)[1]
+        @test r1.bound_fraction ≈ 1 / 8
+        @test r1.t_break ≈ 1.25e-3
+        @test all(r -> r.bound_fraction == 0.0, filter(r -> r.frame >= 2, rows))
+    end
+
+    @testset "monomer_mobility" begin
+        mix = [(0.85, 0.0), (0.05, 0.08), (0.10, 0.38)]
+        Random.seed!(7)
+        p = DiffusionSMLMConfig(density=2000 / 400.0, box_size=20.0, diff_monomer=0.1, diff_dimer=0.0,
+            r_react=1e-6, dt=0.01, t_max=0.02, camera_framerate=50.0, camera_exposure=0.02,
+            monomer_mobility=mix)
+        smld, _ = simulate(p; override_count=2000, photons=10.0, camera=IdealCamera(1:200, 1:200, 0.1))
+        Ds = collect(values(smld.metadata["monomer_D"]))
+        @test length(Ds) == 2000
+        for (frac, D) in mix
+            @test abs(count(==(D), Ds) / 2000 - frac) < 0.03
+        end
+        # D = 0 molecules do not move
+        for id in [k for (k, D) in smld.metadata["monomer_D"] if D == 0.0][1:20]
+            r = [e for e in smld.emitters if e.track_id == id]
+            @test all(e -> e.x == r[1].x && e.y == r[1].y, r)
+        end
+        # continuation keeps each track's D
+        smld2, _ = simulate(p; starting_conditions=smld, camera=IdealCamera(1:200, 1:200, 0.1))
+        @test smld2.metadata["monomer_D"] == smld.metadata["monomer_D"]
+        # empty mixture: same record structure as before
+        p0 = DiffusionSMLMConfig(density=1.0, box_size=5.0, dt=0.01, t_max=0.1,
+                                 camera_framerate=10.0, camera_exposure=0.05)
+        @test isempty(p0.monomer_mobility)
+        smld0, _ = simulate(p0; override_count=3, photons=10.0)
+        @test all(nrec(smld0, f) == 3 * 5 for f in 1:smld0.n_frames)
+        @test isempty(smld0.metadata["monomer_D"])
+        # bad mixtures
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(0.5, 0.1), (0.4, 0.2)])
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1.2, 0.1), (-0.2, 0.2)])
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1.0, -0.1)])
+        # positional construction without a mixture still works
+        @test DiffusionSMLMConfig(1.0, 10.0, 0.1, 0.05, 0.5, 0.2, 0.01, 0.05, 0.01, 10.0, 2, "periodic", 10.0, 0.1) isa DiffusionSMLMConfig
+    end
+end
