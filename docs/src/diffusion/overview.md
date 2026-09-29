@@ -146,9 +146,10 @@ to fit, and while bound the pair's center folds off the walls moved in by each e
 often as it crosses them, so both partners stay inside the box at `d_dimer` apart. When
 `box_size < d_dimer` each partner is reflected on its own, as in 0.7.1. Under periodic boundaries (the
 default) a bound pair moves from its partner's minimum image, so a pair straddling the boundary moves by
-one step. Under the default `:fixed`, a pair with an immobile member (a D = 0 population) still moves
-with `diff_dimer` and rotates with `diff_dimer_rot` once bound; `simulate` warns once per run when that
-happens, and `pair_mobility = :min` keeps such a pair in place.
+one step. Under the default `:fixed`, forming a pair places both partners `d_dimer` apart about their
+midpoint and a bound pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member
+is immobile (a D = 0 population); `simulate` warns once per run when a step moves an immobile member,
+recorded by the camera or not, and `pair_mobility = :min` keeps such a pair in place.
 
 On dissociation the partners are placed at least `r_react` apart along the pair axis (under `pair_mobility = :min` an immobile partner stays put; near a reflecting wall the placement stays inside the box, mirrored across an immobile partner on each axis it would leave, otherwise with the pair's midpoint shifted inward), so a pair does not re-form at the next step only because `d_dimer < r_react`; a mobile partner can still diffuse back and re-form (geminate re-encounter).
 The one exception to "an immobile partner stays put": when both partners are immobile, the one with the higher `track_id` is moved, because a pair closer than `r_react` must be separated to `r_react` and neither partner could otherwise ever move apart. A box with side at most `2·r_react` cannot hold the placement; the partners then stay where they are (the 0.7.2 behaviour, with a warning).

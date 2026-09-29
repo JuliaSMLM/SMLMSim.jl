@@ -56,8 +56,9 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   often as it crosses them, so both partners stay inside at `d_dimer` apart (when `box_size < d_dimer`
   each partner is reflected on its own, as in 0.7.1). Under periodic boundaries, the default, a bound
   pair moves from its partner's minimum image, so a pair straddling the boundary moves by one step.
-  Under `:fixed` a bound pair moves and rotates even when a member is immobile (monomer D = 0), and
-  `simulate` warns once per run when that happens; `:min` keeps such a pair in place.
+  Under `:fixed` forming a pair places both partners `d_dimer` apart about their midpoint and a bound
+  pair moves and rotates, even when a member is immobile (monomer D = 0); `simulate` warns once per run
+  when a step moves an immobile member, recorded or not; `:min` keeps such a pair in place.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
 `n_sub` records of a frame (`substeps_per_frame`) carries `γ·dt`, so a frame holds `γ·n_sub·dt`
@@ -359,9 +360,16 @@ function build_emitters(params::DiffusionSMLMConfig, photons::Float64, override_
     return emitters
 end
 
+# Under :fixed, note in `flag` a pair step (formation or bound motion) that moved an immobile member. Internal.
+function _note_immobile!(flag, params::DiffusionSMLMConfig, D1, D2, e1, e2, d1, d2)
+    (flag === nothing || params.pair_mobility != :fixed) && return nothing
+    ((D1 == 0 && _coords(d1) != _coords(e1)) || (D2 == 0 && _coords(d2) != _coords(e2))) && (flag[] = true)
+    return nothing
+end
+
 """
     update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
-                  track_D=nothing)
+                  track_D=nothing, moved_immobile=nothing)
 
 Update all emitters based on Smoluchowski diffusion dynamics. Monomers diffuse with
 `track_D[track_id]` when the track has an entry, otherwise with `params.diff_monomer`.
@@ -371,12 +379,15 @@ Update all emitters based on Smoluchowski diffusion dynamics. Monomers diffuse w
 - `params::DiffusionSMLMConfig`: Simulation parameters
 - `dt::Float64`: Time step
 - `track_D::Union{Nothing,Dict{Int,Float64}}=nothing`: Per-track monomer diffusion coefficients
+- `moved_immobile::Union{Nothing,Base.RefValue{Bool}}=nothing`: Set to `true` when, under `pair_mobility = :fixed`,
+  a formation or a bound step moves a member whose monomer D is 0 (`simulate` warns once per run from it)
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Updated emitters
 """
 function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
-                       track_D::Union{Nothing,Dict{Int,Float64}}=nothing)
+                       track_D::Union{Nothing,Dict{Int,Float64}}=nothing,
+                       moved_immobile::Union{Nothing,Base.RefValue{Bool}}=nothing)
     monomer_D(id) = track_D === nothing ? params.diff_monomer : get(track_D, id, params.diff_monomer)
     # Create new array for updated emitters
     new_emitters = Vector{eltype(emitters)}()
@@ -405,6 +416,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     # The placement rule: an anchored partner is placed d_dimer from the anchor, a mobile
                     # pair in a reflecting box is kept whole inside it
                     d1, d2 = _place_pair(d1, d2, e1, e2, anchor, params)
+                    _note_immobile!(moved_immobile, params, D1, D2, e1, e2, d1, d2)
                     push!(new_emitters, d1, d2)
                     push!(processed, e1.track_id, e2.track_id)
                     found_dimer = true
@@ -457,6 +469,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                         # boundaries), then the boundary to the pair as a rigid body
                         d1, d2 = diffuse_dimer(e1, _near(e2, e1, params), D_pair, rot, params.d_dimer, dt)
                         d1, d2 = _move_pair(d1, d2, params)
+                        _note_immobile!(moved_immobile, params, D1, D2, e1, e2, d1, d2)
                     end
                     
                     push!(new_emitters, d1, d2)
@@ -751,18 +764,19 @@ function simulate(params::DiffusionSMLMConfig;
     # Store camera-frame emitters
     camera_emitters = Vector{eltype(emitters)}()
 
+    # Set when a step under :fixed moves an immobile member, at formation or while bound (warned after the run)
+    moved_immobile = Ref(false)
+
     # Simulation loop in integer steps; the first n_sub steps of each frame are recorded
     for f in 1:n_frames, j in 0:steps_per_frame-1
         k = (f - 1) * steps_per_frame + j
         j < n_sub && _record_frame!(camera_emitters, emitters, k * params.dt, f)
-        emitters = update_system(emitters, params, params.dt; track_D=isempty(track_D) ? nothing : track_D)
+        emitters = update_system(emitters, params, params.dt; track_D=isempty(track_D) ? nothing : track_D,
+                                 moved_immobile=moved_immobile)
     end
 
-    # Under :fixed, a bound pair moves and rotates even with an immobile member: say so once per run
-    if params.pair_mobility == :fixed && (params.diff_dimer > 0 || params.diff_dimer_rot > 0) &&
-       any(e -> e.state == :dimer && get(track_D, e.track_id, params.diff_monomer) == 0, camera_emitters)
-        @warn "pair_mobility = :fixed: bound pairs with an immobile member (monomer D = 0) move with diff_dimer and rotate with diff_dimer_rot; use pair_mobility = :min to keep such pairs in place"
-    end
+    # Under :fixed, formation and bound motion move immobile members: say so once per run
+    moved_immobile[] && @warn "pair_mobility = :fixed moved immobile molecules (monomer D = 0): forming a pair places both partners d_dimer apart about their midpoint, and a bound pair moves with diff_dimer and rotates with diff_dimer_rot; use pair_mobility = :min to keep such pairs in place"
 
     # Convert to SMLD
     smld = create_smld(camera_emitters, camera, params; track_D=track_D, track_class=track_class, γ=γ_val,
