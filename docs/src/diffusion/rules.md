@@ -18,12 +18,27 @@ periodic edge form a pair as anywhere else (0.7.1 measured the plain difference,
 Dissociation measures the same distance, so a pair it leaves in place is not within formation distance, unless its
 placement cannot fit (Dissociation, below).
 
-**Orientation.** A pair that forms, splits or takes a bound step is oriented along this displacement, in Float64
-(the per-axis differences above, never a translated position rounded to the coordinate type), by angles alone
-(`atan`, nothing squared). Always, whatever the displacement, the positions are finite and inside `[0, box_size]`,
-and the bond is `d_dimer` by minimum image. The bond direction is exact whenever the displacement's components are
-normal numbers of the coordinate type; for a subnormal displacement any finite unit direction is acceptable. A zero
-displacement (partners at exactly the same position) is taken as +x, with no random draw of its own.
+**Orientation.** Formation, a bound step and a split each orient the pair along this
+displacement, in Float64 (the per-axis differences above, never a position rounded to the
+coordinate type), and each leaves both partners finite and inside `[0, box_size]` in the
+coordinate type.
+- **Formation** places the partners `d_dimer` apart by minimum image, to within rounding,
+  unless the placement cannot fit (A bound pair and the box, below): an anchored pair when
+  some axis fits neither way, a mobile pair in a reflecting box narrower than `d_dimer`.
+- **A bound step** keeps the bond `d_dimer` by minimum image, to within rounding, turned by
+  the rotation draws from the displacement's direction; a mobile pair in a reflecting box
+  narrower than `d_dimer` has each end reflected on its own.
+- **A split** of partners closer than `r_react` leaves them about `r_react` apart (the
+  separation `s` of Dissociation, below), not `d_dimer`, unless the placement cannot fit.
+
+The direction is exact to within rounding whenever the displacement's components are normal
+numbers of the coordinate type; for a subnormal displacement any finite unit direction is
+acceptable. A zero displacement (partners at exactly the same position) is taken as +x, with
+no random draw of its own.
+
+**Range.** Coordinates are micrometres. Displacements, positions and box sizes beyond about
+`1e150` in magnitude are outside the model (their squares overflow Float64), and these rules
+promise nothing there.
 
 ### A bound pair and the box
 
@@ -47,13 +62,16 @@ anchor):
 - When the pair cannot fit (possible only when `box_size < d_dimer`), each partner is reflected on its own, as in
   0.7.1.
 
-**Every fit** is decided against the physical box `[0, box_size]`. Positions are computed in Float64 from the stored
-coordinates, and the boundary is applied there; each placed coordinate is then converted to the coordinate type once
-and clamped into the box. A bound step carries its orientation through the boundary: the center folds or wraps, and
-the direction is never rebuilt from rounded ends.
+**Every fit** is decided against the physical box `[0, box_size]`. Formation and a bound
+step compute positions in Float64 from the stored coordinates and the partner's Float64
+minimum image, apply the boundary there, and convert each placed coordinate to the
+coordinate type once, clamped into the box; a split places its partners the same way
+(Dissociation, below). A bound step carries its orientation through the boundary: the center
+folds or wraps, and the direction is never rebuilt from rounded ends.
 
-**Under periodic boundaries**, a bound pair's center and axis are taken from its partner's minimum image. The moved
-center is wrapped into the box and each end is then wrapped, so a pair straddling the boundary moves by one step. A pair forming under periodic boundaries is
+**Under periodic boundaries**, a bound pair's center and axis are taken from its partner's
+minimum image. The moved center is wrapped into the box and each end is then wrapped, so a
+pair straddling the boundary moves by one step. A pair forming under periodic boundaries is
 placed from its partner's minimum image too (the anchor-to-partner axis, or the midpoint and axis), and each partner
 is wrapped into `[0, box_size]` in its coordinate type on the formation step. An anchored pair already is; a mobile
 pair keeps its 0.7.1 placement (`d_dimer/2` either side of its midpoint, the minimum image's) up to that wrap.

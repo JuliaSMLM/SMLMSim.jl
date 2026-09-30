@@ -698,8 +698,12 @@ end
         # (8276.434380304116, 8283.7469648201, 5408) default. The default sums moved by -72.0 (x) and +8.0 (y) to
         # within rounding, whole half-boxes (box 2), with the counts unchanged; in the mixed run the corrected
         # positions change a later reaction, so its dimer records go from 4340 to 4368. The counts (records, photons,
-        # dimer records) are compared exactly, the x/y sums at rtol 1e-4, and the default path exactly against
-        # pair_mobility = :fixed in one run.
+        # dimer records) are compared exactly, the x/y sums at rtol 1e-12, and the default
+        # path exactly against pair_mobility = :fixed in one run. Within a version bucket
+        # the recordings reproduce bitwise (1.11.9, 1.12.7 and 1.13.0 identical; 1.10 on its
+        # own recording), so 1e-12 relative (about 1e-8 µm on a sum near 8000) leaves room
+        # only for summation-order rounding (below 1e-14 relative for 8000 terms) and
+        # catches any single coordinate moved by more than ~1e-8 µm.
         # #39's periodic formation wrap then moved each x sum by +2.0, one box (only formation records change, each
         # by whole boxes), counts and y sums unchanged: 8320.62946819797 and 8204.434380304117 before it.
         # #39's cross-edge formation (formation measures the partner's minimum image, so monomers within r_react
@@ -716,13 +720,14 @@ end
         # relative), and after the cross-edge formation it changes a reaction (default dimer records 5082 on 1.10,
         # 4940 on 1.11 to 1.13). Julia 1.11.9, 1.12.7 and 1.13.0 give the values below bitwise; 1.10 is compared with
         # its own recording, on 1.10.11.
-        GOLD_MIXED, GOLD_DEFAULT = VERSION >= v"1.11" ?
+        GOLD_MIXED, GOLD_DEFAULT = VERSION >= v"1.11-" ?
             ((8000, 8385.313194760132, 8175.549707151786, 4000.0, 4112),
              (8000, 8274.516046954606, 8176.357746324857, 4000.0, 4940)) :
             ((8000, 8385.313194760132, 8174.792548048816, 4000.0, 4112),
              (8000, 8217.95446278314, 8072.305616310379, 4000.0, 5082))
         matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
-                             isapprox(r[2], g[2]; rtol=1e-4) && isapprox(r[3], g[3]; rtol=1e-4)
+                             isapprox(r[2], g[2]; rtol=1e-12) &&
+                                 isapprox(r[3], g[3]; rtol=1e-12)
         mob = [(0.5, 0.2), (0.5, 0.0)]
         r_mixed, r_default = fx(monomer_mobility=mob), fx()
         @test matches_gold(r_mixed, GOLD_MIXED)
@@ -1466,6 +1471,48 @@ end
         @test n_tiny == 7 * 3 * 2 * (44 + 70)
         @test isempty(fails)
         isempty(fails) || foreach(println, first(fails, 10))
+        # a split (docs/src/diffusion/rules.md, Dissociation): a bound pair closer than
+        # r_react with k_off dt = 1000 always splits, and its partners end finite, inside
+        # the box, about the separation s apart and, for a normal displacement, along its
+        # direction (mirrored across the anchor when that anchored split in a reflecting box
+        # from 0 cannot leave the box); track_D gives both monomers D = 0 (:min needs
+        # diff_monomer > 0 in the config), so they do not move afterward
+        fails, n_tiny = String[], 0
+        for T in (Float32, Float64), nd in (2, 3), k in [1:nd; 0], δ in tinies(T),
+            (lo, bnd) in starts,
+            rev in (false, true), pm_ in (:fixed, :min)
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=0.05,
+                                      d_dimer=0.03, ndims=nd,
+                                      k_off=1e6, diff_monomer=0.3, pair_mobility=pm_)
+            axes = k == 0 ? (1:nd) : (k:k)
+            ps = ntuple(i -> ntuple(j -> j in axes ? (i == 1 ? lo : δ) : 0.5, nd), 2)
+            p1, p2 = rev ? reverse(ps) : ps
+            tg = "split $T $(nd)D axes $axes δ=$δ from $lo $bnd rev=$rev $pm_"
+            n_tiny += 1
+            out = try
+                ID.update_system([dm(T, p1, 1, 2, nd), dm(T, p2, 2, 1, nd)], prm, 0.001;
+                                 track_D=Dict(1 => 0.0, 2 => 0.0))
+            catch err
+                push!(fails, "$tg: $(typeof(err))"); continue
+            end
+            o1, o2 = out[findfirst(e -> e.track_id == 1, out)],
+                out[findfirst(e -> e.track_id == 2, out)]
+            all(e -> e.state == :monomer && all(isfinite, ID._coords(e)) && inbox(e, 1.0),
+                out) ||
+                (push!(fails, "$tg: not two finite monomers inside the box"); continue)
+            s, tol = ID._unbind_spacing(prm, T), 4 * sqrt(nd) * eps(T)
+            d64(o1, o2, 1.0, bnd) >= 0.05 || push!(fails, "$tg: closer than r_react")
+            abs(d64(o1, o2, 1.0, bnd) - s) <= tol ||
+                push!(fails, "$tg: spacing $(d64(o1, o2, 1.0, bnd))")
+            T(δ) >= floatmin(T) || continue
+            sgn = rev && !(bnd == "reflecting" && pm_ == :min) ? -1 : 1
+            b, c = bvec(o1, o2, bnd), sgn * s / sqrt(length(axes))
+            all(i -> abs(b[i] - (i in axes ? c : 0.0)) <= tol, 1:nd) ||
+                push!(fails, "$tg: bond vector $b")
+        end
+        @test n_tiny == 7 * 3 * 4 * (44 + 70)
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 10))
         # docs/src/diffusion/rules.md, A bound pair and the box: the boundary is applied in Float64 and each end
         # converted once, and the step carries its orientation. A diagonal pair at 0.5 and 0.5 + 0.03/sqrt(N) per
         # axis, diff_dimer 1e6 (the center crosses the box many times), rotation and dissociation off: after one
@@ -1516,6 +1563,90 @@ end
                 (push!(fails, "$tg: not a finite pair inside the box"); continue)
             abs(d64(out[1], out[2], 1.0, bnd) - 0.03) <= 4 * sqrt(3) * eps(T) || push!(fails, "$tg: bond")
         end
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 10))
+        # docs/src/diffusion/rules.md, A bound pair and the box: formation and the bound
+        # step place once in Float64, so a Float32 pair is its Float64 twin (the same
+        # coordinate values) converted to Float32 once, each end clamped into the box
+        function twin_check!(fails, tg, es32, prm, L, seed; track_D=nothing)
+            es64 = [restamp64(e) for e in es32]
+            Random.seed!(seed); o32 = ID.update_system(es32, prm, 0.001; track_D=track_D)
+            Random.seed!(seed); o64 = ID.update_system(es64, prm, 0.001; track_D=track_D)
+            for id in (1, 2)
+                e32, e64 = o32[findfirst(e -> e.track_id == id, o32)],
+                    o64[findfirst(e -> e.track_id == id, o64)]
+                want = map(x -> ID._inbox(Float32, x, L), Float64.(ID._coords(e64)))
+                all(isfinite, ID._coords(e32)) && ID._coords(e32) == want ||
+                    push!(fails, "$tg: track $id $(ID._coords(e32)) != $want")
+            end
+            return o32
+        end
+        restamp64(e) = e isa DiffusingEmitter2D ?
+            DiffusingEmitter2D{Float64}(Float64(e.x), Float64(e.y), e.photons, e.timestamp,
+                                        e.frame, e.dataset,
+                                        e.track_id, e.state, e.partner_id) :
+            DiffusingEmitter3D{Float64}(Float64(e.x), Float64(e.y), Float64(e.z), e.photons,
+                                        e.timestamp, e.frame,
+                                        e.dataset, e.track_id, e.state, e.partner_id)
+        Random.seed!(71)
+        fails, n_twin, n_formed = String[], 0, 0
+        for nd in (2, 3), bnd in ("periodic", "reflecting"), pm_ in (:fixed, :min),
+            D1 in (0.0, 0.3),
+            L in (1.0, 100.000001), trial in 1:400, bound in (false, true)
+            prm = DiffusionSMLMConfig(box_size=L, boundary=bnd, r_react=0.05, d_dimer=0.03,
+                                      ndims=nd, k_off=0.0,
+                                      diff_monomer=0.3, diff_dimer=0.1, diff_dimer_rot=0.5,
+                                          pair_mobility=pm_)
+            wrap(x) = bnd == "periodic" ? mod(x, L) : clamp(x, 0.0, L)
+            a = ntuple(_ -> L * rand(), nd)
+            off = bound ? (w = randn(nd); 0.03 .* w ./ sqrt(sum(abs2, w))) :
+                  ntuple(_ -> 0.04rand() - 0.02, nd)
+            p1 = Float32.(a)
+            p2 = Float32.(wrap.(a .+ off))
+            es = bound ? [dm(Float32, p1, 1, 2, nd), dm(Float32, p2, 2, 1, nd)] :
+                         [f(Float32, p1, 1, nd), f(Float32, p2, 2, nd)]
+            tg = "twin $nd D $bnd $pm_ D1=$D1 L=$L bound=$bound trial $trial"
+            n_twin += 1
+            o = twin_check!(fails, tg, es, prm, L, n_twin; track_D=Dict(1 => D1, 2 => 0.3))
+            bound || (n_formed += all(e -> e.state == :dimer, o))
+        end
+        @test n_twin == 2 * 2 * 2 * 2 * 2 * 400 * 2
+        @test n_formed == n_twin / 2
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 10))
+        # Codex's example: Float32 monomers (0.99, 0.5) and (0.999, 0.5) in a periodic unit
+        # box
+        prm = DiffusionSMLMConfig(box_size=1.0, boundary="periodic", r_react=0.05,
+                                  d_dimer=0.03, pair_mobility=:fixed)
+        out = ID.update_system([f(Float32, (0.99, 0.5), 1, 2),
+                                f(Float32, (0.999, 0.5), 2, 2)], prm, 0.001)
+        @test (out[1].x, out[2].x) == (0.9795f0, 0.009500011f0)
+        # Claude's example: a Float32 bound pair at x = 100 and 1e-6 in a periodic box of
+        # 100.000001
+        prm = DiffusionSMLMConfig(box_size=100.000001, boundary="periodic", r_react=0.05,
+                                  d_dimer=0.03, k_off=0.0,
+                                  diff_dimer=0.0, diff_dimer_rot=0.0)
+        fails = String[]
+        twin_check!(fails, "claude",
+                    [dm(Float32, (100.0, 50.0), 1, 2, 2),
+                     dm(Float32, (1f-6, 50.0), 2, 1, 2)],
+                    prm, 100.000001, 1)
+        # Codex's overflow cases: finite, inside the box, and the Float64 twin converted
+        # once
+        prm = DiffusionSMLMConfig(box_size=3e38, boundary="periodic", r_react=1e31,
+                                  d_dimer=1e30)
+        o = twin_check!(fails, "overflow formation",
+                        [f(Float32, (2f38, 0f0), 1, 2), f(Float32, (2f38, 0f0), 2, 2)],
+                        prm, 3e38, 1)
+        @test all(e -> e.state == :dimer && inbox(e, 3e38), o)
+        prm = DiffusionSMLMConfig(box_size=3e38, boundary="periodic", r_react=1e31,
+                                  d_dimer=1e30, k_off=0.0,
+                                  diff_dimer=0.0, diff_dimer_rot=0.0)
+        o = twin_check!(fails, "overflow bound",
+                        [dm(Float32, (3f38, 0f0), 1, 2, 2),
+                         dm(Float32, (1f38, 0f0), 2, 1, 2)],
+                        prm, 3e38, 1)
+        @test all(e -> e.state == :dimer && inbox(e, 3e38), o)
         @test isempty(fails)
         isempty(fails) || foreach(println, first(fails, 10))
         # formation allocates nothing beyond a step in which nothing forms (warmed; two monomers, mobile or with
@@ -1834,26 +1965,22 @@ end
                 es = [mk(T, a, 1, :monomer, nothing), mk(T, b, 2, :monomer, nothing)]
                 out = ID.update_system(es, prm, 0.001; track_D=Dict(1 => 0.3, 2 => 0.3))
                 p1, p2 = pos(out[1]), pos(out[2])
-                # 0.7.1's placement, from the partner's minimum image under periodic boundaries
-                img = refl ? es[2] : mk(T, ntuple(k -> T(b[k] - L * round((Float64(b[k]) - a[k]) / L)), N), 2, :monomer,
-                                        nothing)
+                # the partner's Float64 minimum image under periodic boundaries
+                img = ntuple(k -> Float64(b[k]) - L * round((Float64(b[k]) - a[k]) / L), N)
                 # oriented along the exact minimum-image displacement, rounded once to Float64
                 js = refl ? (0,) : (-1, 0, 1)
                 vv = ntuple(k -> Float64(argmin(abs, big(b[k]) - big(a[k]) + j * big(L) for j in js)), N)
-                ref1, ref2 = ID._dimerize(es[1], img, d, nothing, vv)
                 if !refl
-                    # that placement with each end wrapped into the box: unchanged when inside, else one periodic
-                    # image of it
+                    # placed once in Float64, each end wrapped and converted once
                     tally(:mobile_periodic)
-                    for (p, r) in ((p1, pos(ref1)), (p2, pos(ref2)))
+                    c = (Float64.(a) .+ img) ./ 2
+                    h = ID._half_bond(vv, d / 2)
+                    for (p, r) in ((p1, c .- h), (p2, c .+ h))
                         inside(p, T, L) || push!(fails, "$tg: periodic formation outside the box")
-                        if inside(r, T, L)
-                            p == r || push!(fails, "$tg: periodic formation moved an end inside the box")
-                        else
-                            tally(:mobile_periodic_wrapped)
-                            all(abs.(mi.(p .- r, L)) .<= 4 * eps(T) * max(1, L)) ||
-                                push!(fails, "$tg: periodic formation is not an image of 0.7.1's")
-                        end
+                        any(x -> x < 0 || x > L, r) && tally(:mobile_periodic_wrapped)
+                        want = ntuple(k -> Float64(ID._inbox(T, mod(r[k], L), L)), N)
+                        p == want ||
+                            push!(fails, "$tg: periodic formation is not placed once")
                     end
                     continue
                 end
@@ -1907,6 +2034,27 @@ end
         isempty(fails) || foreach(println, first(fails, 20))
         @test all(k -> get(counts, k, 0) > 20, (:anchored_fit, :anchored_fallback, :mobile_fit, :mobile_periodic,
                                                  :mobile_periodic_wrapped, :bound_fit, :bound_inside))
+        # observed 17 mobile fallbacks and no bound fallback in 6000 trials (5a tests the
+        # fallback directly)
+        @test get(counts, :mobile_fallback, 0) > 0
+
+        # _move_pair in a reflecting box narrower than d_dimer: each end reflects on its own
+        # (not clamped)
+        for N in (2, 3), T in (Float32, Float64)
+            L, d = 0.02, 0.03
+            prm = DiffusionSMLMConfig(ndims=N, box_size=L, boundary="reflecting", d_dimer=d,
+                                      r_react=0.005,
+                                      diff_monomer=0.3, k_off=0.0)
+            c = ntuple(_ -> 0.01, N)
+            h = ntuple(k -> k == 1 ? 0.015 : 0.0, N)
+            e1, e2 = mk(T, ntuple(_ -> 0.01, N), 1, :dimer, 2),
+                mk(T, ntuple(_ -> 0.01, N), 2, :dimer, 1)
+            o1, o2 = ID._move_pair(e1, e2, c, h, d, prm)
+            w1 = ntuple(k -> k == 1 ? -(0.01 - 0.015) : 0.01, N)
+            w2 = ntuple(k -> k == 1 ? 2 * 0.02 - (0.01 + 0.015) : 0.01, N)
+            @test ID._coords(o1) == map(x -> ID._inbox(T, x, L), w1)
+            @test ID._coords(o2) == map(x -> ID._inbox(T, x, L), w2)
+        end
 
         # the reviewer's corner and Codex's box narrower than 2 d_dimer
         for (a, b) in (((0.01, 0.01), (0.005, 0.005)), ((0.01, 0.01, 0.01), (0.005, 0.005, 0.005)))

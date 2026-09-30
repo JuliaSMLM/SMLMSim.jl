@@ -39,50 +39,6 @@ function distance(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter)
     error("Cannot calculate distance between different emitter dimensions")
 end
 
-"""
-    angle(e1, e2)
-
-Calculate angle between emitters.
-Generic implementation with multiple dispatch.
-
-# Arguments
-- `e1`: First emitter
-- `e2`: Second emitter
-
-# Returns
-- Angle representation appropriate for the emitter dimensions
-"""
-# Generic fallback method
-function angle(e1, e2)
-    error("No angle method implemented for $(typeof(e1)) and $(typeof(e2))")
-end
-
-# Specialized for 2D emitters - returns azimuthal angle
-function angle(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}) where T <: AbstractFloat
-    atan(e2.y - e1.y, e2.x - e1.x)
-end
-
-# Specialized for 3D emitters - returns (azimuthal, polar) angles
-function angle(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}) where T <: AbstractFloat
-    # Azimuthal angle (ϕ)
-    ϕ = atan(e2.y - e1.y, e2.x - e1.x)
-    
-    # Polar angle (θ), by atan with nothing squared, so a pair however close, coincident included, has a finite
-    # orientation (docs/src/diffusion/rules.md, Orientation)
-    θ = atan(hypot(e2.x - e1.x, e2.y - e1.y), e2.z - e1.z)
-    
-    return (ϕ, θ)
-end
-
-# Extract coordinates as tuples
-function coordinates(e::DiffusingEmitter2D{T}) where T <: AbstractFloat
-    (e.x, e.y)
-end
-
-function coordinates(e::DiffusingEmitter3D{T}) where T <: AbstractFloat
-    (e.x, e.y, e.z)
-end
-
 # The angles of the Float64 displacement `v`: ϕ = atan(v2, v1), and in 3D θ = atan(hypot(v1, v2), v3), so nothing
 # is squared and a tiny nonzero displacement keeps its direction (docs/src/diffusion/rules.md, Orientation); +x
 # when `v` is exactly zero, so coincident partners get a fixed orientation and no NaN
@@ -90,9 +46,8 @@ _angles(v::NTuple{2,Float64}) = all(iszero, v) ? 0.0 : atan(v[2], v[1])
 _angles(v::NTuple{3,Float64}) = all(iszero, v) ? (0.0, π / 2) : (atan(v[2], v[1]), atan(hypot(v[1], v[2]), v[3]))
 
 # Half the bond along the Float64 displacement `v`: (r cos ϕ, r sin ϕ), or (r sin θ cos ϕ, r sin θ sin ϕ, r cos θ),
-# with the angles of `v`; exactly (r, 0, ...) when `v` is zero, with no random draw
+# with the angles of `v`; (r, 0, ...) when `v` is zero, with no random draw
 function _half_bond(v::NTuple{2,Float64}, r::Float64)
-    all(iszero, v) && return (r, 0.0)
     ϕ = _angles(v)
     return (r * cos(ϕ), r * sin(ϕ))
 end
@@ -587,20 +542,23 @@ Diffuse a dimer with both translational and rotational components.
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters with updated positions
 """
 function diffuse_dimer(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, diff_trans::Float64, diff_rot::Float64, d_dimer::Float64, dt::Float64) where T <: AbstractFloat
-    c, h = _bound_step(e1, e2, diff_trans, diff_rot, d_dimer, dt, _dispv(_pos(e1), _pos(e2), nothing))
+    c, h = _bound_step(_pos(e1), _pos(e2), diff_trans, diff_rot, d_dimer, dt,
+                    _dispv(_pos(e1), _pos(e2), nothing))
     return _stepped(e1, c .- h, dt), _stepped(e2, c .+ h, dt)
 end
 
-# The bound step's Float64 geometry: the center of `e1` and `e2` (the partner's minimum image) moved by the
-# translation draws, and the half-bond `h` along the orientation of the Float64 displacement `v` from `e1` to `e2`
-# moved by the rotation draws, in 0.7.1's draw order (docs/src/diffusion/rules.md, A bound pair and the box).
-# Internal.
-function _bound_step(e1::DiffusingEmitter2D, e2::DiffusingEmitter2D, diff_trans::Float64, diff_rot::Float64,
+# The bound step's Float64 geometry: the center of `p1` and `p2` (the Float64 positions of
+# `e1` and of its partner's minimum image) moved by the translation draws, and the half-bond
+# `h` along the orientation of the Float64 displacement `v` from `e1` to `e2` moved by the
+# rotation draws, in 0.7.1's draw order (docs/src/diffusion/rules.md, A bound pair and the
+# box). Internal.
+function _bound_step(p1::NTuple{2,Float64}, p2::NTuple{2,Float64}, diff_trans::Float64,
+                     diff_rot::Float64,
                      d_dimer::Float64, dt::Float64, v::NTuple{2,Float64})
     σ_trans = sqrt(2 * diff_trans * dt)
     dx = rand(Normal(0, σ_trans))
     dy = rand(Normal(0, σ_trans))
-    c = ((Float64(e1.x) + Float64(e2.x)) / 2 + dx, (Float64(e1.y) + Float64(e2.y)) / 2 + dy)
+    c = ((p1[1] + p2[1]) / 2 + dx, (p1[2] + p2[2]) / 2 + dy)
     σ_rot = sqrt(2 * diff_rot * dt)
     ϕ = _angles(v)
     ϕ += rand(Normal(0, σ_rot))
@@ -625,19 +583,20 @@ Diffuse a 3D dimer with both translational and rotational components.
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters with updated positions
 """
 function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, diff_trans::Float64, diff_rot::Float64, d_dimer::Float64, dt::Float64) where T <: AbstractFloat
-    c, h = _bound_step(e1, e2, diff_trans, diff_rot, d_dimer, dt, _dispv(_pos(e1), _pos(e2), nothing))
+    c, h = _bound_step(_pos(e1), _pos(e2), diff_trans, diff_rot, d_dimer, dt,
+                    _dispv(_pos(e1), _pos(e2), nothing))
     return _stepped(e1, c .- h, dt), _stepped(e2, c .+ h, dt)
 end
 
 # `_bound_step` in 3D (rotation draws: ϕ, then θ)
-function _bound_step(e1::DiffusingEmitter3D, e2::DiffusingEmitter3D, diff_trans::Float64, diff_rot::Float64,
+function _bound_step(p1::NTuple{3,Float64}, p2::NTuple{3,Float64}, diff_trans::Float64,
+                     diff_rot::Float64,
                      d_dimer::Float64, dt::Float64, v::NTuple{3,Float64})
     σ_trans = sqrt(2 * diff_trans * dt)
     dx = rand(Normal(0, σ_trans))
     dy = rand(Normal(0, σ_trans))
     dz = rand(Normal(0, σ_trans))
-    c = ((Float64(e1.x) + Float64(e2.x)) / 2 + dx, (Float64(e1.y) + Float64(e2.y)) / 2 + dy,
-         (Float64(e1.z) + Float64(e2.z)) / 2 + dz)
+    c = ((p1[1] + p2[1]) / 2 + dx, (p1[2] + p2[2]) / 2 + dy, (p1[3] + p2[3]) / 2 + dz)
     σ_rot = sqrt(2 * diff_rot * dt)
     ϕ, θ = _angles(v)
     ϕ += rand(Normal(0, σ_rot))
@@ -721,29 +680,44 @@ function _place_centered(c::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64,
     return ok, ntuple(k -> _inbox(T, m[k] - (s / 2) * u[k], box), Val(N)), ntuple(k -> _inbox(T, m[k] + (s / 2) * u[k], box), Val(N))
 end
 
-# A pair just formed from monomers `e1`, `e2` (`d1`, `d2` from `dimerize` of `e1` and the minimum image of
-# `e2`), by the placement rule: an anchored pair keeps the anchor at its stored position and places the other
-# partner `d_dimer` from it along the axis to its minimum image, or leaves it where it was when that cannot
-# fit; a mobile pair in a reflecting box with an end outside moves to its midpoint shifted inward just enough
-# (each end reflected on its own when it cannot fit); a mobile pair under periodic boundaries keeps 0.7.1's
-# placement about the minimum image's midpoint with each end wrapped into the box. Internal.
-function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
-                     params::DiffusionSMLMConfig) where {E<:AbstractDiffusingEmitter}
-    T = typeof(d1.x)
+# A pair just formed from monomers `e1`, `e2`, by the placement rule
+# (docs/src/diffusion/rules.md, A bound pair and the box), in Float64 from the stored
+# coordinates and the partner's minimum image, oriented along the Float64 displacement `v`
+# from `e1` to `e2`, each end converted to the coordinate type once: an anchored pair keeps
+# the anchor at its stored position and places the other partner `d_dimer` from it along the
+# axis to its minimum image, or leaves it where it was when that cannot fit; a mobile pair
+# is placed `d_dimer/2` either side of the midpoint, each end wrapped into the box under
+# periodic boundaries, or in a reflecting box with an end outside moved to its midpoint
+# shifted inward just enough (each end reflected on its own when it cannot fit). Internal.
+function _place_pair(e1::E, e2::E, anchor::Union{Nothing,Int}, v::NTuple{N,Float64},
+                     params::DiffusionSMLMConfig) where {N,E<:AbstractDiffusingEmitter}
+    T = typeof(e1.x)
     box, reflecting = params.box_size, params.boundary == "reflecting"
+    d1 = restamp(e1; state=:dimer, partner_id=e2.track_id)
+    d2 = restamp(e2; state=:dimer, partner_id=e1.track_id)
     if anchor !== nothing
         fixed, mover = anchor == e1.track_id ? (e1, e2) : (e2, e1)
         a = _pos(fixed)
-        ok, q = _place_from(a, _dir(_dispv(a, _pos(mover), _period(params))), params.d_dimer, box, reflecting, T)
+        u = _dir(_dispv(a, _pos(mover), _period(params)))
+        ok, q = _place_from(a, u, params.d_dimer, box, reflecting, T)
         p = ok ? q : _coords(mover)
-        return anchor == e1.track_id ? (_at(d1, _coords(e1)), _at(d2, p)) : (_at(d1, p), _at(d2, _coords(e2)))
+        return anchor == e1.track_id ? (_at(d1, _coords(e1)), _at(d2, p)) :
+                                       (_at(d1, p), _at(d2, _coords(e2)))
     end
-    reflecting || return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
-    _inside(d1, box) && _inside(d2, box) && return d1, d2
-    p1, p2 = _pos(e1), _pos(e2)
-    ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, T)
-    ok && return _at(d1, q1), _at(d2, q2)
-    return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
+    p1 = _pos(e1)
+    p2 = _image(_pos(e2), p1, params)
+    c, h = (p1 .+ p2) ./ 2, _half_bond(v, params.d_dimer / 2)
+    q1, q2 = c .- h, c .+ h
+    if !reflecting
+        return _put(d1, map(x -> mod(x, box), q1), box),
+               _put(d2, map(x -> mod(x, box), q2), box)
+    end
+    fits(q) = all(x -> 0 <= x <= box, q)
+    fits(q1) && fits(q2) && return _put(d1, q1, box), _put(d2, q2, box)
+    ok, r1, r2 = _place_centered(c, _axis(p1, p2), params.d_dimer, box, T)
+    ok && return _at(d1, r1), _at(d2, r2)
+    refl(x) = x < 0 ? -x : x > box ? 2box - x : x
+    return _put(d1, map(refl, q1), box), _put(d2, map(refl, q2), box)
 end
 
 # A mobile pair after a bound step, from its Float64 center `c` and half-bond `h` (`_bound_step`), with the

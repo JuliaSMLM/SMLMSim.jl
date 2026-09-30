@@ -430,13 +430,10 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
                     # Under :min an immobile partner keeps its position (both immobile: the lower track_id)
                     anchor = _anchor(params, e1, e2, D1, D2)
-                    # Oriented along the Float64 minimum-image displacement, never the rounded image (+x only
-                    # when it is exactly zero)
+                    # The placement rule, once in Float64, oriented along the Float64
+                    # minimum-image displacement (+x only when it is exactly zero)
                     v = _dispv(_pos(e1), _pos(e2), _period(params))
-                    d1, d2 = _dimerize(e1, _near(e2, e1, params), params.d_dimer, anchor, v)
-                    # The placement rule: an anchored partner is placed d_dimer from the anchor, a mobile
-                    # pair in a reflecting box is kept whole inside it
-                    d1, d2 = _place_pair(d1, d2, e1, e2, anchor, params)
+                    d1, d2 = _place_pair(e1, e2, anchor, v, params)
                     _note_immobile!(moved_immobile, params, D1, D2, e1, e2, d1, d2)
                     push!(new_emitters, d1, d2)
                     push!(processed, e1.track_id, e2.track_id)
@@ -489,11 +486,14 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                         d1 = restamp(e1; timestamp=e1.timestamp + dt)
                         d2 = restamp(e2; timestamp=e2.timestamp + dt)
                     else
-                        # Apply dimer diffusion to the bond (the partner's minimum image under periodic
-                        # boundaries), oriented along the Float64 minimum-image displacement, never the rounded
-                        # image; then the boundary to the pair as a rigid body, in Float64, each end converted once
+                        # Apply dimer diffusion to the bond (the center from the partner's
+                        # Float64 minimum image, never a rounded one), oriented along the
+                        # Float64 minimum-image displacement; then the boundary to the pair
+                        # as a rigid body, in Float64, each end converted once
                         v = _dispv(_pos(e1), _pos(e2), _period(params))
-                        c, h = _bound_step(e1, _near(e2, e1, params), D_pair, rot, params.d_dimer, dt, v)
+                        p1 = _pos(e1)
+                        c, h = _bound_step(p1, _image(_pos(e2), p1, params), D_pair, rot,
+                                           params.d_dimer, dt, v)
                         d1, d2 = _move_pair(restamp(e1; timestamp=e1.timestamp + dt),
                                             restamp(e2; timestamp=e2.timestamp + dt), c, h, params.d_dimer, params)
                         _note_immobile!(moved_immobile, params, D1, D2, e1, e2, d1, d2)
