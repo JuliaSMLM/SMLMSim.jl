@@ -430,9 +430,10 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
                     # Under :min an immobile partner keeps its position (both immobile: the lower track_id)
                     anchor = _anchor(params, e1, e2, D1, D2)
-                    # Oriented along the minimum-image displacement, never the rounded image (+x when zero)
-                    v = map(typeof(e1.x), _dispv(_pos(e1), _pos(e2), _period(params)))
-                    d1, d2 = dimerize(e1, _near(e2, e1, params), params.d_dimer; anchor=anchor, v=v)
+                    # Oriented along the Float64 minimum-image displacement, never the rounded image (+x only
+                    # when it is exactly zero)
+                    v = _dispv(_pos(e1), _pos(e2), _period(params))
+                    d1, d2 = _dimerize(e1, _near(e2, e1, params), params.d_dimer, anchor, v)
                     # The placement rule: an anchored partner is placed d_dimer from the anchor, a mobile
                     # pair in a reflecting box is kept whole inside it
                     d1, d2 = _place_pair(d1, d2, e1, e2, anchor, params)

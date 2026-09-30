@@ -18,9 +18,10 @@ periodic edge form a pair as anywhere else (0.7.1 measured the plain difference,
 Dissociation measures the same distance, so a pair it leaves in place is not within formation distance, unless its
 placement cannot fit (Dissociation, below).
 
-**Orientation.** A pair that forms or splits is oriented along this displacement (the per-axis differences above,
-never a translated position rounded to the coordinate type). Partners at exactly the same position are oriented
-along +x, with no random draw.
+**Orientation.** A pair that forms or splits is oriented along this displacement, in Float64 (the per-axis
+differences above, never a translated position rounded to the coordinate type, and never through a squared length
+that can underflow), so a nonzero displacement, however small, gives its own direction. Only partners at exactly the
+same position (a zero displacement) are oriented along +x, with no random draw.
 
 ### A bound pair and the box
 

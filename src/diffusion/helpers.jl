@@ -83,18 +83,18 @@ function coordinates(e::DiffusingEmitter3D{T}) where T <: AbstractFloat
     (e.x, e.y, e.z)
 end
 
-# Half the bond: (r cos ϕ, r sin ϕ), or (r sin θ cos ϕ, r sin θ sin ϕ, r cos θ), with the angles of the displacement
-# `v` (as `angle` takes them from two emitters); along +x when `v` is zero, so coincident partners get a fixed
-# orientation, no random draw and no NaN
-function _half_bond(v::NTuple{2,T}, r::Float64) where {T<:AbstractFloat}
+# Half the bond along the Float64 displacement `v`: (r cos ϕ, r sin ϕ), or (r sin θ cos ϕ, r sin θ sin ϕ, r cos θ),
+# with ϕ = atan(v2, v1) and θ = atan(hypot(v1, v2), v3), so nothing is squared and a tiny nonzero displacement
+# keeps its direction (docs/src/diffusion/rules.md, Orientation); along +x only when `v` is exactly zero, so
+# coincident partners get a fixed orientation, no random draw and no NaN
+function _half_bond(v::NTuple{2,Float64}, r::Float64)
     all(iszero, v) && return (r, 0.0)
     ϕ = atan(v[2], v[1])
     return (r * cos(ϕ), r * sin(ϕ))
 end
-function _half_bond(v::NTuple{3,T}, r::Float64) where {T<:AbstractFloat}
-    n = sqrt(v[1]^2 + v[2]^2 + v[3]^2)
-    n == 0 && return (r, 0.0, 0.0)
-    ϕ, θ = atan(v[2], v[1]), acos(v[3] / n)
+function _half_bond(v::NTuple{3,Float64}, r::Float64)
+    all(iszero, v) && return (r, 0.0, 0.0)
+    ϕ, θ = atan(v[2], v[1]), atan(hypot(v[1], v[2]), v[3])
     return (r * sin(θ) * cos(ϕ), r * sin(θ) * sin(ϕ), r * cos(θ))
 end
 
@@ -136,14 +136,21 @@ Create two new emitters in dimer state from two monomers.
 - `d_dimer::Float64`: Dimer separation distance in microns
 - `anchor::Union{Nothing,Int}=nothing`: `track_id` of the emitter that keeps its position; the other is placed
   `d_dimer` from it along the axis between them. `nothing` snaps both to the midpoint ± `d_dimer/2`.
-- `v::NTuple{2,T}`: the displacement from `e1` to `e2` that orients the pair (default: their coordinate
-  difference); a zero displacement orients it along +x
+
+The pair is oriented along the Float64 difference of their coordinates, and along +x when they coincide.
 
 # Returns
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing,
-                  v::NTuple{2,T}=(e2.x - e1.x, e2.y - e1.y)) where T <: AbstractFloat
+function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64;
+                  anchor::Union{Nothing,Int}=nothing) where T <: AbstractFloat
+    return _dimerize(e1, e2, d_dimer, anchor, _dispv(_pos(e1), _pos(e2), nothing))
+end
+
+# `dimerize` oriented along the Float64 displacement `v` from `e1` to `e2` (positional, so the formation step
+# passes it without boxing). Internal.
+function _dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64, anchor::Union{Nothing,Int},
+                   v::NTuple{2,Float64}) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
@@ -196,14 +203,21 @@ Create two new emitters in dimer state from two monomers in 3D.
 - `d_dimer::Float64`: Dimer separation distance in microns
 - `anchor::Union{Nothing,Int}=nothing`: `track_id` of the emitter that keeps its position; the other is placed
   `d_dimer` from it along the axis between them. `nothing` snaps both to the midpoint ± `d_dimer/2`.
-- `v::NTuple{3,T}`: the displacement from `e1` to `e2` that orients the pair (default: their coordinate
-  difference); a zero displacement orients it along +x
+
+The pair is oriented along the Float64 difference of their coordinates, and along +x when they coincide.
 
 # Returns
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing,
-                  v::NTuple{3,T}=(e2.x - e1.x, e2.y - e1.y, e2.z - e1.z)) where T <: AbstractFloat
+function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64;
+                  anchor::Union{Nothing,Int}=nothing) where T <: AbstractFloat
+    return _dimerize(e1, e2, d_dimer, anchor, _dispv(_pos(e1), _pos(e2), nothing))
+end
+
+# `dimerize` oriented along the Float64 displacement `v` from `e1` to `e2` (positional, so the formation step
+# passes it without boxing). Internal.
+function _dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64, anchor::Union{Nothing,Int},
+                   v::NTuple{3,Float64}) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
@@ -718,10 +732,13 @@ end
 # Unit vector from p to q; (1, 0, ...) when they coincide
 _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N} = _dir(q .- p)
 
-# Unit vector along the displacement v; (1, 0, ...) when it is zero
+# Unit vector along the displacement v; (1, 0, ...) only when it is exactly zero. One too small to square
+# without underflow is first scaled by its largest component, so it keeps its direction
 function _dir(v::NTuple{N,Float64}) where {N}
-    n = sqrt(sum(abs2, v))
-    return n > 0 ? v ./ n : ntuple(k -> k == 1 ? 1.0 : 0.0, Val(N))
+    m = maximum(abs, v)
+    m == 0 && return ntuple(k -> k == 1 ? 1.0 : 0.0, Val(N))
+    w = m < 0x1p-500 ? v ./ m : v
+    return w ./ sqrt(sum(abs2, w))
 end
 
 # The point `s` from the fixed point `a` along `u`. Reflecting: each axis that would leave the box

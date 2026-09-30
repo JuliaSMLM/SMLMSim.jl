@@ -1367,9 +1367,9 @@ end
             @test pm_ == :min ? ID._coords(o1) == ID._coords(a) : all(e -> min(e.x, 1 - e.x) < 0.02, out)
         end
         # docs/src/diffusion/rules.md, Orientation: a forming pair is oriented along the minimum-image displacement,
-        # never the rounded image. Codex's reproducers, where the translated partner rounds onto the other (0.7.3
-        # heads gave NaN from acos(0/0)): 3D Float32 x 100 and 1e-6 in a 100.000001 box, and x 1.0 and 1e-17 in a
-        # unit box (2D and 3D); both orders, :fixed and :min, mobile or with track 1 immobile
+        # never the rounded image. Cases where the translated partner rounds onto the other: 3D Float32 x 100 and
+        # 1e-6 in a 100.000001 box, and x 1.0 and 1e-17 in a unit box (2D and 3D); both orders, :fixed and :min,
+        # mobile or with track 1 immobile
         for (T, L, xs, nds) in ((Float32, 100.000001, (100.0, 1e-6), (3,)), (Float64, 1.0, (1.0, 1e-17), (2, 3))),
             nd in nds, rev in (false, true), pm_ in (:fixed, :min), D1 in (0.0, 0.3)
             prm = DiffusionSMLMConfig(box_size=L, boundary="periodic", r_react=0.05, d_dimer=0.03, diff_monomer=0.3,
@@ -1389,6 +1389,55 @@ end
             @test rand() == r0
             @test ID._coords(out[1]) == ID._coords(f(T, (0.5 - 0.015, 0.5, 0.5), 1, nd)) &&
                   ID._coords(out[2]) == ID._coords(f(T, (0.5 + 0.015, 0.5, 0.5), 2, nd))
+        end
+        # A nonzero displacement, however small, keeps its own direction: along each axis, displacements from 1e-3
+        # down to the smallest subnormal (Float32 to 1e-45, Float64 to 1e-300), across the periodic edge (1.0 to
+        # δ, which includes 3D Float32 z 1.0 and 1e-22 or 1e-23) or from 0 (periodic and reflecting); both orders,
+        # :fixed and :min, mobile or with track 1 immobile. Each pair forms inside the unit box, d_dimer apart by
+        # minimum image, along that axis with the displacement's sign (mirrored across a reflecting anchor at δ,
+        # whose partner would leave the box)
+        bvec(a, b, bnd) = ntuple(i -> Float64(argmin(abs, big(cs(b)[i]) - big(cs(a)[i]) + j
+                                                     for j in (bnd == "periodic" ? (-1, 0, 1) : (0,)))), length(cs(a)))
+        fails, n_tiny = String[], 0
+        for T in (Float32, Float64), nd in (2, 3), k in 1:nd,
+            δ in [T == Float32 ? 10.0 .^ -(3:45) : 10.0 .^ -[3:45; 50:10:300]; nextfloat(zero(T))],
+            (lo, bnd) in ((1.0, "periodic"), (0.0, "periodic"), (0.0, "reflecting")),
+            rev in (false, true), pm_ in (:fixed, :min), D1 in (0.0, 0.3)
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=0.05, d_dimer=0.03, diff_monomer=0.3,
+                                      ndims=nd, pair_mobility=pm_)
+            ps = ntuple(i -> ntuple(j -> j == k ? (i == 1 ? lo : δ) : 0.5, nd), 2)
+            p1, p2 = rev ? reverse(ps) : ps
+            tg = "$T $(nd)D axis $k δ=$δ from $lo $bnd rev=$rev $pm_ D1=$D1"
+            n_tiny += 1
+            out = try
+                ID.update_system([f(T, p1, 1, nd), f(T, p2, 2, nd)], prm, 0.001; track_D=Dict(1 => D1))
+            catch err
+                push!(fails, "$tg: $(typeof(err))"); continue
+            end
+            o1, o2 = out[findfirst(e -> e.track_id == 1, out)], out[findfirst(e -> e.track_id == 2, out)]
+            if !all(e -> e.state == :dimer && all(isfinite, ID._coords(e)) && inbox(e, 1.0), out)
+                push!(fails, "$tg: not a dimer inside the box"); continue
+            end
+            tol, b = 4 * sqrt(nd) * eps(T), bvec(o1, o2, bnd)
+            sgn = rev && !(bnd == "reflecting" && pm_ == :min && D1 == 0.0) ? -1 : 1
+            abs(d64(o1, o2, 1.0, bnd) - 0.03) <= tol || push!(fails, "$tg: bond $(d64(o1, o2, 1.0, bnd))")
+            all(i -> abs(b[i] - (i == k ? sgn * 0.03 : 0.0)) <= tol, 1:nd) ||
+                push!(fails, "$tg: bond vector $b")
+        end
+        @test n_tiny == 5 * 3 * 8 * (44 + 70)
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 10))
+        # formation allocates nothing beyond a step in which nothing forms (warmed; two monomers, mobile or with
+        # track 1 immobile)
+        step_allocs(es, prm, tD) = @allocated ID.update_system(es, prm, 0.001; track_D=tD)
+        for nd in (2, 3), T in (Float32, Float64), bnd in ("periodic", "reflecting"), pm_ in (:fixed, :min),
+            tD in (Dict{Int,Float64}(), Dict(1 => 0.0))
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=0.05, d_dimer=0.03, ndims=nd,
+                                      pair_mobility=pm_)
+            forming = [f(T, (0.5, 0.5, 0.5), 1, nd), f(T, (0.52, 0.5, 0.5), 2, nd)]
+            apart = [f(T, (0.5, 0.5, 0.5), 1, nd), f(T, (0.8, 0.5, 0.5), 2, nd)]
+            step_allocs(forming, prm, tD); step_allocs(apart, prm, tD)
+            @test step_allocs(forming, prm, tD) <= step_allocs(apart, prm, tD)
         end
 
         # Under :fixed a split closer than r_react spreads both partners about their midpoint, moving an immobile
@@ -1697,10 +1746,10 @@ end
                 # 0.7.1's placement, from the partner's minimum image under periodic boundaries
                 img = refl ? es[2] : mk(T, ntuple(k -> T(b[k] - L * round((Float64(b[k]) - a[k]) / L)), N), 2, :monomer,
                                         nothing)
-                # oriented along the exact minimum-image displacement, rounded once
+                # oriented along the exact minimum-image displacement, rounded once to Float64
                 js = refl ? (0,) : (-1, 0, 1)
-                vv = ntuple(k -> T(Float64(argmin(abs, big(b[k]) - big(a[k]) + j * big(L) for j in js))), N)
-                ref1, ref2 = ID.dimerize(es[1], img, d; v=vv)
+                vv = ntuple(k -> Float64(argmin(abs, big(b[k]) - big(a[k]) + j * big(L) for j in js)), N)
+                ref1, ref2 = ID._dimerize(es[1], img, d, nothing, vv)
                 if !refl
                     # that placement with each end wrapped into the box: unchanged when inside, else one periodic
                     # image of it
