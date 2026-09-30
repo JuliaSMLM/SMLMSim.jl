@@ -74,11 +74,6 @@ function angle(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}) where T <: 
     return (ϕ, θ)
 end
 
-# More generic approach with coordinate tuples
-function distance(p1::NTuple{N,T}, p2::NTuple{N,T}) where {N,T<:AbstractFloat}
-    sqrt(sum((p1[i] - p2[i])^2 for i in 1:N))
-end
-
 # Extract coordinates as tuples
 function coordinates(e::DiffusingEmitter2D{T}) where T <: AbstractFloat
     (e.x, e.y)
@@ -88,6 +83,21 @@ function coordinates(e::DiffusingEmitter3D{T}) where T <: AbstractFloat
     (e.x, e.y, e.z)
 end
 
+# Half the bond: (r cos ϕ, r sin ϕ), or (r sin θ cos ϕ, r sin θ sin ϕ, r cos θ), with the angles of the displacement
+# `v` (as `angle` takes them from two emitters); along +x when `v` is zero, so coincident partners get a fixed
+# orientation, no random draw and no NaN
+function _half_bond(v::NTuple{2,T}, r::Float64) where {T<:AbstractFloat}
+    all(iszero, v) && return (r, 0.0)
+    ϕ = atan(v[2], v[1])
+    return (r * cos(ϕ), r * sin(ϕ))
+end
+function _half_bond(v::NTuple{3,T}, r::Float64) where {T<:AbstractFloat}
+    n = sqrt(v[1]^2 + v[2]^2 + v[3]^2)
+    n == 0 && return (r, 0.0, 0.0)
+    ϕ, θ = atan(v[2], v[1]), acos(v[3] / n)
+    return (r * sin(θ) * cos(ϕ), r * sin(θ) * sin(ϕ), r * cos(θ))
+end
+
 # State management functions
 """
     can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64, period=nothing)
@@ -95,7 +105,8 @@ end
 Check if two emitters can form a dimer: both are monomers and their distance is below `r_react`. The
 distance is measured in Float64 from the stored coordinates, each axis's difference rounded once, to the
 minimum image when `period` is the box size of periodic boundaries (docs/src/diffusion/rules.md, Distance);
-dissociation measures the same distance, so a pair it leaves in place cannot pass this check.
+dissociation measures the same distance, so a pair it leaves in place cannot pass this check, unless its
+placement cannot fit (the partners then stay where they are).
 
 # Arguments
 - `e1::AbstractDiffusingEmitter`: First emitter
@@ -125,22 +136,20 @@ Create two new emitters in dimer state from two monomers.
 - `d_dimer::Float64`: Dimer separation distance in microns
 - `anchor::Union{Nothing,Int}=nothing`: `track_id` of the emitter that keeps its position; the other is placed
   `d_dimer` from it along the axis between them. `nothing` snaps both to the midpoint ± `d_dimer/2`.
+- `v::NTuple{2,T}`: the displacement from `e1` to `e2` that orients the pair (default: their coordinate
+  difference); a zero displacement orients it along +x
 
 # Returns
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing) where T <: AbstractFloat
+function dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing,
+                  v::NTuple{2,T}=(e2.x - e1.x, e2.y - e1.y)) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
     
-    # Calculate orientation
-    ϕ = angle(e1, e2)
-    r = d_dimer / 2
-    
-    # Calculate new positions
-    dx = r * cos(ϕ)
-    dy = r * sin(ϕ)
+    # Calculate new positions, oriented along v (+x when v is zero)
+    dx, dy = _half_bond(v, d_dimer / 2)
     x1, y1, x2, y2 = com_x - dx, com_y - dy, com_x + dx, com_y + dy
     if anchor == e1.track_id
         x1, y1 = e1.x, e1.y
@@ -187,24 +196,21 @@ Create two new emitters in dimer state from two monomers in 3D.
 - `d_dimer::Float64`: Dimer separation distance in microns
 - `anchor::Union{Nothing,Int}=nothing`: `track_id` of the emitter that keeps its position; the other is placed
   `d_dimer` from it along the axis between them. `nothing` snaps both to the midpoint ± `d_dimer/2`.
+- `v::NTuple{3,T}`: the displacement from `e1` to `e2` that orients the pair (default: their coordinate
+  difference); a zero displacement orients it along +x
 
 # Returns
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters in dimer state
 """
-function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing) where T <: AbstractFloat
+function dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer::Float64; anchor::Union{Nothing,Int}=nothing,
+                  v::NTuple{3,T}=(e2.x - e1.x, e2.y - e1.y, e2.z - e1.z)) where T <: AbstractFloat
     # Calculate center of mass
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
     com_z = (e1.z + e2.z) / 2
     
-    # Calculate orientation
-    ϕ, θ = angle(e1, e2)
-    r = d_dimer / 2
-    
-    # Calculate new positions
-    dx = r * sin(θ) * cos(ϕ)
-    dy = r * sin(θ) * sin(ϕ)
-    dz = r * cos(θ)
+    # Calculate new positions, oriented along v (+x when v is zero)
+    dx, dy, dz = _half_bond(v, d_dimer / 2)
     x1, y1, z1 = com_x - dx, com_y - dy, com_z - dz
     x2, y2, z2 = com_x + dx, com_y + dy, com_z + dz
     if anchor == e1.track_id
@@ -387,19 +393,26 @@ function _disp(p::Float64, q::Float64, L::Union{Nothing,Float64})
     d = q - p
     L === nothing && return d
     t = d - q
-    return (d - L * round(d / L)) + ((q - (d - t)) + (-p - t))
+    return (d - L * _nimg(p, q, L)) + ((q - (d - t)) + (-p - t))
 end
 
-# The one distance of formation and dissociation: `_disp` on each axis, then the Euclidean norm, to the minimum
+# The image index of q seen from p: round((q - p)/L) on the Float64 difference, which `_disp` and `_image` both
+# take, so the image they measure and place is one
+_nimg(p::Float64, q::Float64, L::Float64) = round((q - p) / L)
+
+# `_disp` on each axis, and the one distance of formation and dissociation (its Euclidean norm), to the minimum
 # image when `L` is `_period(params)` under periodic boundaries (`nothing`: the plain difference)
-_sep(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} =
-    sqrt(sum(abs2, ntuple(k -> _disp(p[k], q[k], L), Val(N))))
+_dispv(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} =
+    ntuple(k -> _disp(p[k], q[k], L), Val(N))
+_sep(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} = sqrt(sum(abs2, _dispv(p, q, L)))
 _period(params) = params.boundary == "reflecting" ? nothing : params.box_size
 
 # `p` at the minimum image of its offset from `r` under periodic boundaries (the image `_disp` measures), in
-# Float64; `p` itself under reflecting boundaries
-_image(p::NTuple{N,Float64}, r::NTuple{N,Float64}, params) where {N} = params.boundary == "reflecting" ? p :
-    ntuple(k -> p[k] - params.box_size * round((p[k] - r[k]) / params.box_size), Val(N))
+# Float64; `p` itself under reflecting boundaries. For a position only: orientations come from `_dispv`
+function _image(p::NTuple{N,Float64}, r::NTuple{N,Float64}, params) where {N}
+    L = _period(params)
+    return L === nothing ? p : ntuple(k -> p[k] - L * _nimg(r[k], p[k], L), Val(N))
+end
 
 # New positions of the two members of `_unbind` in the coordinate type T, by the dissociation rule
 # (docs/src/diffusion/rules.md, Dissociation): `(ok, q1, q2)`, `ok` false when the construction cannot fit.
@@ -410,12 +423,11 @@ function _unbind_positions(p1::NTuple{N,Float64}, p2::NTuple{N,Float64}, params,
     box, reflecting = params.box_size, params.boundary == "reflecting"
     if anchor !== nothing
         a, m = anchor == id1 ? (p1, p2) : (p2, p1)
-        ok, q = _place_from(a, _axis(a, _image(m, a, params)), s, box, reflecting, T)
+        ok, q = _place_from(a, _dir(_dispv(a, m, _period(params))), s, box, reflecting, T)
         at = ntuple(k -> T(a[k]), Val(N))
         return anchor == id1 ? (ok, at, q) : (ok, q, at)
     end
-    p2 = _image(p2, p1, params)
-    u, c = _axis(p1, p2), (p1 .+ p2) ./ 2
+    u, c = _dir(_dispv(p1, p2, _period(params))), (p1 .+ _image(p2, p1, params)) ./ 2
     reflecting && return _place_centered(c, u, s, box, T)
     ok = all(ntuple(k -> s * abs(u[k]) <= box / 2, Val(N)))
     return ok, ntuple(k -> _inbox(T, mod(c[k] - (s / 2) * u[k], box), box), Val(N)),
@@ -436,7 +448,7 @@ immobile: the lower `track_id`, see `_anchor`) keeps its position and the other 
 reflecting box, or wrapped under periodic boundaries. Every placed coordinate is inside the box in the
 coordinate type, and the separation carries a margin in that precision (`_unbind_spacing`), so Float32
 partners are also beyond `r_react` after conversion. When that placement cannot fit along the pair's axis
-(docs/src/diffusion/rules.md, Dissociation), the partners are left where `dissociate` put them (0.7.2's
+(docs/src/diffusion/rules.md, Dissociation), the partners are left where `dissociate` put them (0.7.1's
 behaviour) and `unfit[]` is set, from which `simulate` warns once per run. Draws no random numbers and
 changes positions only.
 
@@ -704,8 +716,10 @@ function _fold(x::Float64, lo::Float64, hi::Float64)
 end
 
 # Unit vector from p to q; (1, 0, ...) when they coincide
-function _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N}
-    v = q .- p
+_axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N} = _dir(q .- p)
+
+# Unit vector along the displacement v; (1, 0, ...) when it is zero
+function _dir(v::NTuple{N,Float64}) where {N}
     n = sqrt(sum(abs2, v))
     return n > 0 ? v ./ n : ntuple(k -> k == 1 ? 1.0 : 0.0, Val(N))
 end
@@ -748,7 +762,7 @@ function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
     if anchor !== nothing
         fixed, mover = anchor == e1.track_id ? (e1, e2) : (e2, e1)
         a = _pos(fixed)
-        ok, q = _place_from(a, _axis(a, _image(_pos(mover), a, params)), params.d_dimer, box, reflecting, T)
+        ok, q = _place_from(a, _dir(_dispv(a, _pos(mover), _period(params))), params.d_dimer, box, reflecting, T)
         p = ok ? q : _coords(mover)
         return anchor == e1.track_id ? (_at(d1, _coords(e1)), _at(d2, p)) : (_at(d1, p), _at(d2, _coords(e2)))
     end

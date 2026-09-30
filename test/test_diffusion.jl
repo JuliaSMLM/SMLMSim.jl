@@ -694,11 +694,11 @@ end
         # At d_dimer > r_react, so that the unbinding rule (partners placed at least r_react apart) leaves the run
         # unchanged: #37 alone gives these values. Recorded on Julia 1.13.0 after #37's periodic straddle fix (a bound
         # pair straddling the boundary used to jump by half the box and now moves by one step); with that fix reverted
-        # the run gives 0.7.2's values exactly, (8283.839490125389, 8070.38335464744, 4340) mixed and
+        # the run gives #36's values (97880c1) exactly, (8283.839490125389, 8070.38335464744, 4340) mixed and
         # (8276.434380304116, 8283.7469648201, 5408) default. The default sums moved by -72.0 (x) and +8.0 (y) to
         # within rounding, whole half-boxes (box 2), with the counts unchanged; in the mixed run the corrected
         # positions change a later reaction, so its dimer records go from 4340 to 4368. Julia does not promise
-        # bitwise-equal float sums across versions: 0.7.2 on Julia 1.10.11 differed from 1.13.0 by at most 4.1e-5
+        # bitwise-equal float sums across versions: #36 on Julia 1.10.11 differed from 1.13.0 by at most 4.1e-5
         # relative in these sums, with identical counts. So the counts (records, photons, dimer records) are compared
         # exactly, the x/y sums at rtol 1e-4, and the default path exactly against pair_mobility = :fixed in one run.
         # #39's periodic formation wrap then moved each x sum by +2.0, one box (only formation records change, each
@@ -707,7 +707,9 @@ end
         # across the edge form a pair) then changed both runs from the first such pair on, records and photons
         # unchanged: before it (8322.62946819797, 8056.226513683971, 4368) mixed and (8206.434380304117,
         # 8291.7469648201, 5408) default. Over 40 seeds the default's mean dimer records are unchanged (5268.5 before,
-        # 5270.0 after, sd 210): the drop in this seed's counts is its divergence, not a bias.
+        # 5270.0 after, sd 210), and over 300 paired seeds (Claude reviewer on 1d66d0a) the default moved +1.7 +- 11.7
+        # dimer records: this seed's drop is an unlucky seed, not a bias. The mixed run moved +25 +- 11, the intended
+        # increase from immobile edge molecules now pairing across the edge.
         GOLD_MIXED = (8000, 8385.313194760132, 8175.549707151786, 4000.0, 4112)
         GOLD_DEFAULT = (8000, 8274.516046954606, 8176.357746324857, 4000.0, 4940)
         matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
@@ -764,7 +766,7 @@ end
             @test n_formed > 0
             @test n_bad_form == 0
 
-            # Continuation keeps classes, and recovers them from D for 0.7.2 output
+            # Continuation keeps classes, and recovers them from D for #36's output (monomer_D without monomer_class)
             @test extract_end_state(smld).metadata["monomer_class"] == cls
             smld2, _ = simulate(p; starting_conditions=smld, γ=500.0, camera=cam)
             @test smld2.metadata["monomer_class"] == cls
@@ -1309,9 +1311,9 @@ end
             @test (@inferred ID._unbind(a, b, pb, 0.0, 0.3)) isa Tuple{typeof(a),typeof(a)}
         end
 
-        # B3. every configuration 0.7.2 accepts still constructs. A box that fits the placement along the pair's
+        # B3. every configuration 0.7.1 accepts still constructs. A box that fits the placement along the pair's
         # axis gets it (the construction's own fit test, not box_size <= 2s); one that cannot leaves the partners
-        # where they are (0.7.2's behaviour) with a warning
+        # where they are (0.7.1's behaviour) with a warning
         @test DiffusionSMLMConfig(box_size=2 * 0.05, r_react=0.05) isa DiffusionSMLMConfig
         @test DiffusionSMLMConfig(box_size=0.05, r_react=0.05, k_off=0.0) isa DiffusionSMLMConfig
         @test DiffusionSMLMConfig(box_size=0.08, r_react=0.05, boundary="reflecting", ndims=3) isa DiffusionSMLMConfig
@@ -1363,6 +1365,30 @@ end
             @test all(e -> e.state == :dimer && inbox(e, 1.0), out)
             @test isapprox(d64(o1, o2, 1.0, "periodic"), 0.03; atol=1e-6)
             @test pm_ == :min ? ID._coords(o1) == ID._coords(a) : all(e -> min(e.x, 1 - e.x) < 0.02, out)
+        end
+        # docs/src/diffusion/rules.md, Orientation: a forming pair is oriented along the minimum-image displacement,
+        # never the rounded image. Codex's reproducers, where the translated partner rounds onto the other (0.7.3
+        # heads gave NaN from acos(0/0)): 3D Float32 x 100 and 1e-6 in a 100.000001 box, and x 1.0 and 1e-17 in a
+        # unit box (2D and 3D); both orders, :fixed and :min, mobile or with track 1 immobile
+        for (T, L, xs, nds) in ((Float32, 100.000001, (100.0, 1e-6), (3,)), (Float64, 1.0, (1.0, 1e-17), (2, 3))),
+            nd in nds, rev in (false, true), pm_ in (:fixed, :min), D1 in (0.0, 0.3)
+            prm = DiffusionSMLMConfig(box_size=L, boundary="periodic", r_react=0.05, d_dimer=0.03, diff_monomer=0.3,
+                                      ndims=nd, pair_mobility=pm_)
+            x1, x2 = rev ? reverse(xs) : xs
+            out = ID.update_system([f(T, (x1, 0.5, 0.5), 1, nd), f(T, (x2, 0.5, 0.5), 2, nd)], prm, 0.001;
+                                   track_D=Dict(1 => D1))
+            @test all(e -> e.state == :dimer && all(isfinite, ID._coords(e)) && inbox(e, L), out)
+            @test isapprox(d64(out[1], out[2], L, "periodic"), 0.03; atol=4 * sqrt(nd) * eps(T) * max(1, L))
+        end
+        # coincident partners form along +x about their position, with no random draw
+        for nd in (2, 3), T in (Float32, Float64), bnd in ("periodic", "reflecting")
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=0.05, d_dimer=0.03, ndims=nd)
+            a, b = f(T, (0.5, 0.5, 0.5), 1, nd), f(T, (0.5, 0.5, 0.5), 2, nd)
+            Random.seed!(68); r0 = rand(); Random.seed!(68)
+            out = ID.update_system([a, b], prm, 0.001)
+            @test rand() == r0
+            @test ID._coords(out[1]) == ID._coords(f(T, (0.5 - 0.015, 0.5, 0.5), 1, nd)) &&
+                  ID._coords(out[2]) == ID._coords(f(T, (0.5 + 0.015, 0.5, 0.5), 2, nd))
         end
 
         # Under :fixed a split closer than r_react spreads both partners about their midpoint, moving an immobile
@@ -1671,7 +1697,10 @@ end
                 # 0.7.1's placement, from the partner's minimum image under periodic boundaries
                 img = refl ? es[2] : mk(T, ntuple(k -> T(b[k] - L * round((Float64(b[k]) - a[k]) / L)), N), 2, :monomer,
                                         nothing)
-                ref1, ref2 = ID.dimerize(es[1], img, d)
+                # oriented along the exact minimum-image displacement, rounded once
+                js = refl ? (0,) : (-1, 0, 1)
+                vv = ntuple(k -> T(Float64(argmin(abs, big(b[k]) - big(a[k]) + j * big(L) for j in js))), N)
+                ref1, ref2 = ID.dimerize(es[1], img, d; v=vv)
                 if !refl
                     # that placement with each end wrapped into the box: unchanged when inside, else one periodic
                     # image of it

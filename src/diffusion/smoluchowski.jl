@@ -205,7 +205,7 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     end
 end
 
-# Positional construction with a mobility mixture (the 0.7.2 signature)
+# Positional construction with a mobility mixture (#36's signature, before pair_mobility)
 DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
                     k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
                     camera_framerate, camera_exposure, monomer_mobility) =
@@ -420,7 +420,8 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
             # Check if this monomer forms a dimer with any other monomer
             found_dimer = false
             
-            for (j, e2) in enumerate(emitters[i+1:end])
+            for j in i+1:length(emitters)
+                e2 = emitters[j]
                 e2.track_id in processed && continue
                 e2.state == :monomer || continue
                 
@@ -429,7 +430,9 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
                     # Under :min an immobile partner keeps its position (both immobile: the lower track_id)
                     anchor = _anchor(params, e1, e2, D1, D2)
-                    d1, d2 = dimerize(e1, _near(e2, e1, params), params.d_dimer; anchor=anchor)
+                    # Oriented along the minimum-image displacement, never the rounded image (+x when zero)
+                    v = map(typeof(e1.x), _dispv(_pos(e1), _pos(e2), _period(params)))
+                    d1, d2 = dimerize(e1, _near(e2, e1, params), params.d_dimer; anchor=anchor, v=v)
                     # The placement rule: an anchored partner is placed d_dimer from the anchor, a mobile
                     # pair in a reflecting box is kept whole inside it
                     d1, d2 = _place_pair(d1, d2, e1, e2, anchor, params)
@@ -801,7 +804,7 @@ function simulate(params::DiffusionSMLMConfig;
     # Under :fixed, formation, bound motion and dissociation move immobile members: say so once per run
     moved_immobile[] && @warn "pair_mobility = :fixed moved immobile molecules (monomer D = 0): forming a pair places both partners d_dimer apart about their midpoint, a bound pair moves with diff_dimer and rotates with diff_dimer_rot, and on dissociation a pair closer than r_react is spread r_react apart about its midpoint; use pair_mobility = :min to keep such pairs in place"
 
-    split_unfit[] && @warn "box_size=$(params.box_size) is too small to place dissociated partners r_react=$(params.r_react) apart along their axis; they stayed where they were (0.7.2's behaviour) and may have re-formed at once"
+    split_unfit[] && @warn "box_size=$(params.box_size) is too small to place dissociated partners r_react=$(params.r_react) apart along their axis; they stayed where they were (0.7.1's behaviour) and may have re-formed at once"
 
     # Convert to SMLD
     smld = create_smld(camera_emitters, camera, params; track_D=track_D, track_class=track_class, γ=γ_val,

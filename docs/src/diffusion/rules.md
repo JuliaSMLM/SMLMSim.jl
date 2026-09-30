@@ -15,7 +15,12 @@ Formation and dissociation measure one distance between two partners, from their
 
 It is the same in either partner order. A pair forms when this distance is below `r_react`, so two monomers across a
 periodic edge form a pair as anywhere else (0.7.1 measured the plain difference, and such a pair never formed).
-Dissociation measures the same distance, so a pair it leaves in place is not within formation distance.
+Dissociation measures the same distance, so a pair it leaves in place is not within formation distance, unless its
+placement cannot fit (Dissociation, below).
+
+**Orientation.** A pair that forms or splits is oriented along this displacement (the per-axis differences above,
+never a translated position rounded to the coordinate type). Partners at exactly the same position are oriented
+along +x, with no random draw.
 
 ### A bound pair and the box
 
@@ -74,7 +79,7 @@ pair closer than `r_react` moves at the split.
   their axis, with the midpoint shifted inward just enough to fit a reflecting box, or each end wrapped under
   periodic boundaries.
 
-**When it cannot fit**, both partners stay where they are (the 0.7.2 behaviour), and `simulate` warns once per run.
+**When it cannot fit**, both partners stay where they are (the 0.7.1 behaviour), and `simulate` warns once per run.
 The construction cannot fit when its fit test fails:
 - anchored: some axis fits neither way, possible only when `box_size < 2s`;
 - about the midpoint in a reflecting box: some `s·|u_k| > box_size`;
