@@ -12,12 +12,15 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `k_off::Float64`: dimer dissociation rate (s⁻¹)
 - `r_react::Float64`: reaction radius (μm)
 - `d_dimer::Float64`: monomer separation in dimer (μm)
-  On dissociation the partners are placed at least `r_react` apart along the pair axis (under
-  `pair_mobility = :min` an immobile partner stays put), so a pair does not re-form at the next step
-  only because `d_dimer < r_react`; with `d_dimer > r_react` in a periodic box (the defaults) positions
-  are unchanged. Near a reflecting wall the placement stays inside the box: a member placed from an
-  immobile partner is mirrored across it on each axis it would leave, and otherwise the pair's midpoint
-  is shifted inward.
+  On dissociation the partners are placed at least `r_react` apart along the pair axis (the
+  minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only
+  because `d_dimer < r_react`. Under `pair_mobility = :min` an immobile partner stays put and the other
+  is placed from it, mirrored across it on each axis it would leave a reflecting box; otherwise,
+  including every pair under `:fixed`, both move apart about their midpoint, shifted inward just enough
+  to fit a reflecting box or wrapped under periodic boundaries. When that cannot fit along the pair's
+  axis (a box of about `2·r_react` or less), the partners stay where they are, with a warning. A bound
+  pair is `d_dimer` apart to within rounding (unless the box is smaller than `d_dimer`), so with
+  `d_dimer` above `r_react` by more than that rounding, positions are unchanged.
   A mobile partner can still diffuse back within `r_react` in its free step and re-form: that is
   geminate re-encounter in the contact model, not a re-capture bug.
 - `dt::Float64`: physics step (s); also sets the sub-steps per frame (motion blur):
@@ -57,8 +60,9 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   each partner is reflected on its own, as in 0.7.1). Under periodic boundaries, the default, a bound
   pair moves from its partner's minimum image, so a pair straddling the boundary moves by one step.
   Under `:fixed` forming a pair places both partners `d_dimer` apart about their midpoint and a bound
-  pair moves and rotates, even when a member is immobile (monomer D = 0); `simulate` warns once per run
-  when a step moves an immobile member, recorded or not; `:min` keeps such a pair in place.
+  pair moves and rotates, even when a member is immobile (monomer D = 0), and on dissociation a pair
+  closer than `r_react` is spread about its midpoint; `simulate` warns once per run when a step moves an
+  immobile member, recorded or not; `:min` keeps such a pair in place.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
 `n_sub` records of a frame (`substeps_per_frame`) carries `γ·dt`, so a frame holds `γ·n_sub·dt`
@@ -360,7 +364,7 @@ function build_emitters(params::DiffusionSMLMConfig, photons::Float64, override_
     return emitters
 end
 
-# Under :fixed, note in `flag` a pair step (formation or bound motion) that moved an immobile member. Internal.
+# Under :fixed, note in `flag` a pair step (formation, bound motion or dissociation) that moved an immobile member. Internal.
 function _note_immobile!(flag, params::DiffusionSMLMConfig, D1, D2, e1, e2, d1, d2)
     (flag === nothing || params.pair_mobility != :fixed) && return nothing
     ((D1 == 0 && _coords(d1) != _coords(e1)) || (D2 == 0 && _coords(d2) != _coords(e2))) && (flag[] = true)
@@ -380,7 +384,8 @@ Update all emitters based on Smoluchowski diffusion dynamics. Monomers diffuse w
 - `dt::Float64`: Time step
 - `track_D::Union{Nothing,Dict{Int,Float64}}=nothing`: Per-track monomer diffusion coefficients
 - `moved_immobile::Union{Nothing,Base.RefValue{Bool}}=nothing`: Set to `true` when, under `pair_mobility = :fixed`,
-  a formation or a bound step moves a member whose monomer D is 0 (`simulate` warns once per run from it)
+  a formation, a bound step or a dissociation moves a member whose monomer D is 0 (`simulate` warns once per run
+  from it)
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Updated emitters
@@ -440,7 +445,10 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
             if should_dissociate(e1, params.k_off, dt)
                 # Find partner and create two new monomers
                 m1, m2 = dissociate(e1, emitters)
-                m1, m2 = _unbind(m1, m2, params, monomer_D(m1.track_id), monomer_D(m2.track_id))
+                D1, D2 = monomer_D(m1.track_id), monomer_D(m2.track_id)
+                u1, u2 = _unbind(m1, m2, params, D1, D2)
+                _note_immobile!(moved_immobile, params, D1, D2, m1, m2, u1, u2)
+                m1, m2 = u1, u2
                 
                 # Apply diffusion to each new monomer
                 m1 = diffuse(m1, monomer_D(m1.track_id), dt)
@@ -764,7 +772,8 @@ function simulate(params::DiffusionSMLMConfig;
     # Store camera-frame emitters
     camera_emitters = Vector{eltype(emitters)}()
 
-    # Set when a step under :fixed moves an immobile member, at formation or while bound (warned after the run)
+    # Set when a step under :fixed moves an immobile member, at formation, while bound or at dissociation (warned
+    # after the run)
     moved_immobile = Ref(false)
 
     # Simulation loop in integer steps; the first n_sub steps of each frame are recorded
@@ -775,8 +784,8 @@ function simulate(params::DiffusionSMLMConfig;
                                  moved_immobile=moved_immobile)
     end
 
-    # Under :fixed, formation and bound motion move immobile members: say so once per run
-    moved_immobile[] && @warn "pair_mobility = :fixed moved immobile molecules (monomer D = 0): forming a pair places both partners d_dimer apart about their midpoint, and a bound pair moves with diff_dimer and rotates with diff_dimer_rot; use pair_mobility = :min to keep such pairs in place"
+    # Under :fixed, formation, bound motion and dissociation move immobile members: say so once per run
+    moved_immobile[] && @warn "pair_mobility = :fixed moved immobile molecules (monomer D = 0): forming a pair places both partners d_dimer apart about their midpoint, a bound pair moves with diff_dimer and rotates with diff_dimer_rot, and on dissociation a pair closer than r_react is spread r_react apart about its midpoint; use pair_mobility = :min to keep such pairs in place"
 
     # Convert to SMLD
     smld = create_smld(camera_emitters, camera, params; track_D=track_D, track_class=track_class, γ=γ_val,

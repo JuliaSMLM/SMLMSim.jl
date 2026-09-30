@@ -806,7 +806,7 @@ end
         @test_throws ArgumentError DiffusionSMLMConfig(pair_mobility=:min, diff_monomer=0.0)
     end
 
-    @testset "(m) unbinding separation" begin
+    @testset "(s) unbinding separation" begin
         unbind = SMLMSim.InteractionDiffusion._unbind
         dist = SMLMSim.InteractionDiffusion.distance
         E2(x, y, id) = DiffusingEmitter2D{Float64}(x, y, 100.0, 0.0, 1, 1, id, :monomer, nothing)
@@ -882,8 +882,8 @@ end
         pr(pm_) = (r_react = r_react, pair_mobility = pm_, box_size = bx, boundary = "reflecting")
         pp_(pm_) = (r_react = r_react, pair_mobility = pm_, box_size = bx, boundary = "periodic")
         inside(e, nd) = all(v -> 0 <= v <= bx, nd == 2 ? (e.x, e.y) : (e.x, e.y, e.z))
-        s = r_react * (1 + SMLMSim.InteractionDiffusion.UNBIND_MARGIN)
-        n_out = 0  # periodic placements outside the box: shows the no-mirror check is exercised
+        s = SMLMSim.InteractionDiffusion._unbind_spacing(pp_(:min), Float64)
+        n_out = 0  # periodic placements that crossed the boundary and were wrapped
         for nd in (2, 3)
             mk(x, y, z, id) = nd == 2 ? E2(x, y, id) : E3(x, y, z, id)
             pos(e) = nd == 2 ? [e.x, e.y] : [e.x, e.y, e.z]
@@ -909,17 +909,19 @@ end
                 r = unbind(a, b, pr(:fixed), 0.3, 0.3)
                 @test inside(r[1], nd) && inside(r[2], nd)
                 @test dist(r[1], r[2]) >= r_react
-                # periodic: same placement as before, never mirrored (anchor ± s*u exactly, even outside
-                # the box; apply_boundary wraps it after the free move), pair midpoint kept
+                # periodic: never mirrored; the placed point (anchor ± s*u) is wrapped into the box, and a
+                # symmetric pair keeps its midpoint up to the wrap
+                mi(v) = v .- bx .* round.(v ./ bx)
                 r = unbind(a, b, pp_(:fixed), 0.3, 0.3)
-                @test isapprox((pos(r[1]) + pos(r[2])) / 2, (pos(a) + pos(b)) / 2; atol=1e-12)
+                @test inside(r[1], nd) && inside(r[2], nd)
+                @test all(abs.(mi(pos(r[1]) + mi(pos(r[2]) - pos(r[1])) / 2 - (pos(a) + pos(b)) / 2)) .< 1e-12)
                 d = pos(b) - pos(a)
                 u = d / sqrt(sum(abs2, d))
                 r = unbind(a, b, pp_(:min), 0.0, 0.3)
-                @test r[1] === a && pos(r[2]) == pos(a) + s * u
+                @test r[1] === a && pos(r[2]) == mod.(pos(a) + s * u, bx)
                 r = unbind(a, b, pp_(:min), 0.3, 0.0)
-                @test r[2] === b && pos(r[1]) == pos(b) - s * u
-                n_out += !inside(r[1], nd)
+                @test r[2] === b && pos(r[1]) == mod.(pos(b) - s * u, bx)
+                n_out += any(v -> !(0 <= v <= bx), pos(b) - s * u)
             end
         end
         @test n_out > 0
@@ -1163,52 +1165,101 @@ end
         @test a.emitters == b.emitters
     end
 
-    @testset "(n) Codex review of #39" begin
+    @testset "(t) Codex review of #39" begin
         ID = SMLMSim.InteractionDiffusion
-        # B1. Float32 coordinates: dissociated partners cannot re-capture after conversion (2D and 3D)
-        f2(p, id) = DiffusingEmitter2D{Float32}(p[1], p[2], 100.0, 0.0, 1, 1, id, :monomer, nothing)
-        f3(p, id) = DiffusingEmitter3D{Float32}(p[1], p[2], p[3], 100.0, 0.0, 1, 1, id, :monomer, nothing)
+        # B1. dev/outputs/placement-rule.md, #39: dissociated partners end inside the box in their coordinate type
+        # and at least r_react apart (minimum image under periodic boundaries), and a :min anchor never moves;
+        # boxes 2 and 100 with half the draws within 0.02 of a wall, 2D and 3D, Float32 and Float64
+        f(T, p, id, nd) = nd == 2 ? DiffusingEmitter2D{T}(p[1], p[2], 100.0, 0.0, 1, 1, id, :monomer, nothing) :
+                                    DiffusingEmitter3D{T}(p[1], p[2], p[3], 100.0, 0.0, 1, 1, id, :monomer, nothing)
+        inbox(e, L) = all(c -> 0 <= c <= L, ID._coords(e))
         Random.seed!(61)
-        n_tried = 0
-        n_close = 0
-        for nd in (2, 3), bnd in ("reflecting", "periodic"), pm_ in (:fixed, :min), k in 1:500
-            prm = (r_react = 0.05, pair_mobility = pm_, box_size = 2.0, boundary = bnd)
-            p = 0.1 .+ 1.8 .* rand(3)
+        n_tried = n_close = n_out = n_moved = 0
+        for L in (2.0, 100.0), nd in (2, 3), bnd in ("reflecting", "periodic"), pm_ in (:fixed, :min), k in 1:250
+            T = rand((Float32, Float64))
+            prm = (r_react = 0.05, pair_mobility = pm_, box_size = L, boundary = bnd)
+            p = [rand() < 0.5 ? (rand(Bool) ? 0.02 * rand() : L - 0.02 * rand()) : L * rand() for _ in 1:3]
             q = p .+ 0.04 .* (rand(3) .- 0.5)
-            a, b = nd == 2 ? (f2(p, 1), f2(q, 2)) : (f3(p, 1), f3(q, 2))
-            ID.distance(a, b) < 0.05 || continue
+            q = bnd == "periodic" ? mod.(q, L) : clamp.(q, 0, L)
+            a, b = f(T, p, 1, nd), f(T, q, 2, nd)
+            ID.distance(a, ID._near(b, a, prm)) < 0.05 || continue
             D1, D2 = rand() < 0.5 ? (0.0, 0.3) : (0.3, 0.3)
             m1, m2 = ID._unbind(a, b, prm, D1, D2)
             n_tried += 1
-            ID.can_dimerize(m1, m2, 0.05) && (n_close += 1)
+            ID.can_dimerize(m1, ID._near(m2, m1, prm), 0.05) && (n_close += 1)
+            (inbox(m1, L) && inbox(m2, L)) || (n_out += 1)
+            pm_ == :min && D1 == 0 && m1 !== a && (n_moved += 1)
         end
-        @test n_tried > 3000
-        @test n_close == 0
+        @test n_tried > 3500
+        @test n_close == 0 && n_out == 0 && n_moved == 0
+        # Float32 partners at 99.88 and 99.89 in a 99.9 reflecting box, and pairs across the periodic boundary
+        for nd in (2, 3), pm_ in (:fixed, :min)
+            prm = (r_react = 0.05, pair_mobility = pm_, box_size = 99.9, boundary = "reflecting")
+            m1, m2 = ID._unbind(f(Float32, (99.88, 50.0, 50.0), 1, nd), f(Float32, (99.89, 50.0, 50.0), 2, nd), prm, 0.0, 0.3)
+            @test inbox(m1, 99.9) && inbox(m2, 99.9) && !ID.can_dimerize(m1, m2, 0.05)
+            prm = (r_react = 0.05, pair_mobility = pm_, box_size = 10.0, boundary = "periodic")
+            for (x1, x2) in ((9.99, 0.005), (0.005, 9.99))
+                a, b = f(Float64, (x1, 5.0, 5.0), 1, nd), f(Float64, (x2, 5.0, 5.0), 2, nd)
+                m1, m2 = ID._unbind(a, b, prm, 0.0, 0.3)
+                @test inbox(m1, 10.0) && inbox(m2, 10.0) && !ID.can_dimerize(m1, ID._near(m2, m1, prm), 0.05)
+                @test pm_ == :fixed || m1 === a
+            end
+        end
 
         # B2. the placement allocates nothing and is type stable
         pw = (r_react = 0.05, pair_mobility = :min, box_size = 2.0, boundary = "reflecting")
-        place_allocs(f, p1, p2, pw, anchor) = @allocated f(p1, p2, pw, anchor, 1)
-        for (p1, p2) in (((1.0, 1.0), (1.01, 1.0)), ((0.01, 1.0, 1.0), (0.02, 1.0, 1.0))), anchor in (nothing, 1)
-            place_allocs(ID._unbind_positions, p1, p2, pw, anchor)
-            @test place_allocs(ID._unbind_positions, p1, p2, pw, anchor) == 0
-            @test (@inferred ID._unbind_positions(p1, p2, pw, anchor, 1)) isa Tuple
+        place_allocs(g, p1, p2, pw, anchor, s, ::Type{T}) where {T} = @allocated g(p1, p2, pw, anchor, 1, s, T)
+        unbind_allocs(g, a, b, pw) = @allocated g(a, b, pw, 0.0, 0.3)
+        for (p1, p2) in (((1.0, 1.0), (1.01, 1.0)), ((0.01, 1.0, 1.0), (0.02, 1.0, 1.0))), anchor in (nothing, 1),
+            T in (Float32, Float64), bnd in ("reflecting", "periodic")
+            pb = merge(pw, (boundary = bnd,))
+            s = ID._unbind_spacing(pb, T)
+            place_allocs(ID._unbind_positions, p1, p2, pb, anchor, s, T)
+            @test place_allocs(ID._unbind_positions, p1, p2, pb, anchor, s, T) == 0
+            @test (@inferred ID._unbind_positions(p1, p2, pb, anchor, 1, s, T)) isa Tuple{Bool,NTuple{length(p1),T},NTuple{length(p1),T}}
+            a, b = f(T, p1, 1, length(p1)), f(T, p2, 2, length(p1))
+            unbind_allocs(ID._unbind, a, b, pb)
+            @test unbind_allocs(ID._unbind, a, b, pb) == 0
+            @test (@inferred ID._unbind(a, b, pb, 0.0, 0.3)) isa Tuple{typeof(a),typeof(a)}
         end
 
-        # B3. every configuration 0.7.2 accepts still constructs; a box that cannot hold the placement
-        # leaves the partners where they are (0.7.2's behaviour) with a warning
+        # B3. every configuration 0.7.2 accepts still constructs. A box that fits the placement along the pair's
+        # axis gets it (the construction's own fit test, not box_size <= 2s); one that cannot leaves the partners
+        # where they are (0.7.2's behaviour) with a warning
         @test DiffusionSMLMConfig(box_size=2 * 0.05, r_react=0.05) isa DiffusionSMLMConfig
         @test DiffusionSMLMConfig(box_size=0.05, r_react=0.05, k_off=0.0) isa DiffusionSMLMConfig
         @test DiffusionSMLMConfig(box_size=0.08, r_react=0.05, boundary="reflecting", ndims=3) isa DiffusionSMLMConfig
         tiny = (r_react = 0.05, pair_mobility = :fixed, box_size = 0.08, boundary = "reflecting")
         a = DiffusingEmitter2D{Float64}(0.03, 0.04, 100.0, 0.0, 1, 1, 1, :monomer, nothing)
         b = DiffusingEmitter2D{Float64}(0.05, 0.04, 100.0, 0.0, 1, 1, 2, :monomer, nothing)
-        r = @test_logs (:warn, r"box_size") ID._unbind(a, b, tiny, 0.3, 0.3)
+        r = @test_logs ID._unbind(a, b, tiny, 0.3, 0.3)
+        @test all(e -> 0 <= e.x <= 0.08 && e.y == 0.04, r) && !ID.can_dimerize(r[1], r[2], 0.05)
+        a = DiffusingEmitter2D{Float64}(0.01, 0.02, 100.0, 0.0, 1, 1, 1, :monomer, nothing)
+        b = DiffusingEmitter2D{Float64}(0.03, 0.02, 100.0, 0.0, 1, 1, 2, :monomer, nothing)
+        r = @test_logs (:warn, r"box_size") ID._unbind(a, b, merge(tiny, (box_size = 0.04,)), 0.3, 0.3)
         @test r == (a, b)
         Random.seed!(62)
         st, _ = simulate(DiffusionSMLMConfig(density=400.0, box_size=0.08, r_react=0.05, d_dimer=0.01, k_off=200.0,
                                              dt=0.001, t_max=0.05, camera_framerate=100.0, camera_exposure=0.01);
                          γ=500.0, camera=cam32)
-        @test all(e -> 0 <= e.x <= 0.08 && 0 <= e.y <= 0.08, st.emitters)
+        # monomers only: a pair formed at the periodic edge is recorded unwrapped for one step (0.7.1's formation,
+        # kept by the #37 rule), which this seed shows once
+        @test all(e -> 0 <= e.x <= 0.08 && 0 <= e.y <= 0.08, filter(e -> e.state == :monomer, st.emitters))
+
+        # Under :fixed a split closer than r_react spreads both partners about their midpoint, moving an immobile
+        # one: one warning per run, naming dissociation. Under :min the immobile partner stays and nothing warns.
+        # One step: the pair splits (k_off dt = 100) and nothing forms
+        pair = [DiffusingEmitter2D{Float64}(0.5, 0.5, 1.0, 0.0, 1, 1, 1, :dimer, 2),
+                DiffusingEmitter2D{Float64}(0.51, 0.5, 1.0, 0.0, 1, 1, 2, :dimer, 1)]
+        for (pm_, n) in ((:fixed, 1), (:min, 0))
+            c = DiffusionSMLMConfig(box_size=1.0, diff_monomer=0.3, r_react=0.05, d_dimer=0.01, k_off=1e4, dt=0.01,
+                                    t_max=0.01, camera_framerate=100.0, camera_exposure=0.01, pair_mobility=pm_)
+            Random.seed!(64)
+            logs, _ = Test.collect_test_logs(() -> simulate(c; γ=1e3, starting_conditions=BasicSMLD(pair, cam32, 1, 1,
+                                                 Dict{String,Any}("monomer_D" => Dict(1 => 0.0))))[1])
+            w = filter(l -> occursin("use pair_mobility = :min", string(l.message)), logs)
+            @test length(w) == n && all(l -> occursin("dissociation", string(l.message)), w)
+        end
     end
 
     @testset "(m) main reviewer of #36" begin
