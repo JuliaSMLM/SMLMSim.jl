@@ -15,12 +15,16 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   On dissociation the partners are placed at least `r_react` apart along the pair axis (the
   minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only
   because `d_dimer < r_react`. Under `pair_mobility = :min` an immobile partner stays put and the other
-  is placed from it, mirrored across it on each axis it would leave a reflecting box; otherwise,
-  including every pair under `:fixed`, both move apart about their midpoint, shifted inward just enough
-  to fit a reflecting box or wrapped under periodic boundaries. When that cannot fit along the pair's
-  axis (a box of about `2·r_react` or less), the partners stay where they are, with a warning. A bound
-  pair is `d_dimer` apart to within rounding (unless the box is smaller than `d_dimer`), so with
-  `d_dimer` above `r_react` by more than that rounding, positions are unchanged.
+  is placed from it, mirrored across it on each axis it would leave a reflecting box (if both are
+  immobile, the lower `track_id` stays and the higher one moves); otherwise, including every pair under
+  `:fixed`, both move apart about their midpoint, shifted inward just enough to fit a reflecting box or
+  wrapped under periodic boundaries. When that cannot fit along the pair's axis (a box of about
+  `2·r_react` or less), the partners stay where they are, and `simulate` warns once per run. Partners
+  already `r_react` or more apart (by minimum image, computed in Float64 from their stored coordinates)
+  keep their positions: every pair bound at `d_dimer`, when `d_dimer` exceeds `r_react` by more than
+  rounding and the box is at least `2·d_dimer`. In a smaller box a pair can be closer than `d_dimer` (a
+  reflecting anchored formation that kept its separation, or a periodic bond whose minimum image is
+  shorter), and one closer than `r_react` moves at the split. The rules: docs/src/diffusion/rules.md.
   A mobile partner can still diffuse back within `r_react` in its free step and re-form: that is
   geminate re-encounter in the contact model, not a re-capture bug.
 - `dt::Float64`: physics step (s); also sets the sub-steps per frame (motion blur):
@@ -374,7 +378,7 @@ end
 
 """
     update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
-                  track_D=nothing, moved_immobile=nothing)
+                  track_D=nothing, moved_immobile=nothing, split_unfit=nothing)
 
 Update all emitters based on Smoluchowski diffusion dynamics. Monomers diffuse with
 `track_D[track_id]` when the track has an entry, otherwise with `params.diff_monomer`.
@@ -387,13 +391,17 @@ Update all emitters based on Smoluchowski diffusion dynamics. Monomers diffuse w
 - `moved_immobile::Union{Nothing,Base.RefValue{Bool}}=nothing`: Set to `true` when, under `pair_mobility = :fixed`,
   a formation, a bound step or a dissociation moves a member whose monomer D is 0 (`simulate` warns once per run
   from it)
+- `split_unfit::Union{Nothing,Base.RefValue{Bool}}=nothing`: Set to `true` when a dissociated pair closer than
+  `r_react` cannot be placed `r_react` apart along its axis and stays where it is (`simulate` warns once per run
+  from it)
 
 # Returns
 - `Vector{<:AbstractDiffusingEmitter}`: Updated emitters
 """
 function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64;
                        track_D::Union{Nothing,Dict{Int,Float64}}=nothing,
-                       moved_immobile::Union{Nothing,Base.RefValue{Bool}}=nothing)
+                       moved_immobile::Union{Nothing,Base.RefValue{Bool}}=nothing,
+                       split_unfit::Union{Nothing,Base.RefValue{Bool}}=nothing)
     monomer_D(id) = track_D === nothing ? params.diff_monomer : get(track_D, id, params.diff_monomer)
     # Create new array for updated emitters
     new_emitters = Vector{eltype(emitters)}()
@@ -447,7 +455,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                 # Find partner and create two new monomers
                 m1, m2 = dissociate(e1, emitters)
                 D1, D2 = monomer_D(m1.track_id), monomer_D(m2.track_id)
-                u1, u2 = _unbind(m1, m2, params, D1, D2)
+                u1, u2 = _unbind(m1, m2, params, D1, D2, split_unfit)
                 _note_immobile!(moved_immobile, params, D1, D2, m1, m2, u1, u2)
                 m1, m2 = u1, u2
                 
@@ -776,17 +784,21 @@ function simulate(params::DiffusionSMLMConfig;
     # Set when a step under :fixed moves an immobile member, at formation, while bound or at dissociation (warned
     # after the run)
     moved_immobile = Ref(false)
+    # Set when a dissociated pair closer than r_react cannot be placed r_react apart (warned after the run)
+    split_unfit = Ref(false)
 
     # Simulation loop in integer steps; the first n_sub steps of each frame are recorded
     for f in 1:n_frames, j in 0:steps_per_frame-1
         k = (f - 1) * steps_per_frame + j
         j < n_sub && _record_frame!(camera_emitters, emitters, k * params.dt, f)
         emitters = update_system(emitters, params, params.dt; track_D=isempty(track_D) ? nothing : track_D,
-                                 moved_immobile=moved_immobile)
+                                 moved_immobile=moved_immobile, split_unfit=split_unfit)
     end
 
     # Under :fixed, formation, bound motion and dissociation move immobile members: say so once per run
     moved_immobile[] && @warn "pair_mobility = :fixed moved immobile molecules (monomer D = 0): forming a pair places both partners d_dimer apart about their midpoint, a bound pair moves with diff_dimer and rotates with diff_dimer_rot, and on dissociation a pair closer than r_react is spread r_react apart about its midpoint; use pair_mobility = :min to keep such pairs in place"
+
+    split_unfit[] && @warn "box_size=$(params.box_size) is too small to place dissociated partners r_react=$(params.r_react) apart along their axis; they stayed where they were (0.7.2's behaviour) and may have re-formed at once"
 
     # Convert to SMLD
     smld = create_smld(camera_emitters, camera, params; track_D=track_D, track_class=track_class, γ=γ_val,

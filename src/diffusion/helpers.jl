@@ -373,21 +373,25 @@ function _anchor(params, e1, e2, D1::Real, D2::Real)
     return D1 == 0 && (D2 != 0 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
 end
 
-# New positions of the two members of `_unbind` in the coordinate type T, by the placement rule
-# (dev/outputs/placement-rule.md, #39): `(ok, q1, q2)`, `ok` false when the construction cannot fit.
+# `p` at the minimum image of its offset from `r` under periodic boundaries, in Float64 before any rounding to the
+# coordinate type; `p` itself under reflecting boundaries
+_image(p::NTuple{N,Float64}, r::NTuple{N,Float64}, params) where {N} = params.boundary == "reflecting" ? p :
+    ntuple(k -> p[k] - params.box_size * round((p[k] - r[k]) / params.box_size), Val(N))
+
+# New positions of the two members of `_unbind` in the coordinate type T, by the dissociation rule
+# (docs/src/diffusion/rules.md, Dissociation): `(ok, q1, q2)`, `ok` false when the construction cannot fit.
 # `p1`, `p2` are their coordinates and `s` their separation (`_unbind_spacing`); under periodic
 # boundaries the other member is taken at its minimum image. The anchor's own entry is its position.
 function _unbind_positions(p1::NTuple{N,Float64}, p2::NTuple{N,Float64}, params, anchor, id1, s::Float64,
                            ::Type{T}) where {N,T<:AbstractFloat}
     box, reflecting = params.box_size, params.boundary == "reflecting"
-    near(p, r) = reflecting ? p : ntuple(k -> p[k] - box * round((p[k] - r[k]) / box), Val(N))
     if anchor !== nothing
         a, m = anchor == id1 ? (p1, p2) : (p2, p1)
-        ok, q = _place_from(a, _axis(a, near(m, a)), s, box, reflecting, T)
+        ok, q = _place_from(a, _axis(a, _image(m, a, params)), s, box, reflecting, T)
         at = ntuple(k -> T(a[k]), Val(N))
         return anchor == id1 ? (ok, at, q) : (ok, q, at)
     end
-    p2 = near(p2, p1)
+    p2 = _image(p2, p1, params)
     u, c = _axis(p1, p2), (p1 .+ p2) ./ 2
     reflecting && return _place_centered(c, u, s, box, T)
     ok = all(ntuple(k -> s * abs(u[k]) <= box / 2, Val(N)))
@@ -400,37 +404,38 @@ end
 
 Place two freshly dissociated monomers at least `params.r_react` apart along their pair axis (the
 minimum-image distance under periodic boundaries), so that the formation check (`can_dimerize`) cannot
-re-capture them at the next step only because `d_dimer < r_react`. Partners already `r_react` or more
-apart are returned unchanged. Under `pair_mobility = :min` an immobile member (both immobile: the lower
-`track_id`, see `_anchor`) keeps its position and the other is placed from it (mirrored across it on each
-axis it would leave a reflecting box); otherwise, including every pair under `:fixed`, both move apart
-about their midpoint, shifted inward just far enough that both are inside a reflecting box, or wrapped
-under periodic boundaries. Every placed coordinate is inside the box in the coordinate type, and the
-separation carries a margin in that precision (`_unbind_spacing`), so Float32 partners are also beyond
-`r_react` after conversion. When that placement cannot fit along the pair's axis (see
-dev/outputs/placement-rule.md), the partners are left where `dissociate` put them (0.7.2's behaviour),
-with a one-time warning. Draws no random numbers and changes positions only.
+re-capture them at the next step only because `d_dimer < r_react`. The distance is computed in Float64
+from the stored coordinates, the minimum image taken before any rounding to the coordinate type; partners
+`r_react` or more apart by it are returned unchanged. Under `pair_mobility = :min` an immobile member (both
+immobile: the lower `track_id`, see `_anchor`) keeps its position and the other is placed from it
+(mirrored across it on each axis it would leave a reflecting box); otherwise, including every pair under
+`:fixed`, both move apart about their midpoint, shifted inward just far enough that both are inside a
+reflecting box, or wrapped under periodic boundaries. Every placed coordinate is inside the box in the
+coordinate type, and the separation carries a margin in that precision (`_unbind_spacing`), so Float32
+partners are also beyond `r_react` after conversion. When that placement cannot fit along the pair's axis
+(docs/src/diffusion/rules.md, Dissociation), the partners are left where `dissociate` put them (0.7.2's
+behaviour) and `unfit[]` is set, from which `simulate` warns once per run. Draws no random numbers and
+changes positions only.
 
 # Arguments
 - `m1, m2`: The monomers returned by `dissociate`
 - `params`: Simulation parameters (`r_react`, `pair_mobility`, `box_size`, `boundary`)
 - `D1, D2::Float64`: Monomer diffusion coefficients of `m1` and `m2`
+- `unfit::Union{Nothing,Base.RefValue{Bool}}=nothing`: Set to `true` when the placement cannot fit
 
 # Returns
 - `Tuple`: The two monomers, moved apart if they were closer than `r_react`
 """
-function _unbind(m1::E, m2::E, params, D1::Real, D2::Real) where {E<:AbstractDiffusingEmitter}
-    distance(m1, _near(m2, m1, params)) >= params.r_react && return (m1, m2)
+function _unbind(m1::E, m2::E, params, D1::Real, D2::Real,
+                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing) where {E<:AbstractDiffusingEmitter}
+    p1, p2 = _pos(m1), _pos(m2)
+    distance(p1, _image(p2, p1, params)) >= params.r_react && return (m1, m2)
     T = typeof(m1.x)
-    anchor = _anchor(params, m1, m2, D1, D2)
-    ok, q1, q2 = _unbind_positions(_pos(m1), _pos(m2), params, anchor, m1.track_id, _unbind_spacing(params, T), T)
-    if !ok
-        @warn "box_size=$(params.box_size) is too small to place dissociated partners r_react=$(params.r_react) apart along their axis; they stay where they are (0.7.2's behaviour) and may re-form at once" maxlog=1
-        return (m1, m2)
-    end
-    anchor == m1.track_id && return (m1, _at(m2, q2))
-    anchor == m2.track_id && return (_at(m1, q1), m2)
-    return (_at(m1, q1), _at(m2, q2))
+    ok, q1, q2 = _unbind_positions(p1, p2, params, _anchor(params, m1, m2, D1, D2), m1.track_id,
+                                   _unbind_spacing(params, T), T)
+    ok && return (_at(m1, q1), _at(m2, q2))
+    unfit === nothing || (unfit[] = true)
+    return (m1, m2)
 end
 
 # Diffusion functions
@@ -640,7 +645,8 @@ function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, dif
     return (d1, d2)
 end
 
-# Rigid-pair placement (dev/outputs/placement-rule.md), shared by pair formation and bound motion.
+# Rigid-pair placement (docs/src/diffusion/rules.md, A bound pair and the box), shared by pair formation and
+# bound motion.
 # Positions are computed in Float64 from the partners' coordinates and returned in the coordinate
 # type T, inside [0, _top(T, box)] on every axis. Internal.
 
