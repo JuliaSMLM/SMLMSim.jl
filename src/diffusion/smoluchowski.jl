@@ -490,8 +490,10 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                         d2 = restamp(e2; timestamp=e2.timestamp + dt)
                     else
                         # Apply dimer diffusion to the bond (the partner's minimum image under periodic
-                        # boundaries), then the boundary to the pair as a rigid body
-                        d1, d2 = diffuse_dimer(e1, _near(e2, e1, params), D_pair, rot, params.d_dimer, dt)
+                        # boundaries), oriented along the Float64 minimum-image displacement, never the rounded
+                        # image; then the boundary to the pair as a rigid body
+                        v = _dispv(_pos(e1), _pos(e2), _period(params))
+                        d1, d2 = _diffuse_dimer(e1, _near(e2, e1, params), D_pair, rot, params.d_dimer, dt, v)
                         d1, d2 = _move_pair(d1, d2, params)
                         _note_immobile!(moved_immobile, params, D1, D2, e1, e2, d1, d2)
                     end

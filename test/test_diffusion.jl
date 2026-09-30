@@ -1390,41 +1390,71 @@ end
             @test ID._coords(out[1]) == ID._coords(f(T, (0.5 - 0.015, 0.5, 0.5), 1, nd)) &&
                   ID._coords(out[2]) == ID._coords(f(T, (0.5 + 0.015, 0.5, 0.5), 2, nd))
         end
-        # A nonzero displacement, however small, keeps its own direction: along each axis, displacements from 1e-3
-        # down to the smallest subnormal (Float32 to 1e-45, Float64 to 1e-300), across the periodic edge (1.0 to
-        # δ, which includes 3D Float32 z 1.0 and 1e-22 or 1e-23) or from 0 (periodic and reflecting); both orders,
-        # :fixed and :min, mobile or with track 1 immobile. Each pair forms inside the unit box, d_dimer apart by
-        # minimum image, along that axis with the displacement's sign (mirrored across a reflecting anchor at δ,
-        # whose partner would leave the box)
+        # docs/src/diffusion/rules.md, Orientation: whatever the displacement, the positions are finite and inside
+        # the box and the bond is d_dimer by minimum image; its direction is exact whenever the displacement is
+        # normal in the coordinate type. Displacements from 1e-3 down to the smallest subnormal (Float32 to 1e-45,
+        # Float64 to 1e-300 and nextfloat(0.0)), along one axis or all of them (the diagonal), across the periodic
+        # edge (1.0 to δ, which includes 3D Float32 z 1.0 and 1e-22 or 1e-23) or from 0 (periodic and reflecting),
+        # both orders. The direction: along those axes with the displacement's sign
         bvec(a, b, bnd) = ntuple(i -> Float64(argmin(abs, big(cs(b)[i]) - big(cs(a)[i]) + j
                                                      for j in (bnd == "periodic" ? (-1, 0, 1) : (0,)))), length(cs(a)))
+        tinies(T) = [T == Float32 ? 10.0 .^ -(3:45) : 10.0 .^ -[3:45; 50:10:300]; nextfloat(zero(T))]
+        starts = ((1.0, "periodic"), (0.0, "periodic"), (0.0, "reflecting"))
+        function tiny_check!(fails, tg, out, bnd, nd, axes, sgn, T, δ)
+            o1, o2 = out[findfirst(e -> e.track_id == 1, out)], out[findfirst(e -> e.track_id == 2, out)]
+            all(e -> e.state == :dimer && all(isfinite, ID._coords(e)) && inbox(e, 1.0), out) ||
+                return push!(fails, "$tg: not a finite pair inside the box")
+            tol, b = 4 * sqrt(nd) * eps(T), bvec(o1, o2, bnd)
+            abs(d64(o1, o2, 1.0, bnd) - 0.03) <= tol || push!(fails, "$tg: bond $(d64(o1, o2, 1.0, bnd))")
+            T(δ) >= floatmin(T) || return
+            c = sgn * 0.03 / sqrt(length(axes))
+            all(i -> abs(b[i] - (i in axes ? c : 0.0)) <= tol, 1:nd) || push!(fails, "$tg: bond vector $b")
+        end
+        # formation: :fixed and :min, mobile or with track 1 immobile (the direction mirrored across a reflecting
+        # anchor at δ, whose partner would leave the box)
         fails, n_tiny = String[], 0
-        for T in (Float32, Float64), nd in (2, 3), k in 1:nd,
-            δ in [T == Float32 ? 10.0 .^ -(3:45) : 10.0 .^ -[3:45; 50:10:300]; nextfloat(zero(T))],
-            (lo, bnd) in ((1.0, "periodic"), (0.0, "periodic"), (0.0, "reflecting")),
+        for T in (Float32, Float64), nd in (2, 3), k in [1:nd; 0], δ in tinies(T), (lo, bnd) in starts,
             rev in (false, true), pm_ in (:fixed, :min), D1 in (0.0, 0.3)
             prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=0.05, d_dimer=0.03, diff_monomer=0.3,
                                       ndims=nd, pair_mobility=pm_)
-            ps = ntuple(i -> ntuple(j -> j == k ? (i == 1 ? lo : δ) : 0.5, nd), 2)
+            axes = k == 0 ? (1:nd) : (k:k)
+            ps = ntuple(i -> ntuple(j -> j in axes ? (i == 1 ? lo : δ) : 0.5, nd), 2)
             p1, p2 = rev ? reverse(ps) : ps
-            tg = "$T $(nd)D axis $k δ=$δ from $lo $bnd rev=$rev $pm_ D1=$D1"
+            tg = "formation $T $(nd)D axes $axes δ=$δ from $lo $bnd rev=$rev $pm_ D1=$D1"
             n_tiny += 1
             out = try
                 ID.update_system([f(T, p1, 1, nd), f(T, p2, 2, nd)], prm, 0.001; track_D=Dict(1 => D1))
             catch err
                 push!(fails, "$tg: $(typeof(err))"); continue
             end
-            o1, o2 = out[findfirst(e -> e.track_id == 1, out)], out[findfirst(e -> e.track_id == 2, out)]
-            if !all(e -> e.state == :dimer && all(isfinite, ID._coords(e)) && inbox(e, 1.0), out)
-                push!(fails, "$tg: not a dimer inside the box"); continue
-            end
-            tol, b = 4 * sqrt(nd) * eps(T), bvec(o1, o2, bnd)
             sgn = rev && !(bnd == "reflecting" && pm_ == :min && D1 == 0.0) ? -1 : 1
-            abs(d64(o1, o2, 1.0, bnd) - 0.03) <= tol || push!(fails, "$tg: bond $(d64(o1, o2, 1.0, bnd))")
-            all(i -> abs(b[i] - (i == k ? sgn * 0.03 : 0.0)) <= tol, 1:nd) ||
-                push!(fails, "$tg: bond vector $b")
+            tiny_check!(fails, tg, out, bnd, nd, axes, sgn, T, δ)
         end
-        @test n_tiny == 5 * 3 * 8 * (44 + 70)
+        @test n_tiny == 7 * 3 * 8 * (44 + 70)
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 10))
+        # the bound step, with translation, rotation and dissociation off: the pair keeps its orientation from the
+        # partners' displacement, never the partner's rounded image (Float32 (1, .5, .5) and (1e-23, .5, .5) in a
+        # periodic unit box are bound along x)
+        dm(T, p, id, pid, nd) = nd == 2 ? DiffusingEmitter2D{T}(p[1], p[2], 100.0, 0.0, 1, 1, id, :dimer, pid) :
+                                          DiffusingEmitter3D{T}(p[1], p[2], p[3], 100.0, 0.0, 1, 1, id, :dimer, pid)
+        fails, n_tiny = String[], 0
+        for T in (Float32, Float64), nd in (2, 3), k in [1:nd; 0], δ in tinies(T), (lo, bnd) in starts, rev in (false, true)
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=0.05, d_dimer=0.03, ndims=nd, k_off=0.0,
+                                      diff_dimer=0.0, diff_dimer_rot=0.0)
+            axes = k == 0 ? (1:nd) : (k:k)
+            ps = ntuple(i -> ntuple(j -> j in axes ? (i == 1 ? lo : δ) : 0.5, nd), 2)
+            p1, p2 = rev ? reverse(ps) : ps
+            tg = "bound $T $(nd)D axes $axes δ=$δ from $lo $bnd rev=$rev"
+            n_tiny += 1
+            out = try
+                ID.update_system([dm(T, p1, 1, 2, nd), dm(T, p2, 2, 1, nd)], prm, 0.001)
+            catch err
+                push!(fails, "$tg: $(typeof(err))"); continue
+            end
+            tiny_check!(fails, tg, out, bnd, nd, axes, rev ? -1 : 1, T, δ)
+        end
+        @test n_tiny == 7 * 3 * 2 * (44 + 70)
         @test isempty(fails)
         isempty(fails) || foreach(println, first(fails, 10))
         # docs/src/diffusion/rules.md, Orientation: a bound 3D pair closer than 1e-19, coincident included, steps to

@@ -83,18 +83,22 @@ function coordinates(e::DiffusingEmitter3D{T}) where T <: AbstractFloat
     (e.x, e.y, e.z)
 end
 
+# The angles of the Float64 displacement `v`: ϕ = atan(v2, v1), and in 3D θ = atan(hypot(v1, v2), v3), so nothing
+# is squared and a tiny nonzero displacement keeps its direction (docs/src/diffusion/rules.md, Orientation); +x
+# when `v` is exactly zero, so coincident partners get a fixed orientation and no NaN
+_angles(v::NTuple{2,Float64}) = all(iszero, v) ? 0.0 : atan(v[2], v[1])
+_angles(v::NTuple{3,Float64}) = all(iszero, v) ? (0.0, π / 2) : (atan(v[2], v[1]), atan(hypot(v[1], v[2]), v[3]))
+
 # Half the bond along the Float64 displacement `v`: (r cos ϕ, r sin ϕ), or (r sin θ cos ϕ, r sin θ sin ϕ, r cos θ),
-# with ϕ = atan(v2, v1) and θ = atan(hypot(v1, v2), v3), so nothing is squared and a tiny nonzero displacement
-# keeps its direction (docs/src/diffusion/rules.md, Orientation); along +x only when `v` is exactly zero, so
-# coincident partners get a fixed orientation, no random draw and no NaN
+# with the angles of `v`; exactly (r, 0, ...) when `v` is zero, with no random draw
 function _half_bond(v::NTuple{2,Float64}, r::Float64)
     all(iszero, v) && return (r, 0.0)
-    ϕ = atan(v[2], v[1])
+    ϕ = _angles(v)
     return (r * cos(ϕ), r * sin(ϕ))
 end
 function _half_bond(v::NTuple{3,Float64}, r::Float64)
     all(iszero, v) && return (r, 0.0, 0.0)
-    ϕ, θ = atan(v[2], v[1]), atan(hypot(v[1], v[2]), v[3])
+    ϕ, θ = _angles(v)
     return (r * sin(θ) * cos(ϕ), r * sin(θ) * sin(ϕ), r * cos(θ))
 end
 
@@ -572,6 +576,13 @@ Diffuse a dimer with both translational and rotational components.
 - `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters with updated positions
 """
 function diffuse_dimer(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, diff_trans::Float64, diff_rot::Float64, d_dimer::Float64, dt::Float64) where T <: AbstractFloat
+    return _diffuse_dimer(e1, e2, diff_trans, diff_rot, d_dimer, dt, _dispv(_pos(e1), _pos(e2), nothing))
+end
+
+# `diffuse_dimer` with the bond's current orientation read from the Float64 displacement `v` from `e1` to `e2`
+# (positional, as `_dimerize`). Internal.
+function _diffuse_dimer(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, diff_trans::Float64, diff_rot::Float64,
+                        d_dimer::Float64, dt::Float64, v::NTuple{2,Float64}) where T <: AbstractFloat
     # Translational diffusion
     σ_trans = sqrt(2 * diff_trans * dt)
     dx = rand(Normal(0, σ_trans))
@@ -587,7 +598,7 @@ function diffuse_dimer(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, dif
     
     # Rotational diffusion
     σ_rot = sqrt(2 * diff_rot * dt)
-    ϕ = angle(e1, e2)
+    ϕ = _angles(v)
     ϕ += rand(Normal(0, σ_rot))
     
     # Calculate new positions
@@ -638,6 +649,13 @@ Diffuse a 3D dimer with both translational and rotational components.
 - `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters with updated positions
 """
 function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, diff_trans::Float64, diff_rot::Float64, d_dimer::Float64, dt::Float64) where T <: AbstractFloat
+    return _diffuse_dimer(e1, e2, diff_trans, diff_rot, d_dimer, dt, _dispv(_pos(e1), _pos(e2), nothing))
+end
+
+# `diffuse_dimer` with the bond's current orientation read from the Float64 displacement `v` from `e1` to `e2`
+# (positional, as `_dimerize`). Internal.
+function _diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, diff_trans::Float64, diff_rot::Float64,
+                        d_dimer::Float64, dt::Float64, v::NTuple{3,Float64}) where T <: AbstractFloat
     # Translational diffusion
     σ_trans = sqrt(2 * diff_trans * dt)
     dx = rand(Normal(0, σ_trans))
@@ -656,7 +674,7 @@ function diffuse_dimer(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, dif
     
     # Rotational diffusion
     σ_rot = sqrt(2 * diff_rot * dt)
-    ϕ, θ = angle(e1, e2)
+    ϕ, θ = _angles(v)
     
     # Apply random rotation (simplified model)
     ϕ += rand(Normal(0, σ_rot))
@@ -729,8 +747,8 @@ function _fold(x::Float64, lo::Float64, hi::Float64)
     return lo + (y <= w ? y : 2w - y)
 end
 
-# Unit vector from p to q; (1, 0, ...) when they coincide
-_axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N} = _dir(q .- p)
+# Unit vector from p to q (their plain difference, through _disp); (1, 0, ...) when they coincide
+_axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N} = _dir(_dispv(p, q, nothing))
 
 # Unit vector along the displacement v; (1, 0, ...) only when it is exactly zero. One too small to square
 # without underflow is first scaled by its largest component, so it keeps its direction

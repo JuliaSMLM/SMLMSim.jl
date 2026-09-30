@@ -18,12 +18,12 @@ periodic edge form a pair as anywhere else (0.7.1 measured the plain difference,
 Dissociation measures the same distance, so a pair it leaves in place is not within formation distance, unless its
 placement cannot fit (Dissociation, below).
 
-**Orientation.** A pair that forms or splits is oriented along this displacement, in Float64 (the per-axis
-differences above, never a translated position rounded to the coordinate type, and never through a squared length
-that can underflow), so a nonzero displacement, however small, gives its own direction. Only partners at exactly the
-same position (a zero displacement) are oriented along +x, with no random draw. A bound pair's rotation step reads
-its current orientation by angles alone (`atan`, nothing squared), so a bound pair however close, coincident
-included, steps to finite positions.
+**Orientation.** A pair that forms, splits or takes a bound step is oriented along this displacement, in Float64
+(the per-axis differences above, never a translated position rounded to the coordinate type), by angles alone
+(`atan`, nothing squared). Always, whatever the displacement, the positions are finite and inside `[0, box_size]`,
+and the bond is `d_dimer` by minimum image. The bond direction is exact whenever the displacement's components are
+normal numbers of the coordinate type; for a subnormal displacement any finite unit direction is acceptable. A zero
+displacement (partners at exactly the same position) is taken as +x, with no random draw of its own.
 
 ### A bound pair and the box
 
