@@ -40,7 +40,6 @@ end
     ps.sph[i] = 0.0; ps.t_present[i] = 0.0; ps.t_lit[i] = 0.0; ps.sI[i] = 0.0
     ps.t_bleach_f[i] = NaN
     ps.t_bound[i] = 0.0; ps.t_break_f[i] = NaN; ps.t_litb[i] = 0.0
-    ps.partner_f[i] = ps.partner[i] != 0 ? ps.partner_id[i] : 0
     return nothing
 end
 
@@ -88,7 +87,7 @@ function _add_emitter!(w::SimWorld, ps::PopState, t_birth::Float64)
     ps.t_birth[i] = t_birth
     ps.lj[i] = p.brightness_jitter > 0 ? p.brightness_jitter * randn(rng) : 0.0
     ps.partner[i] = 0; ps.partner_pop[i] = 0; ps.partner_id[i] = 0
-    ps.θ[i] = 0.0; ps.t_form[i] = -Inf; ps.t_break_due[i] = -Inf; ps.vis_form[i] = false
+    ps.θ[i] = 0.0; ps.t_form[i] = -Inf; ps.t_break_due[i] = -Inf; ps.vis_form[i] = false; ps.partner_f[i] = 0
     _reset_acc!(ps, i)
     return i
 end

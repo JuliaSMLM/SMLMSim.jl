@@ -61,13 +61,18 @@ end
 # Minimum-image separation of one coordinate under :periodic
 @inline _sep(d::Float64, L::Float64, periodic::Bool) = periodic ? d - L * round(d / L) : d
 
-# Flag both rows of every pair of :signal rows within merge_radius that are not partners
+# Rows `r` and `o` were a pair in this exposure: partners at its end, or bound during it with `o` as r's last
+# partner (`vpr`, its vis_partner entry), so a pair that broke in the exposure is not an overlap
+@inline _paired(r::FrameTruth, vpr::Int, o::FrameTruth) = r.partner == o.id || (vpr == o.id && r.bound > 0)
+
+# Flag both rows of every pair of :signal rows within merge_radius that were not a pair in this exposure
 function _mark_overlaps!(w::SimWorld)
     n = w.n_truth
     length(w.overlap_scratch) < n && resize!(w.overlap_scratch, length(w.truth))
     flags = w.overlap_scratch
     fill!(flags, false)
     rows = w.truth
+    vp = w.vis_partner
     periodic = w.boundary === :periodic
     Lx = w.box[2] - w.box[1]
     Ly = w.box[4] - w.box[3]
@@ -78,7 +83,7 @@ function _mark_overlaps!(w::SimWorld)
         for b in a+1:n
             rb = rows[b]
             w.pops[rb.pop].p.layer === :signal || continue
-            (ra.partner == rb.id || rb.partner == ra.id) && continue
+            (_paired(ra, vp[a], rb) || _paired(rb, vp[b], ra)) && continue
             dx = _sep(ra.x - rb.x, Lx, periodic)
             dy = _sep(ra.y - rb.y, Ly, periodic)
             if dx * dx + dy * dy <= r2

@@ -381,7 +381,7 @@ mutable struct PopState
     t_bound::Vector{Float64}; t_break_f::Vector{Float64}    # frame accumulators
     t_litb::Vector{Float64}                           # frame accumulator: time bound and emitting
     vis_form::Vector{Bool}                            # both members emitting at the start of the forming sub-step
-    partner_f::Vector{Int}                            # frame: id of the last partner bound in the exposure (vis pass)
+    partner_f::Vector{Int}                            # id of the last partner (set at formation, 0 from birth; vis pass)
     t_next_birth::Float64
 end
 
@@ -404,8 +404,9 @@ separate call on the caller's own RNG.
 - `dimers`: `nothing` or a [`DimerKinetics`](@ref): emitters of `binds = true` populations pair within and across
   populations. Every binding population needs `multiplicity <= 1`, and every box side must exceed
   `2 max(r_react, d_dimer)`, else `ArgumentError`.
-- `merge_radius`: μm; when > 0, truth rows of `:signal` emitters closer than this that are not partners
-  get `overlap = true`.
+- `merge_radius`: μm; when > 0, truth rows of `:signal` emitters closer than this get `overlap = true`,
+  unless the two were a pair in this exposure (partners at its end, or bound during it, as for a pair that
+  broke in it).
 
 Pixels must be uniform and square. Initial emitters are the steady ensemble only for
 `multiplicity = 1`, `budget = Inf` and excitation 1; otherwise start the first exposure at
@@ -436,7 +437,7 @@ mutable struct SimWorld{R<:AbstractRNG,C<:AbstractCamera}
     n_truth::Int
     merge_radius::Float64
     overlap_scratch::Vector{Bool}
-    vis_partner::Vector{Int}              # per truth row: the emitter's last partner in the exposure (vis pass)
+    vis_partner::Vector{Int}              # per truth row: the emitter's last partner, read when bound in the exposure
     t_a::Float64                          # the recorded exposure
     t_b::Float64
     dimers::Union{Nothing,DimerKinetics}

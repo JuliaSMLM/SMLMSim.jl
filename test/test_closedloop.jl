@@ -796,4 +796,37 @@ end
     f = frame!(w, 3)
     @test isapprox(f[ib].lit_bound, 1; atol=1e-12) && f[ia].vis_bound && f[ib].vis_bound
     @test !f[ia].vis_form && !f[ib].vis_form
+    # (x) the breakup frame of (viii) with merge_radius 0.25: a pair bound during the exposure is not an overlap
+    # although it split in it; unbound through frame 3, the same two rows are
+    w = vis_world([1.6, 1.63], [1.6, 1.6]; merge_radius=0.25)
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    frame!(w, 1)
+    w.pops[1].t_break_due[1] = 0.0137; w.pops[2].t_break_due[1] = 0.0137
+    f = frame!(w, 2)
+    for r in (f[ia], f[ib])
+        @test r.partner == 0 && r.vis_bound && !r.overlap
+    end
+    f = frame!(w, 3)
+    for r in (f[ia], f[ib])
+        @test r.bound == 0 && r.overlap
+    end
+    # (xi) formed at 0 and broken inside frame 1 (k_off 1000/s): a visible pair in frame 1, partner 0 at its end
+    w = vis_world([1.6, 1.63], [1.6, 1.6]; dkin=DimerKinetics(k_on=Inf, r_react=0.05, k_off=1000.0, D_rot=0.0, d_dimer=0.02))
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    f = frame!(w, 1)
+    for r in (f[ia], f[ib])
+        @test r.t_form == 0.0 && 0 < r.t_break < T && r.partner == 0
+        @test r.vis_form && r.vis_bound && isapprox(r.bound, r.t_break / T; atol=1e-12)
+    end
+    # (xii) a break due exactly at the start of frame 2: no bound time in frame 2, so not a visible pair there, and
+    # with merge_radius 0.25 the two rows overlap
+    w = vis_world([1.6, 1.63], [1.6, 1.6]; merge_radius=0.25)
+    ia, ib = w.pops[1].id[1], w.pops[2].id[1]
+    f = frame!(w, 1)
+    @test f[ia].vis_bound && f[ib].vis_bound && !f[ia].overlap
+    w.pops[1].t_break_due[1] = T; w.pops[2].t_break_due[1] = T
+    f = frame!(w, 2)
+    for r in (f[ia], f[ib])
+        @test r.bound == 0 && r.lit_bound == 0 && !r.vis_bound && r.overlap
+    end
 end
