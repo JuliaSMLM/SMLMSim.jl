@@ -405,8 +405,9 @@ separate call on the caller's own RNG.
   populations. Every binding population needs `multiplicity <= 1`, and every box side must exceed
   `2 max(r_react, d_dimer)`, else `ArgumentError`.
 - `merge_radius`: μm; when > 0, truth rows of `:signal` emitters closer than this get `overlap = true`,
-  unless the two were a pair in this exposure (partners at its end, or bound during it, as for a pair that
-  broke in it).
+  unless one is the other's partner at the end of this exposure, or its last partner in this exposure (as for
+  a pair that broke in it; two partners that broke and each paired again with another in the same exposure can
+  still be marked).
 
 Pixels must be uniform and square. Initial emitters are the steady ensemble only for
 `multiplicity = 1`, `budget = Inf` and excitation 1; otherwise start the first exposure at
