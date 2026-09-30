@@ -11,7 +11,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `diff_dimer_rot::Float64`: dimer rotational diffusion coefficient (rad²/s)
 - `k_off::Float64`: dimer dissociation rate (s⁻¹)
 - `r_react::Float64`: reaction radius (μm): two monomers closer than this form a pair, by their distance in
-  Float64 from the stored coordinates, without the minimum image under periodic boundaries (as in 0.7.1)
+  Float64 from the stored coordinates, to the minimum image under periodic boundaries (0.7.1 took the plain
+  difference, so no pair formed across a periodic edge)
 - `d_dimer::Float64`: monomer separation in dimer (μm)
   On dissociation the partners are placed at least `r_react` apart along the pair axis (the
   minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only
@@ -64,7 +65,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   often as it crosses them, so both partners stay inside at `d_dimer` apart (when `box_size < d_dimer`
   each partner is reflected on its own, as in 0.7.1). Under periodic boundaries, the default, a bound
   pair moves from its partner's minimum image, so a pair straddling the boundary moves by one step, and a
-  pair formed at the boundary has each partner wrapped into the box on the formation step.
+  pair forms from its partner's minimum image too (across the edge as anywhere else), with each partner
+  wrapped into the box on the formation step.
   Under `:fixed` forming a pair places both partners `d_dimer` apart about their midpoint and a bound
   pair moves and rotates, even when a member is immobile (monomer D = 0), and on dissociation a pair
   closer than `r_react` is spread about its midpoint; `simulate` warns once per run when a step moves an
@@ -422,12 +424,12 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                 e2.track_id in processed && continue
                 e2.state == :monomer || continue
                 
-                if can_dimerize(e1, e2, params.r_react)
+                if can_dimerize(e1, e2, params.r_react, _period(params))
                     # Create new dimer pair
                     D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
                     # Under :min an immobile partner keeps its position (both immobile: the lower track_id)
                     anchor = _anchor(params, e1, e2, D1, D2)
-                    d1, d2 = dimerize(e1, e2, params.d_dimer; anchor=anchor)
+                    d1, d2 = dimerize(e1, _near(e2, e1, params), params.d_dimer; anchor=anchor)
                     # The placement rule: an anchored partner is placed d_dimer from the anchor, a mobile
                     # pair in a reflecting box is kept whole inside it
                     d1, d2 = _place_pair(d1, d2, e1, e2, anchor, params)

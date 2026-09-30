@@ -703,8 +703,13 @@ end
         # exactly, the x/y sums at rtol 1e-4, and the default path exactly against pair_mobility = :fixed in one run.
         # #39's periodic formation wrap then moved each x sum by +2.0, one box (only formation records change, each
         # by whole boxes), counts and y sums unchanged: 8320.62946819797 and 8204.434380304117 before it.
-        GOLD_MIXED = (8000, 8322.62946819797, 8056.226513683971, 4000.0, 4368)
-        GOLD_DEFAULT = (8000, 8206.434380304117, 8291.7469648201, 4000.0, 5408)
+        # #39's cross-edge formation (formation measures the partner's minimum image, so monomers within r_react
+        # across the edge form a pair) then changed both runs from the first such pair on, records and photons
+        # unchanged: before it (8322.62946819797, 8056.226513683971, 4368) mixed and (8206.434380304117,
+        # 8291.7469648201, 5408) default. Over 40 seeds the default's mean dimer records are unchanged (5268.5 before,
+        # 5270.0 after, sd 210): the drop in this seed's counts is its divergence, not a bias.
+        GOLD_MIXED = (8000, 8385.313194760132, 8175.549707151786, 4000.0, 4112)
+        GOLD_DEFAULT = (8000, 8274.516046954606, 8176.357746324857, 4000.0, 4940)
         matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
                              isapprox(r[2], g[2]; rtol=1e-4) && isapprox(r[3], g[3]; rtol=1e-4)
         mob = [(0.5, 0.2), (0.5, 0.0)]
@@ -1186,7 +1191,7 @@ end
                 continue
             end
             n_tried += 1
-            (d64(m1, m2, L, bnd) < 0.05 || ID.can_dimerize(m1, ID._near(m2, m1, prm), 0.05)) && (n_close += 1)
+            (d64(m1, m2, L, bnd) < 0.05 || ID.can_dimerize(m1, m2, 0.05, ID._period(prm))) && (n_close += 1)
             (inbox(m1, L) && inbox(m2, L)) || (n_out += 1)
             # the rule's anchor: under :min the immobile member; both immobile, the lower track_id
             if pm_ == :min && (D1 == 0 || D2 == 0)
@@ -1270,7 +1275,7 @@ end
             D1, D2 = rand(((0.0, 0.3), (0.3, 0.0), (0.0, 0.0), (0.3, 0.3)))
             m1, m2 = ID._unbind(a, b, prm, D1, D2)
             m1 === a && m2 === b ? (n_kept += 1) : (n_moved += 1)
-            ID.can_dimerize(m1, m2, 0.05) && (n_recap += 1)
+            ID.can_dimerize(m1, m2, 0.05, ID._period(prm)) && (n_recap += 1)
         end
         @test n_kept > 1000 && n_moved > 1000 && n_recap == 0
         # Float32 partners at 99.88 and 99.89 in a 99.9 reflecting box, and pairs across the periodic boundary
@@ -1344,6 +1349,20 @@ end
             out = ID.update_system([a, b], prm, 0.001)
             @test all(e -> e.state == :dimer && inbox(e, 1.0), out)
             @test isapprox(ID.distance(out[1], ID._near(out[2], out[1], prm)), 0.03; atol=1e-6)
+        end
+        # docs/src/diffusion/rules.md, Distance: monomers within r_react across the periodic edge form a pair (0.7.1
+        # measured the plain difference and never formed one), placed from the minimum image: a mobile pair
+        # d_dimer apart about the edge, an anchored pair (:min, track 1 immobile) keeping the anchor; 2D and 3D,
+        # Float32 and Float64, both partner orders
+        for nd in (2, 3), T in (Float32, Float64), (x1, x2) in ((0.99, 0.01), (0.01, 0.99)), pm_ in (:fixed, :min)
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary="periodic", r_react=0.05, d_dimer=0.03, diff_monomer=0.3,
+                                      ndims=nd, pair_mobility=pm_)
+            a, b = f(T, (x1, 0.5, 0.5), 1, nd), f(T, (x2, 0.5, 0.5), 2, nd)
+            out = ID.update_system([a, b], prm, 0.001; track_D=Dict(1 => 0.0))
+            o1, o2 = out[findfirst(e -> e.track_id == 1, out)], out[findfirst(e -> e.track_id == 2, out)]
+            @test all(e -> e.state == :dimer && inbox(e, 1.0), out)
+            @test isapprox(d64(o1, o2, 1.0, "periodic"), 0.03; atol=1e-6)
+            @test pm_ == :min ? ID._coords(o1) == ID._coords(a) : all(e -> min(e.x, 1 - e.x) < 0.02, out)
         end
 
         # Under :fixed a split closer than r_react spreads both partners about their midpoint, moving an immobile
@@ -1629,7 +1648,8 @@ end
                 pos(A) == Float64.(a) || push!(fails, "$tg: anchor moved")
                 q = pos(B)
                 inside(q, T, L) || push!(fails, "$tg: outside $q")
-                u = unit(Float64.(b) .- Float64.(a))
+                # the axis to the partner's minimum image under periodic boundaries
+                u = unit(refl ? Float64.(b) .- Float64.(a) : mi.(Float64.(b) .- Float64.(a), L))
                 # the fit is decided against the physical box [0, L]
                 fits = refl ? all(k -> 0 <= a[k] + d * u[k] <= L || 0 <= a[k] - d * u[k] <= L, 1:N) :
                               all(k -> d * abs(u[k]) <= L / 2, 1:N)
@@ -1648,10 +1668,13 @@ end
                 es = [mk(T, a, 1, :monomer, nothing), mk(T, b, 2, :monomer, nothing)]
                 out = ID.update_system(es, prm, 0.001; track_D=Dict(1 => 0.3, 2 => 0.3))
                 p1, p2 = pos(out[1]), pos(out[2])
-                ref1, ref2 = ID.dimerize(es[1], es[2], d)
+                # 0.7.1's placement, from the partner's minimum image under periodic boundaries
+                img = refl ? es[2] : mk(T, ntuple(k -> T(b[k] - L * round((Float64(b[k]) - a[k]) / L)), N), 2, :monomer,
+                                        nothing)
+                ref1, ref2 = ID.dimerize(es[1], img, d)
                 if !refl
-                    # 0.7.1's placement with each end wrapped into the box (#39): unchanged when inside, else
-                    # one periodic image of it
+                    # that placement with each end wrapped into the box: unchanged when inside, else one periodic
+                    # image of it
                     tally(:mobile_periodic)
                     for (p, r) in ((p1, pos(ref1)), (p2, pos(ref2)))
                         inside(p, T, L) || push!(fails, "$tg: periodic formation outside the box")

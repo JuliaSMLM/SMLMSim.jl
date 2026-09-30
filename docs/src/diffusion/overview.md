@@ -147,7 +147,7 @@ to fit, and while bound the pair's center folds off the walls moved in by each e
 often as it crosses them, so both partners stay inside the box at `d_dimer` apart. When
 `box_size < d_dimer` each partner is reflected on its own, as in 0.7.1. Under periodic boundaries (the
 default) a bound pair moves from its partner's minimum image, so a pair straddling the boundary moves by
-one step, and a pair formed at the boundary has each partner wrapped into the box on the formation step. Under the default `:fixed`, forming a pair places both partners `d_dimer` apart about their
+one step, and a pair forms from its partner's minimum image too (two monomers within `r_react` across the edge form a pair, which 0.7.1 never did), with each partner wrapped into the box on the formation step. Under the default `:fixed`, forming a pair places both partners `d_dimer` apart about their
 midpoint and a bound pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member
 is immobile (a D = 0 population); `simulate` warns once per run when a step moves an immobile member,
 recorded by the camera or not, and `pair_mobility = :min` keeps such a pair in place.

@@ -90,25 +90,28 @@ end
 
 # State management functions
 """
-    can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64)
+    can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64, period=nothing)
 
 Check if two emitters can form a dimer: both are monomers and their distance is below `r_react`. The
-distance is measured in Float64 from the stored coordinates, each axis's difference rounded once, without the
-minimum image under periodic boundaries (docs/src/diffusion/rules.md, Distance); dissociation measures the same
-distance, so a pair it leaves in place cannot pass this check.
+distance is measured in Float64 from the stored coordinates, each axis's difference rounded once, to the
+minimum image when `period` is the box size of periodic boundaries (docs/src/diffusion/rules.md, Distance);
+dissociation measures the same distance, so a pair it leaves in place cannot pass this check.
 
 # Arguments
 - `e1::AbstractDiffusingEmitter`: First emitter
 - `e2::AbstractDiffusingEmitter`: Second emitter
 - `r_react::Float64`: Reaction radius in microns
+- `period::Union{Nothing,Float64}=nothing`: The box size under periodic boundaries (`_period(params)`), or
+  `nothing` for the plain difference
 
 # Returns
 - `Bool`: True if emitters can form a dimer
 """
-function can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64)
+function can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64,
+                      period::Union{Nothing,Float64}=nothing)
     e1.state == :monomer &&
     e2.state == :monomer &&
-    _sep(_pos(e1), _pos(e2), nothing) < r_react
+    _sep(_pos(e1), _pos(e2), period) < r_react
 end
 
 """
@@ -387,8 +390,8 @@ function _disp(p::Float64, q::Float64, L::Union{Nothing,Float64})
     return (d - L * round(d / L)) + ((q - (d - t)) + (-p - t))
 end
 
-# The one distance of formation and dissociation: `_disp` on each axis, then the Euclidean norm. `L` nothing
-# measures without the minimum image (formation); `_period(params)` gives the dissociation's
+# The one distance of formation and dissociation: `_disp` on each axis, then the Euclidean norm, to the minimum
+# image when `L` is `_period(params)` under periodic boundaries (`nothing`: the plain difference)
 _sep(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} =
     sqrt(sum(abs2, ntuple(k -> _disp(p[k], q[k], L), Val(N))))
 _period(params) = params.boundary == "reflecting" ? nothing : params.box_size
@@ -732,11 +735,12 @@ function _place_centered(c::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64,
     return ok, ntuple(k -> _inbox(T, m[k] - (s / 2) * u[k], box), Val(N)), ntuple(k -> _inbox(T, m[k] + (s / 2) * u[k], box), Val(N))
 end
 
-# A pair just formed from monomers `e1`, `e2` (`d1`, `d2` from `dimerize`), by the placement rule: an
-# anchored pair keeps the anchor and places the other partner `d_dimer` from it, or leaves it where it
-# was when that cannot fit; a mobile pair in a reflecting box with an end outside moves to its midpoint
-# shifted inward just enough (each end reflected on its own when it cannot fit); a mobile pair under
-# periodic boundaries keeps 0.7.1's placement with each end wrapped into the box. Internal.
+# A pair just formed from monomers `e1`, `e2` (`d1`, `d2` from `dimerize` of `e1` and the minimum image of
+# `e2`), by the placement rule: an anchored pair keeps the anchor at its stored position and places the other
+# partner `d_dimer` from it along the axis to its minimum image, or leaves it where it was when that cannot
+# fit; a mobile pair in a reflecting box with an end outside moves to its midpoint shifted inward just enough
+# (each end reflected on its own when it cannot fit); a mobile pair under periodic boundaries keeps 0.7.1's
+# placement about the minimum image's midpoint with each end wrapped into the box. Internal.
 function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
                      params::DiffusionSMLMConfig) where {E<:AbstractDiffusingEmitter}
     T = typeof(d1.x)
@@ -744,9 +748,9 @@ function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
     if anchor !== nothing
         fixed, mover = anchor == e1.track_id ? (e1, e2) : (e2, e1)
         a = _pos(fixed)
-        ok, q = _place_from(a, _axis(a, _pos(mover)), params.d_dimer, box, reflecting, T)
+        ok, q = _place_from(a, _axis(a, _image(_pos(mover), a, params)), params.d_dimer, box, reflecting, T)
         p = ok ? q : _coords(mover)
-        return anchor == e1.track_id ? (d1, _at(d2, p)) : (_at(d1, p), d2)
+        return anchor == e1.track_id ? (_at(d1, _coords(e1)), _at(d2, p)) : (_at(d1, p), _at(d2, _coords(e2)))
     end
     reflecting || return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
     _inside(d1, box) && _inside(d2, box) && return d1, d2
