@@ -1427,6 +1427,29 @@ end
         @test n_tiny == 5 * 3 * 8 * (44 + 70)
         @test isempty(fails)
         isempty(fails) || foreach(println, first(fails, 10))
+        # docs/src/diffusion/rules.md, Orientation: a bound 3D pair closer than 1e-19, coincident included, steps to
+        # finite positions inside the box, d_dimer apart; along each axis from 0, reflecting and periodic, :fixed
+        # and :min
+        fails = String[]
+        for T in (Float32, Float64), s in (T == Float32 ? (0.0, 1e-20, 1e-23, 1e-30, 1e-45) : (0.0, 1e-20, 1e-160, 1e-200, 1e-320)),
+            k in 1:3, bnd in ("reflecting", "periodic"), pm_ in (:fixed, :min)
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=0.05, d_dimer=0.03, ndims=3, k_off=0.0,
+                                      pair_mobility=pm_)
+            p1, p2 = ntuple(j -> j == k ? 0.0 : 0.5, 3), ntuple(j -> j == k ? s : 0.5, 3)
+            pair = [DiffusingEmitter3D{T}(p1..., 100.0, 0.0, 1, 1, 1, :dimer, 2),
+                    DiffusingEmitter3D{T}(p2..., 100.0, 0.0, 1, 1, 2, :dimer, 1)]
+            tg = "$T sep $s axis $k $bnd $pm_"
+            out = try
+                ID.update_system(pair, prm, 0.001)
+            catch err
+                push!(fails, "$tg: $(typeof(err))"); continue
+            end
+            all(e -> e.state == :dimer && all(isfinite, ID._coords(e)) && inbox(e, 1.0), out) ||
+                (push!(fails, "$tg: not a finite pair inside the box"); continue)
+            abs(d64(out[1], out[2], 1.0, bnd) - 0.03) <= 4 * sqrt(3) * eps(T) || push!(fails, "$tg: bond")
+        end
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 10))
         # formation allocates nothing beyond a step in which nothing forms (warmed; two monomers, mobile or with
         # track 1 immobile)
         step_allocs(es, prm, tD) = @allocated ID.update_system(es, prm, 0.001; track_D=tD)

@@ -67,9 +67,9 @@ function angle(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}) where T <: 
     # Azimuthal angle (ϕ)
     ϕ = atan(e2.y - e1.y, e2.x - e1.x)
     
-    # Polar angle (θ)
-    r = distance(e1, e2)
-    θ = acos((e2.z - e1.z) / r)
+    # Polar angle (θ), by atan with nothing squared, so a pair however close, coincident included, has a finite
+    # orientation (docs/src/diffusion/rules.md, Orientation)
+    θ = atan(hypot(e2.x - e1.x, e2.y - e1.y), e2.z - e1.z)
     
     return (ϕ, θ)
 end

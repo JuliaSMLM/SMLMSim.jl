@@ -21,7 +21,9 @@ placement cannot fit (Dissociation, below).
 **Orientation.** A pair that forms or splits is oriented along this displacement, in Float64 (the per-axis
 differences above, never a translated position rounded to the coordinate type, and never through a squared length
 that can underflow), so a nonzero displacement, however small, gives its own direction. Only partners at exactly the
-same position (a zero displacement) are oriented along +x, with no random draw.
+same position (a zero displacement) are oriented along +x, with no random draw. A bound pair's rotation step reads
+its current orientation by angles alone (`atan`, nothing squared), so a bound pair however close, coincident
+included, steps to finite positions.
 
 ### A bound pair and the box
 
