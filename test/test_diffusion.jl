@@ -1457,6 +1457,35 @@ end
         @test n_tiny == 7 * 3 * 2 * (44 + 70)
         @test isempty(fails)
         isempty(fails) || foreach(println, first(fails, 10))
+        # docs/src/diffusion/rules.md, A bound pair and the box: the boundary is applied in Float64 and each end
+        # converted once, and the step carries its orientation. A diagonal pair at 0.5 and 0.5 + 0.03/sqrt(N) per
+        # axis, diff_dimer 1e6 (the center crosses the box many times), rotation and dissociation off: after one
+        # step it is d_dimer apart along its diagonal, within the rounding tolerance (seed 1, Float32, 3D,
+        # periodic moved 0.03000352); 20 seeds, 2D and 3D, Float32 and Float64, periodic and reflecting
+        fails = String[]
+        for T in (Float32, Float64), nd in (2, 3), bnd in ("periodic", "reflecting"), seed in 1:20
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=0.05, d_dimer=0.03, ndims=nd, k_off=0.0,
+                                      diff_dimer=1e6, diff_dimer_rot=0.0)
+            pair = [dm(T, ntuple(_ -> 0.5, nd), 1, 2, nd), dm(T, ntuple(_ -> 0.5 + 0.03 / sqrt(nd), nd), 2, 1, nd)]
+            Random.seed!(seed)
+            out = ID.update_system(pair, prm, 0.001)
+            tg = "$T $(nd)D $bnd seed $seed"
+            all(e -> e.state == :dimer && all(isfinite, ID._coords(e)) && inbox(e, 1.0), out) ||
+                (push!(fails, "$tg: not a finite pair inside the box"); continue)
+            tol, b = 4 * sqrt(nd) * eps(T), bvec(out[1], out[2], bnd)
+            all(i -> abs(b[i] - 0.03 / sqrt(nd)) <= tol, 1:nd) || push!(fails, "$tg: bond vector $b")
+        end
+        @test isempty(fails)
+        isempty(fails) || foreach(println, first(fails, 10))
+        # docs/src/diffusion/rules.md, Distance: a normal displacement never measures as zero. (0,0,0) and 1e-200 on
+        # each axis are sqrt(3)e-200 apart, so they do not form at r_react 1e-201
+        a, b = f(Float64, (0.0, 0.0, 0.0), 1, 3), f(Float64, (1e-200, 1e-200, 1e-200), 2, 3)
+        @test isapprox(ID._sep(ID._pos(a), ID._pos(b), nothing), sqrt(3) * 1e-200; rtol=4eps())
+        for bnd in ("periodic", "reflecting")
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary=bnd, r_react=1e-201, d_dimer=0.03, ndims=3)
+            @test !ID.can_dimerize(a, b, 1e-201, ID._period(prm))
+            @test all(e -> e.state == :monomer, ID.update_system([a, b], prm, 0.001))
+        end
         # docs/src/diffusion/rules.md, Orientation: a bound 3D pair closer than 1e-19, coincident included, steps to
         # finite positions inside the box, d_dimer apart; along each axis from 0, reflecting and periodic, :fixed
         # and :min
@@ -1897,7 +1926,8 @@ end
         end
         # Codex B2: the bound center folds as often as it crosses: proposed ends (0.45, 1.25) in a unit box give (0.05, 0.85)
         prm = DiffusionSMLMConfig(box_size=1.0, boundary="reflecting", d_dimer=0.8, r_react=0.05, diff_monomer=0.3, k_off=0.0)
-        q1, q2 = ID._move_pair(mk(Float64, (0.45, 0.5), 1, :dimer, 2), mk(Float64, (1.25, 0.5), 2, :dimer, 1), prm)
+        q1, q2 = ID._move_pair(mk(Float64, (0.45, 0.5), 1, :dimer, 2), mk(Float64, (1.25, 0.5), 2, :dimer, 1),
+                               (0.85, 0.5), (0.4, 0.0), 0.8, prm)
         @test all(isapprox.(pos(q1), (0.05, 0.5); atol=1e-12)) && all(isapprox.(pos(q2), (0.85, 0.5); atol=1e-12))
         # Claude: a bound pair straddling the periodic boundary moves by one step, not to the middle of the box
         prm = DiffusionSMLMConfig(box_size=10.0, boundary="periodic", d_dimer=0.05, r_react=0.01, diff_monomer=0.3,

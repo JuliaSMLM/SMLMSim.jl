@@ -11,7 +11,7 @@ Formation and dissociation measure one distance between two partners, from their
 - per axis, the difference of the two coordinates, rounded once. Under periodic boundaries it is the minimum image of
   that difference (less `box_size·round(d/box_size)`), still rounded once: the subtraction's rounding error is carried
   into the result;
-- then the Euclidean norm of those differences.
+- then the Euclidean norm of those differences, scaled so that no normal difference squares to zero.
 
 It is the same in either partner order. A pair forms when this distance is below `r_react`, so two monomers across a
 periodic edge form a pair as anywhere else (0.7.1 measured the plain difference, and such a pair never formed).
@@ -47,11 +47,13 @@ anchor):
 - When the pair cannot fit (possible only when `box_size < d_dimer`), each partner is reflected on its own, as in
   0.7.1.
 
-**Every fit** is decided against the physical box `[0, box_size]`. The placed coordinates are then converted to the
-coordinate type and clamped into the box.
+**Every fit** is decided against the physical box `[0, box_size]`. Positions are computed in Float64 from the stored
+coordinates, and the boundary is applied there; each placed coordinate is then converted to the coordinate type once
+and clamped into the box. A bound step carries its orientation through the boundary: the center folds or wraps, and
+the direction is never rebuilt from rounded ends.
 
-**Under periodic boundaries**, a bound pair's center and axis are taken from its partner's minimum image, and each end
-is then wrapped, so a pair straddling the boundary moves by one step. A pair forming under periodic boundaries is
+**Under periodic boundaries**, a bound pair's center and axis are taken from its partner's minimum image. The moved
+center is wrapped into the box and each end is then wrapped, so a pair straddling the boundary moves by one step. A pair forming under periodic boundaries is
 placed from its partner's minimum image too (the anchor-to-partner axis, or the midpoint and axis), and each partner
 is wrapped into `[0, box_size]` in its coordinate type on the formation step. An anchored pair already is; a mobile
 pair keeps its 0.7.1 placement (`d_dimer/2` either side of its midpoint, the minimum image's) up to that wrap.
