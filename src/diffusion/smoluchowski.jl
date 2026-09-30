@@ -58,7 +58,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   to fit, and while bound the pair's center folds off the walls moved in by each end's half-extent as
   often as it crosses them, so both partners stay inside at `d_dimer` apart (when `box_size < d_dimer`
   each partner is reflected on its own, as in 0.7.1). Under periodic boundaries, the default, a bound
-  pair moves from its partner's minimum image, so a pair straddling the boundary moves by one step.
+  pair moves from its partner's minimum image, so a pair straddling the boundary moves by one step, and a
+  pair formed at the boundary has each partner wrapped into the box on the formation step.
   Under `:fixed` forming a pair places both partners `d_dimer` apart about their midpoint and a bound
   pair moves and rotates, even when a member is immobile (monomer D = 0), and on dissociation a pair
   closer than `r_react` is spread about its midpoint; `simulate` warns once per run when a step moves an

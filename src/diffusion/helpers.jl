@@ -710,7 +710,7 @@ end
 # anchored pair keeps the anchor and places the other partner `d_dimer` from it, or leaves it where it
 # was when that cannot fit; a mobile pair in a reflecting box with an end outside moves to its midpoint
 # shifted inward just enough (each end reflected on its own when it cannot fit); a mobile pair under
-# periodic boundaries is left as in 0.7.1. Internal.
+# periodic boundaries keeps 0.7.1's placement with each end wrapped into the box. Internal.
 function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
                      params::DiffusionSMLMConfig) where {E<:AbstractDiffusingEmitter}
     T = typeof(d1.x)
@@ -722,7 +722,8 @@ function _place_pair(d1::E, d2::E, e1::E, e2::E, anchor::Union{Nothing,Int},
         p = ok ? q : _coords(mover)
         return anchor == e1.track_id ? (d1, _at(d2, p)) : (_at(d1, p), d2)
     end
-    (!reflecting || (_inside(d1, box) && _inside(d2, box))) && return d1, d2
+    reflecting || return apply_boundary(d1, box, params.boundary), apply_boundary(d2, box, params.boundary)
+    _inside(d1, box) && _inside(d2, box) && return d1, d2
     p1, p2 = _pos(e1), _pos(e2)
     ok, q1, q2 = _place_centered((p1 .+ p2) ./ 2, _axis(p1, p2), params.d_dimer, box, T)
     ok && return _at(d1, q1), _at(d2, q2)

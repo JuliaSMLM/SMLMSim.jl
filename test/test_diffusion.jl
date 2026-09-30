@@ -701,8 +701,10 @@ end
         # bitwise-equal float sums across versions: 0.7.2 on Julia 1.10.11 differed from 1.13.0 by at most 4.1e-5
         # relative in these sums, with identical counts. So the counts (records, photons, dimer records) are compared
         # exactly, the x/y sums at rtol 1e-4, and the default path exactly against pair_mobility = :fixed in one run.
-        GOLD_MIXED = (8000, 8320.62946819797, 8056.226513683971, 4000.0, 4368)
-        GOLD_DEFAULT = (8000, 8204.434380304117, 8291.7469648201, 4000.0, 5408)
+        # #39's periodic formation wrap then moved each x sum by +2.0, one box (only formation records change, each
+        # by whole boxes), counts and y sums unchanged: 8320.62946819797 and 8204.434380304117 before it.
+        GOLD_MIXED = (8000, 8322.62946819797, 8056.226513683971, 4000.0, 4368)
+        GOLD_DEFAULT = (8000, 8206.434380304117, 8291.7469648201, 4000.0, 5408)
         matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
                              isapprox(r[2], g[2]; rtol=1e-4) && isapprox(r[3], g[3]; rtol=1e-4)
         mob = [(0.5, 0.2), (0.5, 0.0)]
@@ -1242,9 +1244,17 @@ end
         st, _ = simulate(DiffusionSMLMConfig(density=400.0, box_size=0.08, r_react=0.05, d_dimer=0.01, k_off=200.0,
                                              dt=0.001, t_max=0.05, camera_framerate=100.0, camera_exposure=0.01);
                          γ=500.0, camera=cam32)
-        # monomers only: a pair formed at the periodic edge is recorded unwrapped for one step (0.7.1's formation,
-        # kept by the #37 rule), which this seed shows once
-        @test all(e -> 0 <= e.x <= 0.08 && 0 <= e.y <= 0.08, filter(e -> e.state == :monomer, st.emitters))
+        @test all(e -> 0 <= e.x <= 0.08 && 0 <= e.y <= 0.08, st.emitters)
+        # a pair formed at the periodic edge is wrapped into the box on the formation step (0.7.1 recorded the
+        # partner outside for one step): 2D and 3D, Float32 and Float64, both partner orders
+        for nd in (2, 3), T in (Float32, Float64), (x1, x2) in ((0.995, 0.999), (0.001, 0.005))
+            prm = DiffusionSMLMConfig(box_size=1.0, boundary="periodic", r_react=0.05, d_dimer=0.03, diff_monomer=0.3,
+                                      ndims=nd)
+            a, b = f(T, (x1, 0.5, 0.5), 1, nd), f(T, (x2, 0.5, 0.5), 2, nd)
+            out = ID.update_system([a, b], prm, 0.001)
+            @test all(e -> e.state == :dimer && inbox(e, 1.0), out)
+            @test isapprox(ID.distance(out[1], ID._near(out[2], out[1], prm)), 0.03; atol=1e-6)
+        end
 
         # Under :fixed a split closer than r_react spreads both partners about their midpoint, moving an immobile
         # one: one warning per run, naming dissociation. Under :min the immobile partner stays and nothing warns.
@@ -1549,8 +1559,19 @@ end
                 p1, p2 = pos(out[1]), pos(out[2])
                 ref1, ref2 = ID.dimerize(es[1], es[2], d)
                 if !refl
+                    # 0.7.1's placement with each end wrapped into the box (#39): unchanged when inside, else
+                    # one periodic image of it
                     tally(:mobile_periodic)
-                    (p1, p2) == (pos(ref1), pos(ref2)) || push!(fails, "$tg: periodic formation changed from 0.7.1")
+                    for (p, r) in ((p1, pos(ref1)), (p2, pos(ref2)))
+                        inside(p, T, L) || push!(fails, "$tg: periodic formation outside the box")
+                        if inside(r, T, L)
+                            p == r || push!(fails, "$tg: periodic formation moved an end inside the box")
+                        else
+                            tally(:mobile_periodic_wrapped)
+                            all(abs.(mi.(p .- r, L)) .<= 4 * eps(T) * max(1, L)) ||
+                                push!(fails, "$tg: periodic formation is not an image of 0.7.1's")
+                        end
+                    end
                     continue
                 end
                 inside(p1, T, L) && inside(p2, T, L) || push!(fails, "$tg: mobile outside")
@@ -1601,8 +1622,8 @@ end
         end
         @test isempty(fails)
         isempty(fails) || foreach(println, first(fails, 20))
-        @test all(k -> get(counts, k, 0) > 20, (:anchored_fit, :anchored_fallback, :mobile_fit, :mobile_periodic, :bound_fit,
-                                                 :bound_inside))
+        @test all(k -> get(counts, k, 0) > 20, (:anchored_fit, :anchored_fallback, :mobile_fit, :mobile_periodic,
+                                                 :mobile_periodic_wrapped, :bound_fit, :bound_inside))
 
         # the reviewer's corner and Codex's box narrower than 2 d_dimer
         for (a, b) in (((0.01, 0.01), (0.005, 0.005)), ((0.01, 0.01, 0.01), (0.005, 0.005, 0.005)))
