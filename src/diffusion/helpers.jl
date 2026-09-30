@@ -159,14 +159,16 @@ function _dimerize(e1::DiffusingEmitter2D{T}, e2::DiffusingEmitter2D{T}, d_dimer
     com_x = (e1.x + e2.x) / 2
     com_y = (e1.y + e2.y) / 2
     
-    # Calculate new positions, oriented along v (+x when v is zero)
+    # Calculate new positions, oriented along v (+x when v is zero), in F on every branch: an anchor's own
+    # coordinates are widened exactly, so no position is a Union{T,Float64} (which Julia 1.10 boxes)
+    F = promote_type(T, Float64)
     dx, dy = _half_bond(v, d_dimer / 2)
     x1, y1, x2, y2 = com_x - dx, com_y - dy, com_x + dx, com_y + dy
     if anchor == e1.track_id
-        x1, y1 = e1.x, e1.y
+        x1, y1 = F(e1.x), F(e1.y)
         x2, y2 = e1.x + 2dx, e1.y + 2dy
     elseif anchor == e2.track_id
-        x2, y2 = e2.x, e2.y
+        x2, y2 = F(e2.x), F(e2.y)
         x1, y1 = e2.x - 2dx, e2.y - 2dy
     end
     
@@ -227,15 +229,17 @@ function _dimerize(e1::DiffusingEmitter3D{T}, e2::DiffusingEmitter3D{T}, d_dimer
     com_y = (e1.y + e2.y) / 2
     com_z = (e1.z + e2.z) / 2
     
-    # Calculate new positions, oriented along v (+x when v is zero)
+    # Calculate new positions, oriented along v (+x when v is zero), in F on every branch: an anchor's own
+    # coordinates are widened exactly, so no position is a Union{T,Float64} (which Julia 1.10 boxes)
+    F = promote_type(T, Float64)
     dx, dy, dz = _half_bond(v, d_dimer / 2)
     x1, y1, z1 = com_x - dx, com_y - dy, com_z - dz
     x2, y2, z2 = com_x + dx, com_y + dy, com_z + dz
     if anchor == e1.track_id
-        x1, y1, z1 = e1.x, e1.y, e1.z
+        x1, y1, z1 = F(e1.x), F(e1.y), F(e1.z)
         x2, y2, z2 = e1.x + 2dx, e1.y + 2dy, e1.z + 2dz
     elseif anchor == e2.track_id
-        x2, y2, z2 = e2.x, e2.y, e2.z
+        x2, y2, z2 = F(e2.x), F(e2.y), F(e2.z)
         x1, y1, z1 = e2.x - 2dx, e2.y - 2dy, e2.z - 2dz
     end
     

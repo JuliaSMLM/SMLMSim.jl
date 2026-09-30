@@ -697,10 +697,9 @@ end
         # the run gives #36's values (97880c1) exactly, (8283.839490125389, 8070.38335464744, 4340) mixed and
         # (8276.434380304116, 8283.7469648201, 5408) default. The default sums moved by -72.0 (x) and +8.0 (y) to
         # within rounding, whole half-boxes (box 2), with the counts unchanged; in the mixed run the corrected
-        # positions change a later reaction, so its dimer records go from 4340 to 4368. Julia does not promise
-        # bitwise-equal float sums across versions: #36 on Julia 1.10.11 differed from 1.13.0 by at most 4.1e-5
-        # relative in these sums, with identical counts. So the counts (records, photons, dimer records) are compared
-        # exactly, the x/y sums at rtol 1e-4, and the default path exactly against pair_mobility = :fixed in one run.
+        # positions change a later reaction, so its dimer records go from 4340 to 4368. The counts (records, photons,
+        # dimer records) are compared exactly, the x/y sums at rtol 1e-4, and the default path exactly against
+        # pair_mobility = :fixed in one run.
         # #39's periodic formation wrap then moved each x sum by +2.0, one box (only formation records change, each
         # by whole boxes), counts and y sums unchanged: 8320.62946819797 and 8204.434380304117 before it.
         # #39's cross-edge formation (formation measures the partner's minimum image, so monomers within r_react
@@ -710,8 +709,18 @@ end
         # 5270.0 after, sd 210), and over 300 paired seeds (Claude reviewer on 1d66d0a) the default moved +1.7 +- 11.7
         # dimer records: this seed's drop is an unlucky seed, not a bias. The mixed run moved +25 +- 11, the intended
         # increase from immobile edge molecules now pairing across the edge.
-        GOLD_MIXED = (8000, 8385.313194760132, 8175.549707151786, 4000.0, 4112)
-        GOLD_DEFAULT = (8000, 8274.516046954606, 8176.357746324857, 4000.0, 4940)
+        # Julia 1.11 changed randn's tail (|x| > 3.654, Random's randn_unlikely: log(rand()) became log1p(-rand())),
+        # so the same seed draws other tail values on Julia 1.10, and from the first one on the run is another
+        # realization, not a rounding of this one: with seed 20260929 the 1197th randn() is -4.0516 on 1.10.11 and
+        # -3.7271 on 1.11 to 1.13. Through bcdf645 that moved only the x/y sums on 1.10 (#36: at most 4.1e-5
+        # relative), and after the cross-edge formation it changes a reaction (default dimer records 5082 on 1.10,
+        # 4940 on 1.11 to 1.13). Julia 1.11.9, 1.12.7 and 1.13.0 give the values below bitwise; 1.10 is compared with
+        # its own recording, on 1.10.11.
+        GOLD_MIXED, GOLD_DEFAULT = VERSION >= v"1.11" ?
+            ((8000, 8385.313194760132, 8175.549707151786, 4000.0, 4112),
+             (8000, 8274.516046954606, 8176.357746324857, 4000.0, 4940)) :
+            ((8000, 8385.313194760132, 8174.792548048816, 4000.0, 4112),
+             (8000, 8217.95446278314, 8072.305616310379, 4000.0, 5082))
         matches_gold(r, g) = r[1] == g[1] && r[4] == g[4] && r[5] == g[5] &&
                              isapprox(r[2], g[2]; rtol=1e-4) && isapprox(r[3], g[3]; rtol=1e-4)
         mob = [(0.5, 0.2), (0.5, 0.0)]
