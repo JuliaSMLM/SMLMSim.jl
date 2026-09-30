@@ -92,7 +92,10 @@ end
 """
     can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64)
 
-Check if two emitters can form a dimer.
+Check if two emitters can form a dimer: both are monomers and their distance is below `r_react`. The
+distance is measured in Float64 from the stored coordinates, each axis's difference rounded once, without the
+minimum image under periodic boundaries (docs/src/diffusion/rules.md, Distance); dissociation measures the same
+distance, so a pair it leaves in place cannot pass this check.
 
 # Arguments
 - `e1::AbstractDiffusingEmitter`: First emitter
@@ -103,9 +106,9 @@ Check if two emitters can form a dimer.
 - `Bool`: True if emitters can form a dimer
 """
 function can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64)
-    e1.state == :monomer && 
-    e2.state == :monomer && 
-    distance(e1, e2) < r_react
+    e1.state == :monomer &&
+    e2.state == :monomer &&
+    _sep(_pos(e1), _pos(e2), nothing) < r_react
 end
 
 """
@@ -373,8 +376,25 @@ function _anchor(params, e1, e2, D1::Real, D2::Real)
     return D1 == 0 && (D2 != 0 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
 end
 
-# `p` at the minimum image of its offset from `r` under periodic boundaries, in Float64 before any rounding to the
-# coordinate type; `p` itself under reflecting boundaries
+# Displacement from p to q on one axis in Float64, rounded once: q - p, less L*round((q - p)/L) when `L` is a box
+# size (the minimum image). The subtraction's rounding error is carried (TwoSum), so the result is the exact
+# displacement of the stored coordinates rounded once, exactly negated when p and q swap, and the plain difference
+# when no image is taken (docs/src/diffusion/rules.md, Distance)
+function _disp(p::Float64, q::Float64, L::Union{Nothing,Float64})
+    d = q - p
+    L === nothing && return d
+    t = d - q
+    return (d - L * round(d / L)) + ((q - (d - t)) + (-p - t))
+end
+
+# The one distance of formation and dissociation: `_disp` on each axis, then the Euclidean norm. `L` nothing
+# measures without the minimum image (formation); `_period(params)` gives the dissociation's
+_sep(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} =
+    sqrt(sum(abs2, ntuple(k -> _disp(p[k], q[k], L), Val(N))))
+_period(params) = params.boundary == "reflecting" ? nothing : params.box_size
+
+# `p` at the minimum image of its offset from `r` under periodic boundaries (the image `_disp` measures), in
+# Float64; `p` itself under reflecting boundaries
 _image(p::NTuple{N,Float64}, r::NTuple{N,Float64}, params) where {N} = params.boundary == "reflecting" ? p :
     ntuple(k -> p[k] - params.box_size * round((p[k] - r[k]) / params.box_size), Val(N))
 
@@ -400,13 +420,13 @@ function _unbind_positions(p1::NTuple{N,Float64}, p2::NTuple{N,Float64}, params,
 end
 
 """
-    _unbind(m1, m2, params, D1, D2)
+    _unbind(m1, m2, params, D1, D2, unfit=nothing)
 
 Place two freshly dissociated monomers at least `params.r_react` apart along their pair axis (the
 minimum-image distance under periodic boundaries), so that the formation check (`can_dimerize`) cannot
-re-capture them at the next step only because `d_dimer < r_react`. The distance is computed in Float64
-from the stored coordinates, the minimum image taken before any rounding to the coordinate type; partners
-`r_react` or more apart by it are returned unchanged. Under `pair_mobility = :min` an immobile member (both
+re-capture them at the next step only because `d_dimer < r_react`. The distance is formation's (`_sep`, in
+Float64 from the stored coordinates, each axis rounded once) with the minimum image under periodic
+boundaries; partners `r_react` or more apart by it are returned unchanged. Under `pair_mobility = :min` an immobile member (both
 immobile: the lower `track_id`, see `_anchor`) keeps its position and the other is placed from it
 (mirrored across it on each axis it would leave a reflecting box); otherwise, including every pair under
 `:fixed`, both move apart about their midpoint, shifted inward just far enough that both are inside a
@@ -429,7 +449,7 @@ changes positions only.
 function _unbind(m1::E, m2::E, params, D1::Real, D2::Real,
                  unfit::Union{Nothing,Base.RefValue{Bool}}=nothing) where {E<:AbstractDiffusingEmitter}
     p1, p2 = _pos(m1), _pos(m2)
-    distance(p1, _image(p2, p1, params)) >= params.r_react && return (m1, m2)
+    _sep(p1, p2, _period(params)) >= params.r_react && return (m1, m2)
     T = typeof(m1.x)
     ok, q1, q2 = _unbind_positions(p1, p2, params, _anchor(params, m1, m2, D1, D2), m1.track_id,
                                    _unbind_spacing(params, T), T)
@@ -668,8 +688,8 @@ _inside(e::AbstractDiffusingEmitter, box::Float64) = all(c -> 0 <= c <= box, _co
 # axis are those of its bond, not of its wrapped coordinates; unchanged under reflecting boundaries
 function _near(e::AbstractDiffusingEmitter, ref::AbstractDiffusingEmitter, params)
     params.boundary == "periodic" || return e
-    L = params.box_size
-    return _at(e, map((c, r) -> typeof(c)(c - L * round((c - r) / L)), _coords(e), _coords(ref)))
+    T = typeof(e.x)
+    return _at(e, map(T, _image(_pos(e), _pos(ref), params)))
 end
 
 # x folded into [lo, hi] as often as it crosses either end (a triangle wave); lo when hi <= lo

@@ -10,7 +10,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `diff_dimer::Float64`: dimer diffusion coefficient (μm²/s)
 - `diff_dimer_rot::Float64`: dimer rotational diffusion coefficient (rad²/s)
 - `k_off::Float64`: dimer dissociation rate (s⁻¹)
-- `r_react::Float64`: reaction radius (μm)
+- `r_react::Float64`: reaction radius (μm): two monomers closer than this form a pair, by their distance in
+  Float64 from the stored coordinates, without the minimum image under periodic boundaries (as in 0.7.1)
 - `d_dimer::Float64`: monomer separation in dimer (μm)
   On dissociation the partners are placed at least `r_react` apart along the pair axis (the
   minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only

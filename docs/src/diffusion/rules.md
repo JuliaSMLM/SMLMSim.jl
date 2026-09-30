@@ -5,6 +5,18 @@ and when a run continues from an earlier one. The code cites them by section, an
 
 ## Pair placement
 
+### Distance
+
+Formation and dissociation measure one distance between two partners, from their stored coordinates in Float64:
+- per axis, the difference of the two coordinates, rounded once. At dissociation under periodic boundaries it is the
+  minimum image of that difference (less `box_size·round(d/box_size)`), still rounded once: the subtraction's rounding
+  error is carried into the result;
+- then the Euclidean norm of those differences.
+
+It is the same in either partner order. A pair forms when this distance, without the minimum image (as in 0.7.1, so no
+pair forms across a periodic edge), is below `r_react`. A minimum image is never longer than the plain difference, so
+a pair that dissociation leaves in place is not within formation distance.
+
 ### A bound pair and the box
 
 **An anchored pair** (`pair_mobility = :min`, one partner immobile; if both are immobile, the lower `track_id` is the
@@ -44,10 +56,10 @@ recorded by the camera or not), pointing to `:min`, which keeps such a pair in p
 
 ### Dissociation
 
-**Which pairs move.** The partners' distance is computed in Float64 from their stored coordinates, to the partner's
-minimum image under periodic boundaries, before any rounding to the coordinate type. Partners at least `r_react` apart
-by that distance keep their positions. Partners closer than `r_react` end inside the box in their coordinate type and
-at least `r_react` apart by that distance; the same minimum image gives the pair's midpoint and axis.
+**Which pairs move.** The partners' distance is the one above, with the minimum image under periodic boundaries.
+Partners at least `r_react` apart by that distance keep their positions. Partners closer than `r_react` end inside the
+box in their coordinate type and at least `r_react` apart by that distance, unless the construction cannot fit
+(below); the same minimum image gives the pair's midpoint and axis.
 
 So a pair keeps its positions whenever it is bound at `d_dimer` and `d_dimer` exceeds `r_react` by more than rounding,
 which holds in every box of at least `2·d_dimer`. In a smaller box a pair can be closer than `d_dimer` (a reflecting

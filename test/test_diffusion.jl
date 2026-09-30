@@ -1163,10 +1163,11 @@ end
         inbox(e, L) = all(c -> 0 <= c <= L, ID._coords(e))
         cs(e) = e isa DiffusingEmitter2D ? (e.x, e.y) : (e.x, e.y, e.z)
         # independent oracle: per axis the nearest of the offsets y - x + k L (k = -1, 0, 1 under periodic
-        # boundaries), in Float64
+        # boundaries), exact in BigFloat and rounded once to Float64
         function d64(a, b, L, bnd)
             ks = bnd == "periodic" ? (-1, 0, 1) : (0,)
-            return sqrt(sum(((x, y),) -> minimum(k -> abs(Float64(y) - Float64(x) + k * L), ks)^2, zip(cs(a), cs(b))))
+            return sqrt(sum(((x, y),) -> Float64(minimum(k -> abs(big(y) - big(x) + k * big(L)), ks))^2,
+                            zip(cs(a), cs(b))))
         end
         Random.seed!(61)
         n_tried = n_close = n_out = n_moved = n_kept = 0
@@ -1228,6 +1229,50 @@ end
             end
         end
         @test n_near > 1000 && n_far > 1000 && n_bad == 0
+        # docs/src/diffusion/rules.md, Distance: formation and dissociation measure one distance. A pair exactly
+        # r_react apart by its stored coordinates' minimum image stays in both partner orders (rounding the
+        # translated coordinate read 0.04999999999999716 in one order)
+        xe = 0.02499999999999432
+        for nd in (2, 3), pm_ in (:fixed, :min), (x1, x2) in ((99.975, xe), (xe, 99.975))
+            prm = (r_react = 0.05, pair_mobility = pm_, box_size = 100.0, boundary = "periodic")
+            a, b = f(Float64, (x1, 50.0, 50.0), 1, nd), f(Float64, (x2, 50.0, 50.0), 2, nd)
+            m1, m2 = ID._unbind(a, b, prm, 0.0, 0.0)
+            @test m1 === a && m2 === b
+        end
+        # Float32 pairs 0.05000000006 and 0.0500000005 apart in Float64 (0.049999997 measured in Float32), both
+        # immobile in a reflecting box: dissociation keeps them and formation does not re-capture them
+        for (nd, p, q) in ((2, (0.009431912f0, 0.013053262f0, 0.0f0), (0.057779297f0, 0.00030452403f0, 0.0f0)),
+                           (3, (0.03759359f0, 0.049869124f0, 0.014025932f0),
+                               (0.03251302f0, 0.042075932f0, 0.06315285f0))),
+            pm_ in (:fixed, :min), swap in (false, true)
+            prm = (r_react = 0.05, pair_mobility = pm_, box_size = 1.0, boundary = "reflecting")
+            a, b = f(Float32, p, 1, nd), f(Float32, q, 2, nd)
+            swap && ((a, b) = (b, a))
+            m1, m2 = ID._unbind(a, b, prm, 0.0, 0.0)
+            @test m1 === a && m2 === b && !ID.can_dimerize(m1, m2, 0.05)
+        end
+        # property: no pair that dissociation returns is within formation distance, kept or moved. Pairs within a
+        # few units in the last place of r_react, near the low corner of a reflecting box or across a periodic
+        # edge, 2D and 3D, Float32 and Float64, every D combination, both track_id orders
+        Random.seed!(67)
+        n_kept = n_moved = n_recap = 0
+        for k in 1:4000
+            nd, T, pm_ = rand((2, 3)), rand((Float32, Float64)), rand((:fixed, :min))
+            bnd = rand(("reflecting", "periodic"))
+            prm = (r_react = 0.05, pair_mobility = pm_, box_size = 1.0, boundary = bnd)
+            p = T.(0.05 .* rand(3))
+            u = randn(3); nd == 2 && (u[3] = 0.0); u ./= sqrt(sum(abs2, u))
+            q = T.(bnd == "periodic" ? mod.(p .+ 0.05 .* u, 1.0) : p .+ 0.05 .* abs.(u))
+            j = rand(-8:8)
+            q = (q[1], clamp(j >= 0 ? nextfloat(q[2], j) : prevfloat(q[2], -j), zero(T), T(0.5)), q[3])
+            i1, i2 = rand(Bool) ? (1, 2) : (2, 1)
+            a, b = f(T, p, i1, nd), f(T, q, i2, nd)
+            D1, D2 = rand(((0.0, 0.3), (0.3, 0.0), (0.0, 0.0), (0.3, 0.3)))
+            m1, m2 = ID._unbind(a, b, prm, D1, D2)
+            m1 === a && m2 === b ? (n_kept += 1) : (n_moved += 1)
+            ID.can_dimerize(m1, m2, 0.05) && (n_recap += 1)
+        end
+        @test n_kept > 1000 && n_moved > 1000 && n_recap == 0
         # Float32 partners at 99.88 and 99.89 in a 99.9 reflecting box, and pairs across the periodic boundary
         for nd in (2, 3), pm_ in (:fixed, :min)
             prm = (r_react = 0.05, pair_mobility = pm_, box_size = 99.9, boundary = "reflecting")
