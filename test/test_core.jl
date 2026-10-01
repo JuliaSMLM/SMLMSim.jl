@@ -186,6 +186,24 @@ end
     @test size(fluor.q) == (2, 2)  # 2x2 matrix for a simple fluorophore
 end
 
+@testset "core/generic_fluor_keywords" begin
+    f = GenericFluor(; γ=1e4, q=[-10.0 10.0; 1e-1 -1e-1])
+    @test f.γ == 1e4
+    @test f.q == [-10.0 10.0; 1e-1 -1e-1]
+    @test GenericFluor(; γ=5, q=[-1 1; 2 -2]).q == [-1.0 1.0; 2.0 -2.0]
+    @test GenericFluor(; γ=2000, k_off=3.0).q == [-3.0 3.0; 1e-2 -1e-2]
+    @test_throws ArgumentError GenericFluor(; γ=1e4, photons=1e4)
+    @test_throws ArgumentError GenericFluor(; q=[-1.0 1.0; 1.0 -1.0], k_off=2.0)
+    @test_throws ArgumentError GenericFluor(; q=[-1.0 1.0; 1.0 -1.0], k_on=2.0)
+    # unchanged forms
+    d = GenericFluor()
+    @test d.γ == 1e5 && d.q == [-50.0 50.0; 1e-2 -1e-2]
+    k = GenericFluor(; photons=1e4, k_off=1.0, k_on=5.0)
+    @test k.γ == 1e4 && k.q == [-1.0 1.0; 5.0 -5.0]
+    p = GenericFluor(1e4, [-1.0 1.0; 5.0 -5.0])
+    @test p.γ == k.γ && p.q == k.q
+end
+
 @testset "Core - Patterns" begin
     # Test 2D pattern types
     @testset "2D Patterns" begin
