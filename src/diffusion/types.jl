@@ -18,7 +18,7 @@ and temporal information, plus molecular state information.
 # Fields
 - `x::T`: x-coordinate in microns
 - `y::T`: y-coordinate in microns
-- `photons::T`: number of photons emitted
+- `photons::T`: photons in this record (γ·dt for diffusion records)
 - `timestamp::T`: actual simulation time in seconds
 - `frame::Int`: camera frame number based on framerate and exposure
 - `dataset::Int`: dataset identifier
@@ -55,7 +55,7 @@ and temporal information, plus molecular state information.
 - `x::T`: x-coordinate in microns
 - `y::T`: y-coordinate in microns
 - `z::T`: z-coordinate in microns
-- `photons::T`: number of photons emitted
+- `photons::T`: photons in this record (γ·dt for diffusion records)
 - `timestamp::T`: actual simulation time in seconds
 - `frame::Int`: camera frame number based on framerate and exposure
 - `dataset::Int`: dataset identifier

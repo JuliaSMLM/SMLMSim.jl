@@ -230,9 +230,11 @@ params = DiffusionSMLMConfig(
     box_size = 6.4,          # 6.4×6.4 μm field
     diff_monomer = 0.1,      # 0.1 μm²/s diffusion
     t_max = 0.5,             # 0.5 second total
-    camera_framerate = 100.0 # 100 fps
+    dt = 0.001,              # 1 ms physics step
+    camera_framerate = 100.0, # 100 fps
+    camera_exposure = 0.01   # 10 ms exposure (at most the frame period)
 )
-smld, info = simulate(params; camera=camera_scmos, photons=200.0)
+smld, info = simulate(params; camera=camera_scmos, γ=2e4)  # 2e4 photons/s = 200 per 10 ms frame
 
 # Generate images with full sCMOS noise model
 # (quantum efficiency, Poisson, read noise, gain, offset)

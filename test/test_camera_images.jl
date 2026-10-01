@@ -1,3 +1,5 @@
+using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, Random
+
 @testset "Camera Images" begin
     # Create some emitters for testing (using Emitter2DFit which has frame and other parameters)
     emitters = Vector{Emitter2DFit{Float64}}()
@@ -166,4 +168,15 @@ end
     smld_default, info_default = simulate(params; override_count=5)
     @test smld_default.camera isa IdealCamera
     @test isa(info_default, SimInfo)
+end
+
+@testset "sCMOS noise statistics" begin
+    Random.seed!(8)
+    cam = SCMOSCamera(256, 256, 0.1, 0.7; offset=100.0, gain=0.24, qe=1.0)
+    img = fill(50.0, 256, 256)
+    out = scmos_noise(img, cam)
+    var_expected = (50.0 + 0.7^2) / 0.24^2
+    # tolerance of 4 standard errors of the mean
+    @test mean(out) ≈ 100.0 + 50.0 / 0.24 atol=4*sqrt(var_expected/length(out))
+    @test var(out) ≈ var_expected rtol=0.03
 end

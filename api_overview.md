@@ -84,14 +84,17 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     k_off::Float64 = 0.2            # dimer dissociation rate (s⁻¹)
     r_react::Float64 = 0.01         # reaction radius (μm)
     d_dimer::Float64 = 0.05         # monomer separation in dimer (μm)
-    dt::Float64 = 0.01              # time step (s)
+    dt::Float64 = 0.01              # physics step (s); also sets sub-steps per frame (motion blur)
     t_max::Float64 = 10.0           # total simulation time (s)
     ndims::Int = 2                  # number of dimensions (2 or 3)
     boundary::String = "periodic"   # boundary condition type ("periodic" or "reflecting")
     camera_framerate::Float64 = 10.0 # camera frames per second (Hz)
     camera_exposure::Float64 = 0.1   # camera exposure time per frame (s)
+    monomer_mobility::Vector{Tuple{Float64,Float64}} = Tuple{Float64,Float64}[]  # optional (fraction, D) mixture
 end
 ```
+
+camera_exposure and 1/camera_framerate should be integer multiples of dt (otherwise `simulate` rounds to the nearest step count and warns). The `γ` passed to `simulate` is the emission rate in photons/s; each of the n_sub = camera_exposure/dt records in a frame carries γ·dt. The deprecated `photons` keyword (removed in 0.8.0) is photons per record, equal to `γ = photons/dt`; without either, records carry 1000 photons.
 
 ### Molecular Patterns
 
@@ -387,9 +390,12 @@ smld_noisy, info = simulate(
 params_diff = DiffusionSMLMConfig()
 
 # Then run simulation - returns (smld, SimInfo)
+# γ = emission rate, photons/s; each of the n_sub records of a frame carries γ·dt,
+# so a frame holds γ·camera_exposure photons (1e4/s * 0.1 s = 1000).
+# Without γ each record carries 1000 photons (0.7's default).
 smld, info = simulate(
     params_diff;
-    photons=1000.0
+    γ=1e4
 )
 
 # Check timing
@@ -533,6 +539,12 @@ frames, fractions = analyze_dimer_fraction(smld)
 
 # Analyze average dimer lifetime
 lifetime = analyze_dimer_lifetime(smld)
+
+# Per-frame dimer ground truth: rows of (frame, track_id, partner_id, bound_fraction, t_form, t_break)
+truth = frame_dimer_truth(smld)
+
+# Continue a run from its exact end state (each track keeps its D)
+smld2, info2 = simulate(params; starting_conditions=smld)  # resumes at extract_end_state(smld)
 
 # Track state changes over time
 state_history = track_state_changes(smld)

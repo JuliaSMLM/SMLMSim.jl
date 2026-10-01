@@ -1,0 +1,4 @@
+# Test groups (admiral decision 0008). Every folder under test/ must be a declared group.
+#   Core      test/*.jl         fast curated tests; plain Pkg.test()
+
+[Core]

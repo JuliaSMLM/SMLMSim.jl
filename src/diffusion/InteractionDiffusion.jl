@@ -77,6 +77,7 @@ export
     
     # Analysis functions
     get_dimers,
+    frame_dimer_truth,
     get_monomers,
     analyze_dimer_fraction,
     analyze_dimer_lifetime,
@@ -86,6 +87,7 @@ export
     # SMLD conversion utilities
     create_smld,
     get_frame,
-    extract_final_state
+    extract_final_state,
+    extract_end_state
 
 end

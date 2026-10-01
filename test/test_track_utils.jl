@@ -1,3 +1,5 @@
+using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, Random
+
 @testset "Track Utilities" begin
     # Create a test SMLD with multiple tracks
     camera = IdealCamera(32, 32, 0.1)

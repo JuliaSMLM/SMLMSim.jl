@@ -11,3 +11,6 @@ examples/Manifest.toml
 
 # Dev outputs folder for examples and demos
 dev/outputs/
+
+# Lab test records (admiral decision 0009)
+dev/output/
