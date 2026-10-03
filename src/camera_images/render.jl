@@ -73,7 +73,7 @@ end
 
 # z extent a PSF declares, or nothing
 _psf_z_extent(::AbstractPSF) = nothing
-_psf_z_extent(psf::SplinePSF) = psf.z_range === nothing ? nothing : (psf.z_min, psf.z_max)
+_psf_z_extent(psf::SplinePSF) = psf.z_range === nothing ? nothing : extrema(psf.z_range)
 
 """
     StampTable(psf::AbstractPSF, pixel_size::Real, zs::AbstractRange{<:Real}; radius::Integer,
@@ -89,8 +89,9 @@ Recommended plane spacing is 0.2 μm or less with `:linear` and 0.1 μm or less 
 `:nearest` for astigmatic or other rapidly varying PSFs. Rendering picks the nearest
 phase, a position error of at most `1/(2oversample)` pixel.
 
-Throws `ArgumentError` when `zs` extends beyond the z range the PSF declares (a
-`SplinePSF`'s `z_range`); rendering never clamps or draws empty stamps.
+Throws `ArgumentError` when `zs` is not strictly increasing, when it extends beyond the z
+range the PSF declares (a `SplinePSF`'s `z_range`, no tolerance), or when a stamp's mass is
+not finite and positive; rendering never clamps or draws empty stamps.
 """
 struct StampTable{R<:AbstractRange{Float64}}
     stamps::Array{Float64,4}    # (2radius+1, 2radius+1, oversample^2, length(zs)); phase = a + os*b + 1
@@ -107,11 +108,13 @@ function StampTable(psf::AbstractPSF, pixel_size::Real, zs::AbstractRange{<:Real
     radius >= 0 || throw(ArgumentError("radius must be >= 0"))
     oversample >= 1 || throw(ArgumentError("oversample must be >= 1"))
     isempty(zs) && throw(ArgumentError("zs must not be empty"))
+    (length(zs) == 1 || step(zs) > 0) ||
+        throw(ArgumentError("zs must be strictly increasing, got step $(step(zs))"))
     ext = _psf_z_extent(psf)
     if ext !== nothing
         zlo, zhi = extrema(zs)
-        (zlo < ext[1] - 1e-12 || zhi > ext[2] + 1e-12) &&
-            throw(ArgumentError("zs = $(zlo)..$(zhi) extends beyond the PSF's z range $(ext[1])..$(ext[2])"))
+        (zlo < ext[1] || zhi > ext[2]) &&
+            throw(ArgumentError("z plane $(zlo < ext[1] ? zlo : zhi) of zs = $(zlo)..$(zhi) is outside the PSF's z range $(ext[1])..$(ext[2])"))
     end
     zr = convert(AbstractRange{Float64}, zs)
     r, os = Int(radius), Int(oversample)
@@ -135,7 +138,10 @@ function StampTable(psf::AbstractPSF, pixel_size::Real, zs::AbstractRange{<:Real
                 end
                 st[i, j] = acc
             end
-            st ./= sum(st)
+            mass = sum(st)
+            (isfinite(mass) && mass > 0) ||
+                throw(ArgumentError("stamp at z = $z has mass $mass; it must be finite and positive"))
+            st ./= mass
         end
     end
     return StampTable{typeof(zr)}(stamps, zr, r, os, zinterp, Float64(pixel_size))

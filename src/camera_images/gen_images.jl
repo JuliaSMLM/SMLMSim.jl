@@ -67,6 +67,8 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
     if frames === nothing
         # Use all frames from 1 to n_frames
         frames = 1:smld.n_frames
+    elseif !(frames isa AbstractVector)
+        frames = collect(frames)
     end
 
     # Get camera dimensions from SMLD
@@ -97,7 +99,7 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
     end
     empty_bucket = eltype(emitters)[]
 
-    renderer = _frame_renderer(psf, camera, support, sampling, T)
+    renderer, gaussian = _frame_renderer(psf, camera, support, sampling, T)
     parallel = threaded && nframes > 1 && Threads.nthreads() > 1
     inner_threaded = threaded && !parallel
 
@@ -109,7 +111,8 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
             isempty(frame_emitters) || renderer(frame, frame_emitters, ws, inner_threaded)
             # Add background to the accumulated frame
             if bg isa Real
-                frame .+= bg
+                # the fallback adds the background rounded into T, as 0.7.2 did
+                frame .+= (gaussian ? bg : T(bg))
             else
                 frame .+= view(bg, :, :, i)
             end
@@ -215,24 +218,39 @@ function _support_window(edges_x::AbstractVector, edges_y::AbstractVector, x::Re
     return i_min:i_max, j_min:j_max
 end
 
+# Rounding slack of an edge vector: the relative tolerance plus the edge representation error
+# (Float32 edges are rounded at eps(Float32) times their magnitude)
+function _edge_tol(edges::AbstractVector, d::Float64)
+    mag = max(abs(Float64(edges[1])), abs(Float64(edges[end])))
+    return 1e-6 * abs(d) + 4 * Float64(eps(float(eltype(edges)))) * mag
+end
+
 # Pixel pitch if the edges are uniform, else NaN
 function _uniform_pitch(edges::AbstractVector)
     length(edges) < 2 && return NaN
-    d = (edges[end] - edges[1]) / (length(edges) - 1)
-    ok = all(k -> abs((edges[k+1] - edges[k]) - d) <= 1e-6 * abs(d), 1:length(edges)-1)
-    return ok ? Float64(d) : NaN
+    d = (Float64(edges[end]) - Float64(edges[1])) / (length(edges) - 1)
+    tol = _edge_tol(edges, d)
+    ok = all(k -> abs((Float64(edges[k+1]) - Float64(edges[k])) - d) <= tol, 1:length(edges)-1)
+    return ok ? d : NaN
 end
 
-# Returns render!(frame, frame_emitters, ws, inner_threaded) that accumulates one frame
+# Common pitch if both axes are uniform and equal within edge rounding, else NaN
+function _square_pitch(ex::AbstractVector, ey::AbstractVector)
+    px, py = _uniform_pitch(ex), _uniform_pitch(ey)
+    (isfinite(px) && isfinite(py)) || return NaN
+    return abs(px - py) <= _edge_tol(ex, px) + _edge_tol(ey, py) ? px : NaN
+end
+
+# Returns (render!(frame, frame_emitters, ws, inner_threaded), is_gaussian) where render! accumulates one frame
 function _frame_renderer(psf::AbstractPSF, camera, support, sampling, ::Type{T}) where T
     ex, ey = camera.pixel_edges_x, camera.pixel_edges_y
     if psf isa GaussianPSF
-        px, py = _uniform_pitch(ex), _uniform_pitch(ey)
-        if isfinite(px) && isfinite(py) && abs(px - py) <= 1e-9 * px
+        px = _square_pitch(ex, ey)
+        if isfinite(px)
             σpx = psf.σ / px
             x0, y0 = Float64(ex[1]), Float64(ey[1])
             rinf = ceil(Int, 8σpx) + 1
-            return function (frame, es, ws, inner_threaded)
+            return (function (frame, es, ws, inner_threaded)
                 for e in es
                     u = (e.x - x0) / px
                     v = (e.y - y0) / px
@@ -243,11 +261,11 @@ function _frame_renderer(psf::AbstractPSF, camera, support, sampling, ::Type{T})
                         render_gaussian!(frame, ws.buf, u, v, σpx, e.photons, cols, rows)
                     end
                 end
-            end
+            end, true)
         end
     end
     # Any other PSF: integrate_pixels! on the support window, same operations as integrate_pixels
-    return function (frame, es, ws, inner_threaded)
+    return (function (frame, es, ws, inner_threaded)
         scratch = _scratch!(ws)
         for e in es
             i_range, j_range = _support_window(ex, ey, e.x, e.y, support)
@@ -258,7 +276,7 @@ function _frame_renderer(psf::AbstractPSF, camera, support, sampling, ::Type{T})
             integrate_pixels!(win, psf, edges_x, edges_y, e; sampling=sampling, threaded=inner_threaded)
             view(frame, j_range, i_range) .+= win
         end
-    end
+    end, false)
 end
 
 """

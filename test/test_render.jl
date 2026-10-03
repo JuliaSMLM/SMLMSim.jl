@@ -52,12 +52,14 @@ end
     for σpx in (1.0, 1.2, 1.3)
         psf = GaussianPSF(σpx * 0.1)
         new, _ = gen_images(smld, psf)
-        s16, _ = gen_images(smld, psf; sampling=16)
-        s2, _ = gen_images(smld, psf; sampling=2)
+        # independent reference: MicroscopePSFs.integrate_pixels per frame (design 9)
+        ref_s(sampling) = cat((integrate_pixels(psf, cam, filter(e -> e.frame == f, es); sampling=sampling)
+                               for f in 1:2)...; dims=3)
+        s16, s2 = ref_s(16), ref_s(2)
         pk = maximum(new)
         @test maximum(abs.(new .- s16)) <= 5e-4 * pk
         @test maximum(abs.(new .- s2)) <= 2.5e-2 * pk
-        @test isapprox(sum(new), sum(s16); rtol=1e-9)
+        @test isapprox(sum(new), sum(s16); rtol=1e-6)
         sup, _ = gen_images(smld, psf; support=0.4)
         supold, _ = gen_images(smld, psf; support=0.4, sampling=2)
         ref = zeros(32, 32, 2)
@@ -220,4 +222,46 @@ end
     tn = StampTable(sp, px, range(-0.6, 0.6, length=7); radius=5, zinterp=:nearest)
     d = zeros(20, 20); render_stamp!(d, tn, 10.0, 10.0, zs[3] + 0.01, 1.0)
     @test isapprox(d, b; atol=1e-14)
+end
+
+@testset "gen_images/fallback_float32_bg" begin
+    cam = IdealCamera(16, 16, 0.1)
+    psf = AiryPSF(1.4, 0.532)
+    e32 = Emitter2DFit{Float32}(0.83f0, 0.71f0, 1000.0f0, 0.0f0, 0.0f0, 0.0f0, 0.0f0, 0.0f0; frame=1)
+    smld = BasicSMLD([e32], cam, 1, 1)
+    imgs, _ = gen_images(smld, psf; bg=0.1, threaded=false)
+    @test eltype(imgs) == Float32
+    # 0.7.2: background rounded into the output type, then the emitter image added
+    old = fill(Float32(0.1), 16, 16)
+    old .+= integrate_pixels(psf, cam, [e32]; sampling=2, threaded=false)
+    @test imgs[:, :, 1] == old
+end
+
+@testset "StampTable/bounds_and_order" begin
+    px = 0.1
+    xr = range(-0.8, 0.8, length=17)
+    sp = SplinePSF(ScalarPSF(1.4, 0.532, 1.518), xr, xr, range(-0.6, 0.6, length=7))
+    # no tolerance beyond the spline's domain
+    @test_throws ArgumentError StampTable(sp, px, range(-0.6, 0.6 + 1e-13; length=7); radius=5)
+    @test_throws ArgumentError StampTable(GaussianPSF(0.13), px, range(0.3, -0.3; length=5); radius=4)
+    @test_throws ArgumentError StampTable(GaussianPSF(0.13), px, range(0.1, 0.1; length=3); radius=4)
+    # a stamp with no mass is rejected before normalization
+    zero_sp = SplinePSF(zeros(17, 17, 7), xr, xr, range(-0.6, 0.6, length=7))
+    @test_throws ArgumentError StampTable(zero_sp, px, range(-0.6, 0.6, length=7); radius=2)
+end
+
+@testset "gen_images/frames_iterable_and_float32_pitch" begin
+    cam = IdealCamera(16, 16, 0.1)
+    smld = BasicSMLD([em2(0.8, 0.8, 500.0, 1), em2(0.9, 0.7, 300.0, 2)], cam, 3, 1)
+    a, _ = gen_images(smld, GaussianPSF(0.12); frames=Set([1]))
+    b, _ = gen_images(smld, GaussianPSF(0.12); frames=[1])
+    @test a == b
+    # Float32 edges are uniform and square; a non-uniform camera is not
+    c32 = IdealCamera(256, 256, 0.1f0)
+    cr = IdealCamera(256, 128, 0.1f0)
+    @test isfinite(SMLMSim.CameraImages._square_pitch(c32.pixel_edges_x, c32.pixel_edges_y))
+    @test isfinite(SMLMSim.CameraImages._square_pitch(cr.pixel_edges_x, cr.pixel_edges_y))
+    ex = collect(0.0:0.1:1.0); ex[5] += 0.02
+    @test isnan(SMLMSim.CameraImages._uniform_pitch(ex))
+    @test isnan(SMLMSim.CameraImages._square_pitch(collect(0.0:0.1:1.0), collect(0.0:0.11:1.1)))
 end
