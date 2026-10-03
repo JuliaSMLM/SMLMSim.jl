@@ -232,6 +232,10 @@ end
     for k in 1:5
         SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01, exc)
         @test all(iszero, w.oof)
+        rows = [r for r in SMLMSim.frame_truth(w) if r.pop == 1]
+        @test length(rows) == n
+        @test all(r -> r.excitation == 1.0, rows)
+        @test isapprox(sum(r.photons for r in rows), sum(w.signal); rtol=2e-6)
     end
     @test po.budget[1:po.n] == budget0
     @test all(isinf, ps.budget[1:n]) && all(==(1), ps.state[1:n])

@@ -26,7 +26,7 @@ end
 
 """
     Population(; name, layer, density, lifetime, birth_rate, mobility, fluor,
-               brightness_sigma, budget, multiplicity, z, psf)
+               brightness_sigma, budget, multiplicity, z, psf, brightness_jitter, jitter_time, binds)
 
 One kind of emitter in a [`SimWorld`](@ref): in-focus diffusers, immobile clusters,
 out-of-focus (OOF) emitters or haze. Built by keyword. Units are μm, s and photons; rates
@@ -45,9 +45,20 @@ are per second.
 - `brightness_sigma::Float64 = 0.0`: σ of log γ, per emitter: `γ_i = γ exp(brightness_sigma ξ)`.
 - `budget::Float64 = Inf`: mean photons per fluorophore before bleaching (exponential).
 - `multiplicity::Int = 1`: fluorophores per emitter (dimming clusters); above 1 needs a one-state `q`.
+  0 is an unlabeled molecule: it never emits and its `t_bleach` is NaN; it still diffuses, departs and, with `dimers`, pairs.
 - `z::Tuple{Float64,Float64} = (0.0, 0.0)`: emitter height ~ U(z[1], z[2]) μm from focus. The
   excitation function reads it.
 - `psf` (required): a `GaussianPSF` with fixed σ (μm) or a `StampTable` whose z range covers `z`.
+- `brightness_jitter::Float64 = 0.0`, `jitter_time::Float64 = 0.01` (s): frame-to-frame brightness
+  fluctuation. Emitter i emits at `γ_i exp(X_i(t))`, where `X_i` is an Ornstein-Uhlenbeck process with
+  mean 0, stationary sd `brightness_jitter` and correlation time `jitter_time`. It is drawn stationary at
+  birth and held over each sub-step, like motion and excitation. The median rate stays `γ_i`; the mean
+  rises by `exp(brightness_jitter^2/2)`. It scales emission only, not the CTMC rates, and the budget
+  is spent by emitted photons, so bleaching follows it. With `brightness_jitter = 0` nothing is drawn.
+  Real one-molecule movies show a within-track sd of log photons of 0.37-0.48 per 10 ms frame, against
+  0.24 without jitter (`PPIDetect/dev/output/t15/sim_vs_real.md`).
+- `binds::Bool = true`: with `SimWorld(...; dimers)`, pairs with other binding emitters, within and across
+  populations; `false` never pairs. A binding population needs `multiplicity <= 1` when the world has `dimers`.
 
 # Conventions
 `z > 0` points into the sample. A far out-of-focus population uses `layer = :oof`, a blinking
@@ -73,16 +84,22 @@ struct Population
     multiplicity::Int
     z::Tuple{Float64,Float64}
     psf::Union{GaussianPSF{Float64},StampTable}
+    brightness_jitter::Float64
+    jitter_time::Float64
+    binds::Bool
 
     function Population(name, layer, density, lifetime, birth_rate, mobility, fluor,
-                        brightness_sigma, budget, multiplicity, z, psf)
+                        brightness_sigma, budget, multiplicity, z, psf, brightness_jitter, jitter_time, binds)
         layer in (:signal, :oof) || throw(ArgumentError("layer must be :signal or :oof, got :$layer"))
         density >= 0 || throw(ArgumentError("density must be >= 0"))
         lifetime > 0 || throw(ArgumentError("lifetime must be > 0"))
         budget > 0 || throw(ArgumentError("budget must be > 0"))
         birth_rate >= 0 || throw(ArgumentError("birth_rate must be >= 0"))
         brightness_sigma >= 0 || throw(ArgumentError("brightness_sigma must be >= 0"))
-        multiplicity >= 1 || throw(ArgumentError("multiplicity must be >= 1"))
+        multiplicity >= 0 || throw(ArgumentError("multiplicity must be >= 0"))
+        (isfinite(brightness_jitter) && brightness_jitter >= 0) ||
+            throw(ArgumentError("brightness_jitter must be finite and >= 0"))
+        jitter_time > 0 || throw(ArgumentError("jitter_time must be > 0"))
         z[1] <= z[2] || throw(ArgumentError("z must satisfy z[1] <= z[2]"))
         isempty(mobility) && throw(ArgumentError("mobility must not be empty"))
         for (f, D) in mobility
@@ -110,7 +127,7 @@ struct Population
                 throw(ArgumentError("the StampTable's z range $zlo..$zhi does not cover z = $z"))
         end
         return new(name, layer, density, lifetime, birth_rate, mobility, fluor,
-                   brightness_sigma, budget, multiplicity, z, psf)
+                   brightness_sigma, budget, multiplicity, z, psf, brightness_jitter, jitter_time, binds)
     end
 end
 
@@ -118,12 +135,78 @@ function Population(; name::Symbol=:emitters, layer::Symbol=:signal, density::Re
                     lifetime::Real=Inf,
                     birth_rate::Real=isfinite(lifetime) ? density / lifetime : 0.0,
                     mobility=[(1.0, 0.0)], fluor::GenericFluor, brightness_sigma::Real=0.0,
-                    budget::Real=Inf, multiplicity::Integer=1, z=(0.0, 0.0), psf)
+                    budget::Real=Inf, multiplicity::Integer=1, z=(0.0, 0.0), psf,
+                    brightness_jitter::Real=0.0, jitter_time::Real=0.01, binds::Bool=true)
     mob = Tuple{Float64,Float64}[(Float64(f), Float64(D)) for (f, D) in mobility]
     return Population(name, layer, Float64(density), Float64(lifetime), Float64(birth_rate), mob, fluor,
                       Float64(brightness_sigma), Float64(budget), Int(multiplicity),
-                      (Float64(z[1]), Float64(z[2])), psf isa GaussianPSF ? GaussianPSF(Float64(psf.σ)) : psf)
+                      (Float64(z[1]), Float64(z[2])), psf isa GaussianPSF ? GaussianPSF(Float64(psf.σ)) : psf,
+                      Float64(brightness_jitter), Float64(jitter_time), binds)
 end
+
+"""
+    DimerKinetics(; k_on, r_react, k_off, D_rot, d_dimer, D_dimer = :min)
+    DimerKinetics(cfg::DiffusionSMLMConfig; k_on, D_dimer = cfg.diff_dimer)
+
+The pairing kinetics of a [`SimWorld`](@ref) built with `dimers = DimerKinetics(...)`. One instance governs
+every pair, within and across populations; a [`Population`](@ref) with `binds = false` never pairs. Built by
+keyword. Units are μm, s and rad.
+
+- `k_on`: s⁻¹, the Doi rate at which a pair within `r_react` reacts; `Inf` reacts on first contact
+  (the 0.7 contact rule). Must be > 0.
+- `r_react`: μm, the 3D contact distance sqrt(Δx² + Δy² + Δz²) using each emitter's own z. Contacts are tested
+  at sub-step starts.
+- `k_off`: s⁻¹, dissociation rate (0 = never). Measured EGFR dimers dissociate at 0.12-0.27/s (EGF-bound) and
+  0.31-1.24/s (unliganded) (Low-Nam 2011, Valley 2015); 10/s is the fast regime simulated by Pryor 2013, not a
+  measurement. The dimer diffuses about 6 times slower than the monomer.
+- `D_dimer`: μm²/s of the complex centre; `:min` is min(D_i, D_j), so a pair with an immobile member does not move,
+  and that member keeps its position (the anchor), or a fixed value.
+- `D_rot`: rad²/s, rotational diffusion of the pair axis.
+- `d_dimer`: μm, member separation while bound.
+
+A pair leaves as one: its members share one departure time drawn from the longer of their two lifetimes (`Inf`
+if either is `Inf`), so the shorter-lived member of a cross pair cannot depart while bound and its population's
+steady count exceeds `birth_rate * lifetime` by its time bound to longer-lived partners. After a split each
+member draws a fresh departure time. Bleaching changes emission only, never binding: a bleached member (and an
+unlabeled one, `multiplicity = 0`) keeps diffusing and pairing.
+
+After a split the partners sit `r_react` apart, along their axis (an anchor stays), so the chance that they are
+within `r_react` again at the next sub-step start is the Gaussian mass of the disk of radius `r_react` around the
+partner, seen from distance `r_react`, with per-axis variance σ² = 2(D_a + D_b)h (2 D h for a mover and an
+anchor). That is about 6% at `r_react` = 0.03 μm, D = 0.37 μm²/s, h = 10 ms, and about half at 0.3 μm, as
+MicroscopeAdapt measured. Each contact then forms with probability 1 - exp(-k_on h). A finite `k_on` is
+MicroscopeAdapt's "binding rate in place of a capture radius" option; `k_on = Inf` is the 0.7 contact rule.
+
+Throws `ArgumentError` unless `k_on > 0`, `0 < r_react < Inf`, `0 <= k_off < Inf`, `D_rot >= 0`, `d_dimer >= 0`
+and `D_dimer` is `:min` or a real >= 0.
+"""
+struct DimerKinetics
+    k_on::Float64
+    r_react::Float64
+    k_off::Float64
+    D_dimer::Union{Symbol,Float64}
+    D_rot::Float64
+    d_dimer::Float64
+
+    function DimerKinetics(k_on, r_react, k_off, D_dimer, D_rot, d_dimer)
+        k_on > 0 || throw(ArgumentError("k_on must be > 0 (Inf allowed), got $k_on"))
+        (r_react > 0 && isfinite(r_react)) || throw(ArgumentError("r_react must be in (0, Inf), got $r_react"))
+        (k_off >= 0 && isfinite(k_off)) || throw(ArgumentError("k_off must be in [0, Inf), got $k_off"))
+        D_rot >= 0 || throw(ArgumentError("D_rot must be >= 0, got $D_rot"))
+        d_dimer >= 0 || throw(ArgumentError("d_dimer must be >= 0, got $d_dimer"))
+        (D_dimer === :min || (D_dimer isa Real && D_dimer >= 0)) ||
+            throw(ArgumentError("D_dimer must be :min or a real >= 0, got $D_dimer"))
+        return new(Float64(k_on), Float64(r_react), Float64(k_off),
+                   D_dimer === :min ? :min : Float64(D_dimer), Float64(D_rot), Float64(d_dimer))
+    end
+end
+
+DimerKinetics(; k_on::Real, r_react::Real, k_off::Real, D_rot::Real, d_dimer::Real, D_dimer=:min) =
+    DimerKinetics(k_on, r_react, k_off, D_dimer, D_rot, d_dimer)
+
+DimerKinetics(cfg::DiffusionSMLMConfig; k_on::Real, D_dimer=cfg.diff_dimer) =
+    DimerKinetics(; k_on, r_react=cfg.r_react, k_off=cfg.k_off, D_dimer, D_rot=cfg.diff_dimer_rot,
+                  d_dimer=cfg.d_dimer)
 
 """
     BackgroundModel(; level, stretch, jitter, feature_size, contrast, correlation_time, illumination_width)
@@ -159,6 +242,32 @@ struct UniformExcitation end
 (::UniformExcitation)(x::Float64, y::Float64, z::Float64, t::Float64) = 1.0
 
 """
+    EvanescentExcitation(; depth = 0.1, stray = 0.0)
+
+TIRF excitation: relative intensity `I(z) = stray + (1 - stray) exp(-max(z, 0)/depth)`, 1 at the
+glass. `z` is the emitter's height (the [`Population`](@ref) convention, z > 0 into the sample); the
+focal plane is at the glass, so z <= 0 gets 1. `depth` (μm, > 0) is the 1/e intensity depth, about
+0.08-0.3 μm; `stray` (in [0, 1]) is the fraction of the glass intensity that is propagating
+(scattered) light and reaches every height. It applies to every population, `:oof` included, so a
+population calibrated under [`UniformExcitation`](@ref) needs its γ rescaled. Like every excitation it
+scales emission and the state-1 exit rate.
+"""
+struct EvanescentExcitation
+    depth::Float64
+    stray::Float64
+    function EvanescentExcitation(depth::Real, stray::Real)
+        depth > 0 || throw(ArgumentError("depth must be > 0, got $depth"))
+        0 <= stray <= 1 || throw(ArgumentError("stray must be in [0, 1], got $stray"))
+        return new(Float64(depth), Float64(stray))
+    end
+end
+
+EvanescentExcitation(; depth::Real=0.1, stray::Real=0.0) = EvanescentExcitation(depth, stray)
+
+(e::EvanescentExcitation)(x::Float64, y::Float64, z::Float64, t::Float64) =
+    e.stray + (1 - e.stray) * exp(-max(z, 0.0) / e.depth)
+
+"""
     next_switch(excitation, t) -> Float64
 
 First time greater than `t` at which `excitation` changes discontinuously, or `Inf`. The
@@ -191,6 +300,51 @@ mutable struct BackgroundState
     wx::Matrix{Float64}
 end
 
+"""
+    FrameTruth
+
+One row of [`frame_truth`](@ref): what one emitter did during the last exposure `[t_a, t_b)`,
+`T = t_b - t_a`. `frame` is the exposure number, `id` the emitter, `pop` its index into
+`world.pops`, `m` the fluorophores left at the end of presence. `x`, `y` (μm) are the
+photon-weighted mean position (the presence-weighted mean if no photons, else the reference
+position), `z` its height. `photons` is the emitted total, `lit` the fraction of `T` in state 1
+with `m > 0`, `excitation` the presence-weighted mean relative intensity (NaN if never present).
+`t_birth`, `t_bleach` and `t_depart` are event times inside the exposure, else NaN. The
+`partner`, `partner_pop`, `bound`, `t_form`, `t_break`, `lit_bound` and `vis_*` fields are 0,
+NaN or false without dimers. `partner` is the partner at the end of the exposure (or at removal),
+0 if unbound then. `bound` is the fraction of `T` the emitter is bound, and `lit_bound`
+the fraction of `T` it is lit (state 1 with `m > 0`) while bound, so a member lit for 5 ms of a
+10 ms exposure while bound has `lit_bound = 0.5`. `vis_form` is true in the exposure where the
+pair formed (`t_form` not NaN) when both members were lit at the start of the forming sub-step.
+`vis_bound` is true when the emitter was bound at some point in this exposure and it and that
+partner (the last one, if several) both have `lit_bound > 0`, so a pair that breaks within the
+exposure is marked in it while its rows' `partner` is already 0. `overlap` is set by `SimWorld(...; merge_radius)`.
+"""
+struct FrameTruth
+    frame::Int
+    id::Int
+    pop::Int32
+    m::Int32
+    x::Float64
+    y::Float64
+    z::Float64
+    photons::Float64
+    lit::Float64
+    excitation::Float64
+    t_birth::Float64
+    t_bleach::Float64
+    t_depart::Float64
+    partner::Int
+    partner_pop::Int32
+    bound::Float64
+    t_form::Float64
+    t_break::Float64
+    lit_bound::Float64
+    vis_form::Bool
+    vis_bound::Bool
+    overlap::Bool
+end
+
 # Emitters of one Population (struct of arrays, capacity-preallocated, swap-remove).
 mutable struct PopState
     p::Population
@@ -212,6 +366,22 @@ mutable struct PopState
     budget::Vector{Float64}
     t_depart::Vector{Float64}
     t_birth::Vector{Float64}
+    lj::Vector{Float64}                   # log-brightness multiplier X_i (brightness_jitter)
+    xr::Vector{Float64}; yr::Vector{Float64}          # frame accumulators (see R9): reference position,
+    sx::Vector{Float64}; sy::Vector{Float64}          # photon-weighted offsets,
+    sxp::Vector{Float64}; syp::Vector{Float64}        # presence-weighted offsets,
+    sph::Vector{Float64}                              # photons,
+    t_present::Vector{Float64}; t_lit::Vector{Float64}; sI::Vector{Float64}
+    t_bleach_f::Vector{Float64}
+    partner::Vector{Int32}                            # dimers: index within the partner's population, 0 = unbound
+    partner_pop::Vector{Int32}                        # index into world.pops of the partner's population
+    partner_id::Vector{Int}                           # id of the partner (truth; outlives the link at removal)
+    θ::Vector{Float64}                                # pair axis angle
+    t_form::Vector{Float64}; t_break_due::Vector{Float64}   # -Inf if never bound
+    t_bound::Vector{Float64}; t_break_f::Vector{Float64}    # frame accumulators
+    t_litb::Vector{Float64}                           # frame accumulator: time bound and emitting
+    vis_form::Vector{Bool}                            # both members emitting at the start of the forming sub-step
+    partner_f::Vector{Int}                            # id of the last partner (set at formation, 0 from birth; vis pass)
     t_next_birth::Float64
 end
 
@@ -231,6 +401,13 @@ separate call on the caller's own RNG.
   stamp table), so light from emitters outside the field of view enters correctly. `margin = 0`
   puts the walls at the field-of-view edge.
 - `t0`: start time in s.
+- `dimers`: `nothing` or a [`DimerKinetics`](@ref): emitters of `binds = true` populations pair within and across
+  populations. Every binding population needs `multiplicity <= 1`, and every box side must exceed
+  `2 max(r_react, d_dimer)`, else `ArgumentError`.
+- `merge_radius`: μm; when > 0, truth rows of `:signal` emitters closer than this get `overlap = true`,
+  unless one is the other's partner at the end of this exposure, or its last partner in this exposure (as for
+  a pair that broke in it; two partners that broke and each paired again with another in the same exposure can
+  still be marked).
 
 Pixels must be uniform and square. Initial emitters are the steady ensemble only for
 `multiplicity = 1`, `budget = Inf` and excitation 1; otherwise start the first exposure at
@@ -257,4 +434,16 @@ mutable struct SimWorld{R<:AbstractRNG,C<:AbstractCamera}
     n_gap::Int
     buf::RenderBuffer
     id_counter::Int
+    truth::Vector{FrameTruth}             # rows of the last step!, valid to n_truth
+    n_truth::Int
+    merge_radius::Float64
+    overlap_scratch::Vector{Bool}
+    vis_partner::Vector{Int}              # per truth row: the emitter's last partner, read when bound in the exposure
+    t_a::Float64                          # the recorded exposure
+    t_b::Float64
+    dimers::Union{Nothing,DimerKinetics}
+    head::Vector{Int32}                   # cell list over unbound binding emitters: first entry of each cell
+    next::Vector{Int32}                   # per entry: next entry of the same cell
+    ent_pop::Vector{Int32}; ent_idx::Vector{Int32}
+    ncx::Int; ncy::Int                    # cells per axis
 end

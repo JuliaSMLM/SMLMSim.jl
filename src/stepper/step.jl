@@ -39,29 +39,48 @@ function _pop_state(rng::AbstractRNG, p::Population, px::Float64, box::NTuple{4,
                   isg ? nothing : _concrete_stamp(p.psf),
                   0, zeros(Int, cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(Int32, cap), zeros(UInt8, cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
-                  Inf)
+                  zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
+                  zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
+                  zeros(Int32, cap), zeros(Int32, cap), zeros(Int, cap), zeros(cap), zeros(cap), zeros(cap),
+                  zeros(cap), zeros(cap), zeros(cap), zeros(Bool, cap), zeros(Int, cap), Inf)
     return ps, n0, A
 end
 
 function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops::AbstractVector{Population};
                   background::Union{Nothing,BackgroundModel}=nothing, n_sub::Integer,
                   boundary::Symbol=:reflecting,
-                  margin::Real=default_margin(pops), t0::Real=0.0)
+                  margin::Real=default_margin(pops), t0::Real=0.0, merge_radius::Real=0.0,
+                  dimers::Union{Nothing,DimerKinetics}=nothing)
     boundary in (:reflecting, :periodic) || throw(ArgumentError("boundary must be :reflecting or :periodic"))
     n_sub >= 1 || throw(ArgumentError("n_sub must be >= 1"))
     margin >= 0 || throw(ArgumentError("margin must be >= 0"))
+    merge_radius >= 0 || throw(ArgumentError("merge_radius must be >= 0"))
     ny, nx, px, x0, y0 = _pixel_geometry(camera)
     for p in pops
         p.psf isa StampTable && !isapprox(p.psf.pixel_size, px; rtol=1e-6) &&
             throw(ArgumentError("population :$(p.name) has a StampTable built at pixel size $(p.psf.pixel_size) μm, the camera's is $px μm"))
     end
+    if dimers !== nothing
+        for p in pops
+            p.binds && p.multiplicity > 1 &&
+                throw(ArgumentError("population :$(p.name) binds with multiplicity $(p.multiplicity); dimers need multiplicity <= 1 (set binds = false)"))
+        end
+    end
     box = (x0 - margin, x0 + nx * px + margin, y0 - margin, y0 + ny * px + margin)
+    if dimers !== nothing
+        need = 2 * max(dimers.r_react, dimers.d_dimer) * (1 + 1e-9)
+        (box[2] - box[1] > need && box[4] - box[3] > need) ||
+            throw(ArgumentError("every side of the world box must exceed 2 max(r_react, d_dimer) = $need μm"))
+    end
+    ncx = dimers === nothing ? 0 : _cells_per_axis(box[2] - box[1], dimers.r_react)
+    ncy = dimers === nothing ? 0 : _cells_per_axis(box[4] - box[3], dimers.r_react)
     t0 = Float64(t0)
     w = SimWorld(rng, camera, px, x0, y0, box, boundary, Int(n_sub), t0, 0, PopState[], nothing,
                  zeros(ny, nx), zeros(ny, nx), zeros(ny, nx), zeros(ny, nx), 0,
                  RenderBuffer(maximum((p.psf isa StampTable ? p.psf.radius : ceil(Int, 5 * p.psf.σ / px) + 1
                                        for p in pops); init=0)),
-                 0)
+                 0, FrameTruth[], 0, Float64(merge_radius), Bool[], Int[], t0, t0,
+                 dimers, zeros(Int32, ncx * ncy), Int32[], Int32[], Int32[], ncx, ncy)
     for p in pops
         ps, n0, A = _pop_state(rng, p, px, box, t0)
         push!(w.pops, ps)
@@ -71,6 +90,7 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
         ps.t_next_birth = p.birth_rate > 0 ? t0 + randexp(rng) / (p.birth_rate * A) : Inf
     end
     background === nothing || (w.bg = BackgroundState(rng, background, ny, nx, px, t0))
+    resize!(w.truth, max(1, 2 * sum(ps -> length(ps.x), w.pops; init=0)))
     return w
 end
 
@@ -123,9 +143,12 @@ function step!(w::SimWorld, t_a::Real, t_b::Real, excitation::E=UniformExcitatio
     fill!(w.signal, 0.0)
     fill!(w.oof, 0.0)
     w.bg === nothing || _update_background!(w, w.bg, t_a, t_b)
+    w.t_a, w.t_b = t_a, t_b
+    _begin_truth!(w)
     for k in 1:w.n_sub
         _substep!(w, t_a + (k - 1) * h, h, excitation, true)
     end
+    _finish_truth!(w)
     w.t = t_b
     w.frame += 1
     @. w.expected = w.signal + w.oof + w.structured

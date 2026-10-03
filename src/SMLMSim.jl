@@ -89,7 +89,7 @@ using .StaticSMLM: StaticSMLMConfig, apply_noise
 using .CameraImages: gen_images, gen_image, poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
 using .CameraImages: RenderBuffer, render_gaussian!, StampTable, render_stamp!
 
-using .Stepper: Population, BackgroundModel, SimWorld, UniformExcitation, step!, layers, next_switch, gen_background
+using .Stepper: Population, DimerKinetics, BackgroundModel, SimWorld, UniformExcitation, EvanescentExcitation, FrameTruth, frame_truth, step!, layers, next_switch, gen_background
 # step! and layers are public but not exported: the names are generic (SciML and Agents.jl export a
 # step!), so callers write SMLMSim.step! and SMLMSim.layers.
 @static if VERSION >= v"1.11.0-DEV.469"
@@ -104,6 +104,8 @@ using .StaticSMLM: simulate
 export
     # Simulation interfaces
     SMLMSimParams
+
+export FrameTruth, frame_truth, DimerKinetics
 
 # Export simulation functions
 export
@@ -189,6 +191,7 @@ export
     BackgroundModel,
     SimWorld,
     UniformExcitation,
+    EvanescentExcitation,
     next_switch,
     gen_background
 
