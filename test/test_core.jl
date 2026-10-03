@@ -191,6 +191,8 @@ end
     @test f.γ == 1e4
     @test f.q == [-10.0 10.0; 1e-1 -1e-1]
     @test GenericFluor(; γ=5, q=[-1 1; 2 -2]).q == [-1.0 1.0; 2.0 -2.0]
+    fd = GenericFluor(; γ=1000.0, q=Diagonal([0.0]))
+    @test fd.q isa Matrix{Float64} && fd.q == zeros(1, 1)
     @test GenericFluor(; γ=2000, k_off=3.0).q == [-3.0 3.0; 1e-2 -1e-2]
     @test_throws ArgumentError GenericFluor(; γ=1e4, photons=1e4)
     @test_throws ArgumentError GenericFluor(; q=[-1.0 1.0; 1.0 -1.0], k_off=2.0)

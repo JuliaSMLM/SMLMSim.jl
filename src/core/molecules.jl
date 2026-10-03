@@ -78,7 +78,7 @@ function GenericFluor(;
         kon = float(k_on === nothing ? 1e-2 : k_on)
         q = [-koff koff; kon -kon]
     else
-        q = float.(q)
+        q = Matrix(float.(q))
     end
     return GenericFluor(rate, q)
 end
