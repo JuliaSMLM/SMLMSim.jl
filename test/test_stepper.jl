@@ -323,7 +323,7 @@ function rich_world(seed)
                       z=(-0.2, 0.2), psf=GaussianPSF(0.39))
     bg = BackgroundModel(level=5000.0, jitter=0.05, contrast=0.3, feature_size=0.3,
                          correlation_time=0.05, illumination_width=2.0, stretch=0.1)
-    return SimWorld(StableRNG(seed), cam32(), [sig, oof, oof2]; n_sub=4, background=bg)
+    return SimWorld(StableRNG(seed), cam32(), [sig, oof, oof2]; n_sub=4, background=bg, merge_radius=0.25)
 end
 
 @testset "stepper/determinism" begin
@@ -332,6 +332,7 @@ end
         ea = copy(SMLMSim.step!(a, (k - 1) * 0.01, k * 0.01))
         eb = SMLMSim.step!(b, (k - 1) * 0.01, k * 0.01)
         @test ea == eb
+        @test collect(SMLMSim.frame_truth(a)) == collect(SMLMSim.frame_truth(b))
     end
     @test a.pops[1].x[1:a.pops[1].n] == b.pops[1].x[1:b.pops[1].n]
     g = rich_world(22)

@@ -152,9 +152,9 @@ function _exit_to(rng::AbstractRNG, ps::PopState, s::Int)
     return UInt8(last)
 end
 
-# Advance emitter i over [t0 + τ0, t0 + h): the event loop of one sub-step. Returns the photons
-# emitted, whether the emitter is still present and whether it left by departure.
-function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, τ0::Float64, excitation::E) where {E}
+# Advance emitter i over [t0 + τ0, t1): the event loop of one sub-step [t0, t1). An event at t1 belongs to the
+# next sub-step. Returns the photons emitted, whether the emitter is still present and whether it left by departure.
+function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, τ0::Float64, excitation::E) where {E}
     rng = w.rng
     x, y, z = ps.x[i], ps.y[i], ps.z[i]
     γi = ps.p.brightness_jitter > 0 ? ps.γ[i] * exp(ps.lj[i]) : ps.γ[i]
@@ -189,19 +189,25 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
         (ρe < Inf && λx < Inf) || _bad_rate(ps.p.name, ρe, λx)
         tbl = ρe > 0 ? budget / ρe : Inf
         tdp = tdep - tnow
-        trem = h - τ
+        trem = t1 - tnow
         tsw = ts - tnow
         tbk = phase == 0 ? tform - tnow : (phase == 1 ? tbrk - tnow : Inf)
         bnd = phase == 1
         Δ0 = min(tx, tbl, tdp, trem, tsw, tbk)
         Δ = max(Δ0, 0.0)
-        if Δ0 == tdp
+        if Δ0 == tdp && tdep < t1      # departure inside [t0, t1)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             alive = false
             departed = true
             break
-        elseif Δ0 == tbl
+        elseif Δ0 == trem              # the sub-step end: an event at t1 belongs to the next sub-step
+            e += ρe * Δ
+            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
+            budget -= ρe * Δ
+            clock -= λx * Δ
+            break
+        elseif Δ0 == tbl               # bleach
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             τ += Δ
@@ -213,14 +219,14 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
             else
                 budget = bmean * randexp(rng)
             end
-        elseif Δ0 == tx
+        elseif Δ0 == tx                # CTMC exit
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             τ += Δ
             budget -= ρe * Δ
             s = Int(_exit_to(rng, ps, s))
             clock = randexp(rng)
-        elseif Δ0 == tsw && Δ0 < trem
+        elseif Δ0 == tsw               # declared switch
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
@@ -228,19 +234,13 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
             τ = ts - t0
             I = _excite(excitation, x, y, z, ts)
             ts = _next_switch(excitation, ts)
-        elseif Δ0 == tbk && Δ0 < trem
+        else                           # bound breakpoint (Δ0 == tbk)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
             clock -= λx * Δ
             τ += Δ
             phase += 1
-        else
-            e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
-            budget -= ρe * Δ
-            clock -= λx * Δ
-            break
         end
     end
     ps.m[i] = m
@@ -309,10 +309,10 @@ end
 
 # Advance emitter i and fold its photons and presence into the frame accumulators; returns
 # (e, alive, departed)
-@inline function _advance_acc!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, τ0::Float64,
+@inline function _advance_acc!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, τ0::Float64,
                                excitation::E) where {E}
     tp0 = ps.t_present[i]
-    e, alive, departed = _advance!(w, ps, i, t0, h, τ0, excitation)
+    e, alive, departed = _advance!(w, ps, i, t0, t1, τ0, excitation)
     Δp = ps.t_present[i] - tp0
     dx = ps.x[i] - ps.xr[i]
     dy = ps.y[i] - ps.yr[i]
@@ -327,13 +327,15 @@ end
     return e, alive, departed
 end
 
-# One sub-step [t0, t0 + h) of every population: kinetics and rendering, births, removal, motion
-function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::Bool) where {E}
-    w.dimers === nothing || _dimer_events!(w, t0, h)
+# One sub-step [t0, t1) of every population: kinetics and rendering, births, removal, motion. The window is
+# half-open: an event at or after t1 fires at the start of the next sub-step
+function _substep!(w::SimWorld, t0::Float64, t1::Float64, excitation::E, record::Bool) where {E}
+    h = t1 - t0
+    w.dimers === nothing || _dimer_events!(w, t0, t1)
     for (k, ps) in enumerate(w.pops)
         i = 1
         while i <= ps.n
-            e, alive, departed = _advance_acc!(w, ps, i, t0, h, 0.0, excitation)
+            e, alive, departed = _advance_acc!(w, ps, i, t0, t1, 0.0, excitation)
             record && e > 0 && _render!(w, ps, i, e)
             if alive
                 i += 1
@@ -342,13 +344,13 @@ function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::
                 _remove!(w, ps, i)
             end
         end
-        if ps.t_next_birth < t0 + h
+        if ps.t_next_birth < t1
             xmin, xmax, ymin, ymax = w.box
             gap_scale = 1 / (ps.p.birth_rate * (xmax - xmin) * (ymax - ymin))
-            while ps.t_next_birth < t0 + h
+            while ps.t_next_birth < t1
                 tb = ps.t_next_birth
                 j = _add_emitter!(w, ps, tb)
-                e, alive, departed = _advance_acc!(w, ps, j, t0, h, tb - t0, excitation)
+                e, alive, departed = _advance_acc!(w, ps, j, t0, t1, tb - t0, excitation)
                 record && e > 0 && _render!(w, ps, j, e)
                 if !alive
                     record && _write_row!(w, k, ps, j, departed)
@@ -360,7 +362,7 @@ function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::
         _move!(w, k, ps, h)
     end
     for ps in w.pops
-        ps.p.brightness_jitter > 0 && _jitter!(w, ps, t0, t0 + h)
+        ps.p.brightness_jitter > 0 && _jitter!(w, ps, t0, t1)
     end
     return nothing
 end

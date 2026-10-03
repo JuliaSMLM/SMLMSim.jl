@@ -297,6 +297,9 @@ One row of [`frame_truth`](@ref): what one emitter did during the last exposure 
 photon-weighted mean position (the presence-weighted mean if no photons, else the reference
 position), `z` its height. `photons` is the emitted total, `lit` the fraction of `T` in state 1
 with `m > 0`, `excitation` the presence-weighted mean relative intensity (NaN if never present).
+`lit`, `bound` and `lit_bound` are fractions of `T` in [0, 1]. For an emitter whose `m`, brightness and excitation `I`
+are constant over its presence (no bleach in the exposure, `brightness_jitter = 0`), `photons = m γ_i I lit T`; a
+bleach inside the exposure leaves `photons > 0` with `m = 0`.
 `t_birth`, `t_bleach` and `t_depart` are event times inside the exposure, else NaN. The
 `partner`, `partner_pop`, `bound`, `t_form`, `t_break`, `lit_bound` and `vis_*` fields are 0,
 NaN or false without dimers. `partner` is the partner at the end of the exposure (or at removal),

@@ -123,6 +123,9 @@ Time never runs backward. A call with `t_a` within `1e-9 max(1, |world.t|)` of `
 contiguous (`world.t` is set to `t_a`). A later `t_a` advances the gap unrecorded in
 `ceil(gap/h)` equal sub-steps, `h = (t_b - t_a)/n_sub`. A nonfinite time, `t_b <= t_a` or an earlier `t_a`
 throws `ArgumentError`.
+
+Every sub-step is a half-open window `[t0, t1)` and the last one ends exactly at `t_b`. An event exactly at `t_b`
+(a departure, bleach, blink, switch, birth, formation or break) belongs to the next exposure.
 """
 function step!(w::SimWorld, t_a::Real, t_b::Real, excitation::E=UniformExcitation()) where {E}
     t_a, t_b = Float64(t_a), Float64(t_b)
@@ -139,7 +142,7 @@ function step!(w::SimWorld, t_a::Real, t_b::Real, excitation::E=UniformExcitatio
         hg = g / n_g
         tg = w.t
         for k in 1:n_g
-            _substep!(w, tg + (k - 1) * hg, hg, excitation, false)
+            _substep!(w, tg + (k - 1) * hg, k == n_g ? t_a : tg + k * hg, excitation, false)
             w.n_gap += 1
         end
         w.t = t_a
@@ -150,7 +153,7 @@ function step!(w::SimWorld, t_a::Real, t_b::Real, excitation::E=UniformExcitatio
     w.t_a, w.t_b = t_a, t_b
     _begin_truth!(w)
     for k in 1:w.n_sub
-        _substep!(w, t_a + (k - 1) * h, h, excitation, true)
+        _substep!(w, t_a + (k - 1) * h, k == w.n_sub ? t_b : t_a + k * h, excitation, true)
     end
     _finish_truth!(w)
     w.t = t_b

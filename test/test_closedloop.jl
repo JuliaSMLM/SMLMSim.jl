@@ -1,6 +1,6 @@
 using SMLMSim, Test, Statistics, Random, StableRNGs, MicroscopePSFs
 using SMLMSim: frame_truth, DimerKinetics, DiffusionSMLMConfig, FrameTruth
-using SMLMSim.Stepper: _add_emitter!
+using SMLMSim.Stepper: _add_emitter!, _substep!, _begin_truth!, _finish_truth!, _advance_acc!, _write_row!
 using Random: randexp
 using Distributions: Uniform
 
@@ -38,6 +38,7 @@ end
 end
 
 @testset "closedloop/truth_consistency" begin
+    # the photon identity holds here because budget = Inf (no bleach) and there is no jitter
     pop = Population(density=3.0, fluor=two_state(1e4, 300.0, 200.0), psf=GaussianPSF(0.05))
     w = SimWorld(StableRNG(3), cam32(), [pop]; n_sub=4, margin=0.0)
     I0 = 1.5
@@ -101,6 +102,10 @@ end
     SMLMSim.step!(w, 0.0, 0.01)
     f = flag(w)
     @test f[ps.id[1]] && f[ps.id[2]] && !f[ps.id[3]]
+    # the flag is recomputed every exposure: move the second emitter 0.6 μm from the first and none is flagged
+    ps.x[2], ps.y[2] = 1.0, 1.6
+    SMLMSim.step!(w, 0.01, 0.02)
+    @test !any(values(flag(w)))
     w0 = SimWorld(StableRNG(6), cam32(), [pop]; n_sub=1, margin=0.0)
     for _ in 1:2
         _add_emitter!(w0, w0.pops[1], 0.0)
@@ -941,4 +946,165 @@ if get(ENV, "SMLMSIM_BENCH", "") == "1"
         @test r.both <= 5e-3
         @test r.alloc_step == 0 && r.alloc_noise == 0
     end
+end
+
+# ---- 0.8.0 fix (Codex r1 on lane A): frame truth ----
+
+struct SwitchExc
+    ts::Float64
+    declared::Bool
+end
+(e::SwitchExc)(x::Float64, y::Float64, z::Float64, t::Float64) = t < e.ts ? 1.0 : 3.0
+SMLMSim.next_switch(e::SwitchExc, t::Float64) = e.declared && t < e.ts ? e.ts : Inf
+
+# a world of one immobile one_state(1000.0) emitter at (1.6, 1.6); `kw` goes to the Population
+function ev_world(; n_sub=1, boundary=:reflecting, fluor=one_state(1000.0), kw...)
+    pop = Population(density=0.0, fluor=fluor, psf=GaussianPSF(0.05); kw...)
+    w = SimWorld(StableRNG(1), cam32(), [pop]; n_sub, margin=0.0, boundary)
+    ps = w.pops[1]
+    _add_emitter!(w, ps, 0.0)
+    place!(ps, [1.6], [1.6])
+    return w, ps
+end
+
+@testset "closedloop/boundary_events" begin
+    # an event exactly at t_b belongs to the next exposure
+    # (a) a departure at t_b
+    w, ps = ev_world(n_sub=1)
+    ps.t_depart[1] = 0.01
+    SMLMSim.step!(w, 0.0, 0.01)
+    r = only(frame_truth(w))
+    @test isnan(r.t_depart)
+    @test r.photons ≈ 10 rtol = 1e-12
+    @test ps.n == 1
+    SMLMSim.step!(w, 0.01, 0.02)
+    r = only(frame_truth(w))
+    @test r.t_depart == 0.01
+    @test r.photons == 0
+    @test ps.n == 0
+    # (b) the same at the end of the 8th sub-step
+    w, ps = ev_world(n_sub=8)
+    ps.t_depart[1] = 0.02
+    SMLMSim.step!(w, 0.0, 0.01)
+    SMLMSim.step!(w, 0.01, 0.02)
+    @test isnan(only(frame_truth(w)).t_depart)
+    SMLMSim.step!(w, 0.02, 0.03)
+    @test only(frame_truth(w)).t_depart == 0.02
+    # (c) a bleach at t_b
+    w, ps = ev_world(n_sub=1, budget=1e6)
+    ps.budget[1] = 10.0
+    SMLMSim.step!(w, 0.0, 0.01)
+    r = only(frame_truth(w))
+    @test r.photons ≈ 10 rtol = 1e-12
+    @test isnan(r.t_bleach)
+    @test r.m == 1
+    SMLMSim.step!(w, 0.01, 0.02)
+    r = only(frame_truth(w))
+    @test r.t_bleach == 0.01
+    @test r.m == 0
+    @test r.photons == 0
+    # (d) a birth at t_b
+    w, ps = ev_world(n_sub=8, lifetime=1e3, birth_rate=1e-9)
+    ps.n = 0
+    SMLMSim.step!(w, 0.0, 0.01)
+    ps.t_next_birth = 0.02
+    SMLMSim.step!(w, 0.01, 0.02)
+    @test isempty(frame_truth(w))
+    SMLMSim.step!(w, 0.02, 0.03)
+    @test only(frame_truth(w)).t_birth == 0.02
+    # (e) guard: a departure at the end of a gap
+    w, ps = ev_world(n_sub=4)
+    ps.t_depart[1] = 0.05
+    SMLMSim.step!(w, 0.0, 0.01)
+    SMLMSim.step!(w, 0.05, 0.06)
+    r = only(frame_truth(w))
+    @test r.t_depart == 0.05
+    @test r.photons == 0
+end
+
+@testset "closedloop/fractions_in_range" begin
+    w, ps = ev_world(n_sub=10)
+    SMLMSim.step!(w, 0.0, 0.01)
+    r = only(frame_truth(w))
+    @test 0 <= r.lit <= 1
+    @test r.lit ≈ 1 rtol = 1e-12
+    pop = Population(density=0.0, fluor=one_state(1000.0), psf=GaussianPSF(0.05))
+    dk = DimerKinetics(k_on=Inf, r_react=0.01, k_off=0.0, D_rot=0.0, d_dimer=0.005)
+    w = pair_world([pop], dk; n_sub=10)
+    for k in 1:5
+        SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01)
+        for r in frame_truth(w)
+            @test 0 <= r.bound <= 1
+            @test 0 <= r.lit_bound <= 1
+            k >= 2 && @test r.bound ≈ 1 rtol = 1e-12
+        end
+    end
+end
+
+@testset "closedloop/truth_integration" begin
+    exc = UniformExcitation()
+    # drive two recorded sub-steps by hand, moving the emitter between them
+    function two_substeps(w, ps, x2, tm, exc)
+        w.t_a, w.t_b = 0.0, 0.01
+        _begin_truth!(w)
+        _substep!(w, 0.0, tm, exc, true)
+        ps.x[1] = x2
+        _substep!(w, tm, 0.01, exc, true)
+        _finish_truth!(w)
+        return only(frame_truth(w))
+    end
+    # (a) photon-weighted centroid: weights 1:3
+    w, ps = ev_world()
+    ps.x[1] = 1.0
+    r = two_substeps(w, ps, 2.0, 0.0025, exc)
+    @test r.x ≈ 1.75 atol = 1e-12
+    @test r.photons ≈ 10 atol = 1e-12
+    # (b) no photons: the presence-weighted centroid
+    w, ps = ev_world(fluor=GenericFluor(; γ=1000.0, q=[-1e-12 1e-12; 1e-12 -1e-12]))
+    ps.state[1] = 2
+    ps.x[1] = 1.0
+    r = two_substeps(w, ps, 2.0, 0.005, exc)
+    @test r.photons == 0
+    @test r.x ≈ 1.5 atol = 1e-12
+    # (c) the centroid across a periodic wall
+    w, ps = ev_world(boundary=:periodic)
+    ps.x[1] = 3.19
+    r = two_substeps(w, ps, 0.01, 0.0025, exc)
+    @test r.x ≈ 0.005 atol = 1e-12
+    # (d) an emitter born and departed inside the exposure, across a declared switch
+    w, ps = ev_world()
+    ps.n = 0
+    j = _add_emitter!(w, ps, 0.003)
+    place!(ps, [1.6], [1.6])
+    ps.t_depart[j] = 0.007
+    w.t_a, w.t_b = 0.0, 0.01
+    w.n_truth = 0
+    e, alive, departed = _advance_acc!(w, ps, j, 0.0, 0.01, 0.003, SwitchExc(0.004, true))
+    _write_row!(w, 1, ps, j, departed)
+    r = only(frame_truth(w))
+    @test departed
+    @test r.photons ≈ 10 rtol = 1e-12
+    @test r.lit ≈ 0.4 rtol = 1e-12
+    @test r.excitation ≈ 2.5 rtol = 1e-12
+    @test r.t_birth == 0.003
+    @test r.t_depart == 0.007
+    # (e) the accumulators reset after a gap
+    w, ps = ev_world()
+    SMLMSim.step!(w, 0.0, 0.01)
+    SMLMSim.step!(w, 0.05, 0.06)
+    r = only(frame_truth(w))
+    @test r.photons ≈ 10 rtol = 1e-12
+    @test r.lit ≈ 1 rtol = 1e-12
+end
+
+@testset "closedloop/bleach_in_frame" begin
+    # a bleach inside the exposure: photons > 0 with m = 0 (the identity photons = m γ I lit T needs constant m)
+    w, ps = ev_world(n_sub=4, budget=1e6)
+    ps.budget[1] = 4.0
+    SMLMSim.step!(w, 0.0, 0.01)
+    r = only(frame_truth(w))
+    @test r.photons ≈ 4 rtol = 1e-12
+    @test r.m == 0
+    @test r.lit ≈ 0.4 rtol = 1e-12
+    @test r.t_bleach ≈ 0.004 rtol = 1e-12
 end

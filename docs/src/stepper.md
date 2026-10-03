@@ -164,7 +164,8 @@ long  = Population(name = :long, density = 0.0, birth_rate = 0.18 * rate, lifeti
 
 [`SMLMSim.frame_truth`](@ref)`(world)` returns one [`FrameTruth`](@ref) row for every emitter present at any
 time in the last exposure `[t_a, t_b)`, `T = t_b - t_a`, as a view of the world's buffer that stays valid
-until the next `step!`. Gap sub-steps write no rows. The fields:
+until the next `step!`. Gap sub-steps write no rows. Every sub-step is a half-open window `[t0, t1)`: an event
+exactly at `t_b` belongs to the next exposure. The fields:
 
 - `frame`, `id`, `pop` (index into `world.pops`) and `m`, the fluorophores left at the end of presence;
 - `x`, `y`: the photon-weighted mean position (the presence-weighted mean when the emitter emitted nothing),
@@ -176,6 +177,8 @@ until the next `step!`. Gap sub-steps write no rows. The fields:
 - `partner` (an id, 0 when unbound at the end or at removal), `partner_pop`, `bound` (the fraction of `T`
   bound), `t_form` and `t_break` (event times inside the exposure, else `NaN`), `lit_bound` (the fraction of
   `T` bound and emitting);
+- `lit`, `bound` and `lit_bound` are fractions of `T` in [0, 1]; where `m`, brightness and `I` are constant over
+  the emitter's presence (no bleach in the exposure, no jitter), `photons = m γ_i I lit T`;
 - `vis_form`: set in the exposure where the pair formed, true when both members were emitting at the start of
   the forming sub-step; `vis_bound`: true when the emitter was bound at some point in the exposure and it and
   its last partner both have `lit_bound > 0`, so a pair that breaks inside the exposure is still marked;

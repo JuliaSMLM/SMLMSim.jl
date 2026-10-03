@@ -116,7 +116,7 @@ function _build_cells!(w::SimWorld)
 end
 
 # 1b, one candidate: form the pair of entries e1, e2 if they are in contact and neither has bound
-function _try_pair!(w::SimWorld, e1::Int, e2::Int, t0::Float64, h::Float64)
+function _try_pair!(w::SimWorld, e1::Int, e2::Int, t0::Float64, t1::Float64)
     ka, ia = Int(w.ent_pop[e1]), Int(w.ent_idx[e1])
     kb, ib = Int(w.ent_pop[e2]), Int(w.ent_idx[e2])
     A = w.pops[ka]
@@ -134,8 +134,8 @@ function _try_pair!(w::SimWorld, e1::Int, e2::Int, t0::Float64, h::Float64)
     end
     rng = w.rng
     E = dk.k_on == Inf ? 0.0 : randexp(rng) / dk.k_on
-    E >= h && return nothing
     tform = t0 + E
+    tform < t1 || return nothing
     (A.t_depart[ia] <= tform || B.t_depart[ib] <= tform) && return nothing
     ux, uy = _place_pair!(w, A, ia, B, ib, dk.d_dimer)
     θ = atan(uy, ux)
@@ -155,7 +155,7 @@ function _try_pair!(w::SimWorld, e1::Int, e2::Int, t0::Float64, h::Float64)
 end
 
 # 1b: visit candidates cell by cell (x fastest): own list, then the forward cells (+x), (-x,+y), (+y), (+x,+y)
-function _form_pairs!(w::SimWorld, t0::Float64, h::Float64)
+function _form_pairs!(w::SimWorld, t0::Float64, t1::Float64)
     ncx, ncy = w.ncx, w.ncy
     periodic = w.boundary === :periodic
     for cy in 1:ncy, cx in 1:ncx
@@ -163,7 +163,7 @@ function _form_pairs!(w::SimWorld, t0::Float64, h::Float64)
         while e != 0
             e2 = Int(w.next[e])
             while e2 != 0
-                _try_pair!(w, e, e2, t0, h)
+                _try_pair!(w, e, e2, t0, t1)
                 e2 = Int(w.next[e2])
             end
             for (ox, oy) in ((1, 0), (-1, 1), (0, 1), (1, 1))
@@ -179,7 +179,7 @@ function _form_pairs!(w::SimWorld, t0::Float64, h::Float64)
                 end
                 e2 = Int(w.head[(ny - 1) * ncx + nx])
                 while e2 != 0
-                    _try_pair!(w, e, e2, t0, h)
+                    _try_pair!(w, e, e2, t0, t1)
                     e2 = Int(w.next[e2])
                 end
             end
@@ -189,9 +189,9 @@ function _form_pairs!(w::SimWorld, t0::Float64, h::Float64)
     return nothing
 end
 
-# 1c: split every pair whose break falls in [t0, t0 + h) before its departure; the unbinding rule keeps a
+# 1c: split every pair whose break falls in [t0, t1) before its departure; the unbinding rule keeps a
 # split pair from re-forming in place; each member draws a fresh departure time
-function _split_pairs!(w::SimWorld, t0::Float64, h::Float64)
+function _split_pairs!(w::SimWorld, t0::Float64, t1::Float64)
     dk = w.dimers
     rng = w.rng
     periodic = w.boundary === :periodic
@@ -202,7 +202,7 @@ function _split_pairs!(w::SimWorld, t0::Float64, h::Float64)
             kp = Int(ps.partner_pop[i])
             (k < kp || (k == kp && i < ip)) || continue
             tbd = ps.t_break_due[i]
-            (tbd < t0 + h && tbd < ps.t_depart[i]) || continue
+            (tbd < t1 && tbd < ps.t_depart[i]) || continue
             Q = w.pops[kp]
             ps.t_break_f[i] = tbd; Q.t_break_f[ip] = tbd
             ps.partner[i] = 0; ps.partner_pop[i] = 0; ps.partner_id[i] = 0
@@ -219,10 +219,10 @@ function _split_pairs!(w::SimWorld, t0::Float64, h::Float64)
     return nothing
 end
 
-# Dimer events of one sub-step [t0, t0 + h), at t0 positions: 1a cell list, 1b formation, 1c dissociation
-function _dimer_events!(w::SimWorld, t0::Float64, h::Float64)
+# Dimer events of one sub-step [t0, t1), at t0 positions: 1a cell list, 1b formation, 1c dissociation
+function _dimer_events!(w::SimWorld, t0::Float64, t1::Float64)
     _build_cells!(w)
-    _form_pairs!(w, t0, h)
-    _split_pairs!(w, t0, h)
+    _form_pairs!(w, t0, t1)
+    _split_pairs!(w, t0, t1)
     return nothing
 end
