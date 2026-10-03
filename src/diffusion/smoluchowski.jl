@@ -129,11 +129,18 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
 
     # Rule for the diffusion of a bound pair: :fixed (diff_dimer for every pair) or :min
     pair_mobility::Symbol = :fixed
-    
+
+    # Per-molecule brightness: log-brightness OU jitter, and a height for the excitation
+    brightness_jitter::Float64 = 0.0
+    jitter_time::Float64 = 0.01
+    z_range::Tuple{Float64,Float64} = (0.0, 0.0)
+    excitation::Union{Nothing,EvanescentExcitation} = nothing
+
     function DiffusionSMLMConfig(
         density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
         k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
-        camera_framerate, camera_exposure, monomer_mobility, pair_mobility
+        camera_framerate, camera_exposure, monomer_mobility, pair_mobility,
+        brightness_jitter, jitter_time, z_range, excitation
     )
         # Input validation
         if density <= 0
@@ -198,12 +205,28 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         if pair_mobility == :min && !(diff_monomer > 0)
             throw(ArgumentError("pair_mobility = :min requires diff_monomer > 0 (it is the scale reference)"))
         end
-        
+        (isfinite(brightness_jitter) && brightness_jitter >= 0) ||
+            throw(ArgumentError("brightness_jitter must be finite and >= 0, got $brightness_jitter"))
+        jitter_time > 0 || throw(ArgumentError("jitter_time must be > 0, got $jitter_time"))
+        z_range[1] <= z_range[2] || throw(ArgumentError("z_range must satisfy z_range[1] <= z_range[2], got $z_range"))
+        excitation !== nothing && ndims != 2 &&
+            throw(ArgumentError("excitation needs ndims = 2 (the height comes from z_range)"))
+
         new(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
             k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
-            camera_framerate, camera_exposure, monomer_mobility, pair_mobility)
+            camera_framerate, camera_exposure, monomer_mobility, pair_mobility,
+            brightness_jitter, jitter_time, z_range, excitation)
     end
 end
+
+# Positional construction with a pair mobility rule (the 0.7.2 signature, before the brightness fields)
+DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
+                    k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
+                    camera_framerate, camera_exposure, monomer_mobility, pair_mobility) =
+    DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
+                        k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
+                        camera_framerate, camera_exposure, monomer_mobility, pair_mobility,
+                        0.0, 0.01, (0.0, 0.0), nothing)
 
 # Positional construction with a mobility mixture (#36's signature, before pair_mobility)
 DiffusionSMLMConfig(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
@@ -570,6 +593,16 @@ function _record_frame!(camera_emitters, emitters, time, frame_num)
     return nothing
 end
 
+# Scale the records after index n0 by each molecule's brightness factor exp(X)·I. Internal.
+function _scale_records!(camera_emitters, n0, track_X, track_I)
+    for r in n0+1:length(camera_emitters)
+        e = camera_emitters[r]
+        g = exp(get(track_X, e.track_id, 0.0)) * get(track_I, e.track_id, 1.0)
+        camera_emitters[r] = restamp(e; photons=e.photons * g)
+    end
+    return nothing
+end
+
 """
     simulate(params::DiffusionSMLMConfig;
              starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing,
@@ -797,12 +830,35 @@ function simulate(params::DiffusionSMLMConfig;
     # Set when a dissociated pair closer than r_react cannot be placed r_react apart (warned after the run)
     split_unfit = Ref(false)
 
+    # Per-molecule brightness factor: OU log-brightness jitter and excitation at a height in
+    # z_range, both drawn once per molecule and only when enabled (the defaults draw nothing)
+    jit = params.brightness_jitter > 0
+    exc = params.excitation
+    ids = sort!(unique(e.track_id for e in emitters))
+    track_X = Dict{Int,Float64}()
+    track_I = Dict{Int,Float64}()
+    z1, z2 = params.z_range
+    for id in ids
+        jit && (track_X[id] = params.brightness_jitter * randn())
+        exc !== nothing && (track_I[id] = exc(0.0, 0.0, z1 == z2 ? z1 : z1 + (z2 - z1) * rand(), 0.0))
+    end
+    a_ou, b_ou = _ou_coeffs(params.brightness_jitter, params.jitter_time, params.dt)
+
     # Simulation loop in integer steps; the first n_sub steps of each frame are recorded
     for f in 1:n_frames, j in 0:steps_per_frame-1
         k = (f - 1) * steps_per_frame + j
-        j < n_sub && _record_frame!(camera_emitters, emitters, k * params.dt, f)
+        if j < n_sub
+            n0 = length(camera_emitters)
+            _record_frame!(camera_emitters, emitters, k * params.dt, f)
+            (jit || exc !== nothing) && _scale_records!(camera_emitters, n0, track_X, track_I)
+        end
         emitters = update_system(emitters, params, params.dt; track_D=isempty(track_D) ? nothing : track_D,
                                  moved_immobile=moved_immobile, split_unfit=split_unfit)
+        if jit
+            for id in ids
+                track_X[id] = a_ou * track_X[id] + b_ou * randn()
+            end
+        end
     end
 
     # Under :fixed, formation, bound motion and dissociation move immobile members: say so once per run

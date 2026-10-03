@@ -54,7 +54,7 @@ using Printf
 
 # Import the main simulate function to add our method
 import ..simulate
-import ..Core: SMLMSimParams
+import ..Core: SMLMSimParams, EvanescentExcitation, _ou_coeffs
 import ..SimInfo
 
 include("types.jl")
