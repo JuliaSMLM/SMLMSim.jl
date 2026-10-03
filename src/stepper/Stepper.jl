@@ -21,6 +21,7 @@ using ..InteractionDiffusion: DiffusionSMLMConfig
 using ..CameraImages: _uniform_pitch, RenderBuffer, render_gaussian!, StampTable, render_stamp!
 
 include("types.jl")
+include("excitation.jl")
 include("kinetics.jl")
 include("dimers.jl")
 include("background.jl")
@@ -28,6 +29,7 @@ include("truth.jl")
 include("step.jl")
 
 export Population, DimerKinetics, BackgroundModel, SimWorld, UniformExcitation, EvanescentExcitation
+export Spot, SpotExcitation
 export FrameTruth, frame_truth, next_switch, gen_background  # step! and layers are public, not exported (generic names)
 
 end # module

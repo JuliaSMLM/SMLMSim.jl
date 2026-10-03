@@ -42,7 +42,7 @@ params = DiffusionSMLMConfig(
 # Run simulation
 # γ = emission rate, photons/s; each of the n_sub = camera_exposure/dt records in a frame
 # carries γ·dt, so a frame holds γ·camera_exposure photons (1e4/s * 0.1 s = 1000);
-# without γ each record carries 1000 photons
+# without γ new emitters carry a fixed 1e5 photons/s (1000 per record at dt = 0.01 s)
 smld, info = simulate(params; γ=1e4)
 
 # Extract coordinates based on monomer/dimer state for a specific frame

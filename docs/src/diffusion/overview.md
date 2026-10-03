@@ -98,9 +98,12 @@ The `γ` argument of `simulate` is the emission rate in photons/s; each of the
 `n_sub` records in a frame carries `γ·dt`, so a frame holds `γ·n_sub·dt` photons. That
 equals `γ·camera_exposure` when `camera_exposure` is an integer multiple of `dt` and not longer
 than the frame period `1/camera_framerate`; otherwise `n_sub = round(camera_exposure/dt)`
-(at least 1), capped at the number of steps in the frame period, with a warning. Without `γ`, each record carries 1000 photons (γ = 1000/dt,
-0.7's default; 0.8.0 will change the default to a fixed rate). The `photons` keyword is
-deprecated (γ = photons/dt) and is removed in 0.8.0.
+(at least 1), capped at the number of steps in the frame period, with a warning. Without `γ`, new emitters carry a fixed 1e5 photons/s (1000 per record at the default `dt = 0.01` s).
+
+0.8.0 removes: `simulate(cfg; photons = p)`, use `γ = p/cfg.dt`; `initialize_emitters(cfg, p)`, use
+`initialize_emitters(cfg; γ = p/cfg.dt)`; `extract_final_state(smld)`, use `extract_end_state(smld)`;
+`add_camera_frame_emitters!` (internal, no replacement). The default emission rate is now a fixed 1e5 photons/s:
+1000 per record at the default dt = 0.01 s, as before; at another dt the per-record count follows the rate.
 
 To continue a run, pass `starting_conditions=smld` or `extract_end_state(smld)`; both resume
 at the exact end state of an unchanged run. Brightness: a run whose rate was set with `γ` continues at
@@ -121,7 +124,7 @@ it in the metadata) or, as a backstop, a last frame holding two records of one t
 timestamp, which no single run produces, is taken as unknown provenance: no γ, rate source or saved D
 is carried, with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
 its last frame, which is not the exact end state and carries no per-molecule history beyond that record
-(blinking, bleaching or brightness-jitter state is not rebuilt). `extract_final_state` is deprecated.
+(blinking, bleaching or brightness-jitter state is not rebuilt).
 The full continuation rule is in [Placement and Continuation Rules](rules.md).
 
 Monomers can be given a mixture of mobility populations with

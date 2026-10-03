@@ -400,66 +400,53 @@ end
         @test all(nrec(smld, f) == 10 for f in 1:smld.n_frames)
     end
 
-    @testset "(h) photons deprecation and defaults" begin
+    @testset "(h) photons removal and defaults" begin
         p = static_params(dt=1.25e-3, diff_monomer=0.3, t_max=0.05)
         cam = cam32
         Random.seed!(11)
-        sp, _ = @test_logs (:warn, r"photons keyword is deprecated") match_mode=:any simulate(
-            p; photons=100.0, override_count=3, camera=cam)
-        @test all(e -> e.photons == 100.0, sp.emitters)
+        sp, _ = simulate(p; γ=100.0 / p.dt, override_count=3, camera=cam)
+        @test all(e -> e.photons ≈ 100.0, sp.emitters)
         @test sp.metadata["γ"] ≈ 100.0 / p.dt
-        Random.seed!(11)
-        sg, _ = simulate(p; γ=100.0 / p.dt, override_count=3, camera=cam)
-        @test [e.photons for e in sg.emitters] ≈ [e.photons for e in sp.emitters]
-        @test [(e.x, e.y, e.track_id) for e in sg.emitters] == [(e.x, e.y, e.track_id) for e in sp.emitters]
-        # no keyword: 1000 photons per record, as in 0.7
-        sd, _ = simulate(p; override_count=3, camera=cam)
-        @test all(e -> e.photons == 1000.0, sd.emitters)
-        @test sd.metadata["γ"] ≈ 1000.0 / p.dt
-        # both keywords
+        # the photons keyword is removed, with or without starting conditions
+        @test_throws ArgumentError simulate(p; photons=100.0, override_count=3, camera=cam)
         @test_throws ArgumentError simulate(p; photons=100.0, γ=1e4, override_count=1, camera=cam)
-        # Vector starting conditions keep their own photons, also with the deprecated photons keyword
+        # no keyword: a fixed 1e5 photons/s
+        sd, _ = simulate(p; override_count=3, camera=cam)
+        @test all(e -> e.photons ≈ 1e5 * p.dt, sd.emitters)
+        @test sd.metadata["γ"] == 1e5
+        @test sd.metadata["rate_source"] == "default"
+        # Vector starting conditions keep their own photons
         st = [DiffusingEmitter2D{Float64}(1.0, 1.0, 77.0, 0.0, 1, 1, 1, :monomer, nothing)]
         sv, _ = simulate(p; starting_conditions=st, camera=cam)
-        @test all(e -> e.photons == 77.0, sv.emitters)
-        sv, _ = simulate(p; starting_conditions=st, photons=5.0, camera=cam)
         @test all(e -> e.photons == 77.0, sv.emitters)
         sv, _ = simulate(p; starting_conditions=st, γ=2e4, camera=cam)
         @test all(e -> e.photons ≈ 2e4 * p.dt, sv.emitters)
         # SMLD continuation keeps photons and γ
         sc, _ = simulate(p; starting_conditions=sp, camera=cam)
-        @test all(e -> e.photons == 100.0, sc.emitters)
+        @test all(e -> e.photons ≈ 100.0, sc.emitters)
         @test sc.metadata["γ"] ≈ 100.0 / p.dt
     end
 
     @testset "(i) initialize_emitters" begin
         p = static_params(dt=1.25e-3)
-        em = @test_logs (:warn, r"positional photons argument is deprecated") match_mode=:any SMLMSim.InteractionDiffusion.initialize_emitters(p, 1000.0; override_count=3)
-        @test length(em) == 3 && all(e -> e.photons == 1000.0, em)
+        @test_throws MethodError SMLMSim.InteractionDiffusion.initialize_emitters(p, 1000.0; override_count=3)
         em = SMLMSim.InteractionDiffusion.initialize_emitters(p; γ=1e4, override_count=3)
+        @test length(em) == 3
         @test all(e -> e.photons ≈ 1e4 * p.dt, em)
         em = SMLMSim.InteractionDiffusion.initialize_emitters(p; override_count=2)
-        @test all(e -> e.photons == 1000.0, em)
-        @test_throws ArgumentError SMLMSim.InteractionDiffusion.initialize_emitters(p, 1000.0; γ=1e4)
+        @test all(e -> e.photons ≈ 1e5 * p.dt, em)
     end
 
     @testset "(j) final-state functions" begin
         p = static_params(dt=1.25e-3, diff_monomer=0.5, t_max=0.05)
         Random.seed!(12)
         smld, _ = simulate(p; γ=1e4, override_count=4, camera=cam32)
-        fv = @test_logs (:warn, r"extract_final_state is deprecated") match_mode=:any extract_final_state(smld)
-        @test fv isa Vector
-        @test [e.track_id for e in fv] == 1:4
-        for e in fv
-            recs = filter(r -> r.frame == smld.n_frames && r.track_id == e.track_id, smld.emitters)
-            latest = recs[argmax([r.timestamp for r in recs])]
-            @test e == latest
-        end
         es = extract_end_state(smld)
         @test es isa BasicSMLD && es.n_frames == 1
         @test extract_end_state(es).emitters == es.emitters
         @test es.metadata["γ"] == 1e4
         # the Vector still works as starting_conditions
+        fv = SMLMSim.InteractionDiffusion._last_frame_latest(smld.emitters)
         sv, _ = simulate(p; starting_conditions=fv, camera=cam32)
         @test all(nrec(sv, f) == 4 * 8 for f in 1:sv.n_frames)
         # continuation from the SMLD keeps D and γ
@@ -535,19 +522,10 @@ end
         @test [(e.x, e.y) for e in extract_end_state(sab).emitters] ==
               [(e.x, e.y) for e in SMLMSim.InteractionDiffusion._last_frame_latest(smld_b.emitters)]
 
-        # deprecated photons keyword behaves as in 0.7: no validation
-        sn, _ = @test_logs (:warn, r"photons keyword is deprecated") match_mode=:any simulate(
-            p; photons=-1.0, override_count=2, camera=cam32)
-        @test all(e -> e.photons == -1.0, sn.emitters)
-
-        # deprecated add_camera_frame_emitters! keeps the 0.7 signature and window
-        ce = similar(smld.emitters, 0)
-        em = smld.metadata["final_state"]
-        @test_logs (:warn, r"add_camera_frame_emitters! is internal and deprecated") match_mode=:any begin
-            SMLMSim.InteractionDiffusion.add_camera_frame_emitters!(ce, em, 0.005, 1, p)
-            SMLMSim.InteractionDiffusion.add_camera_frame_emitters!(ce, em, 0.05, 1, p)
-        end
-        @test length(ce) == length(em) && all(e -> e.timestamp == 0.005, ce)
+        # the removed forms are gone
+        @test !isdefined(SMLMSim, :extract_final_state)
+        @test !isdefined(SMLMSim.InteractionDiffusion, :extract_final_state)
+        @test !isdefined(SMLMSim.InteractionDiffusion, :add_camera_frame_emitters!)
 
         # update_system with an orphan dimer warns and drops it
         orphan = DiffusingEmitter2D{Float64}(1.0, 1.0, 1.0, 0.0, 1, 1, 1, :dimer, 99)
@@ -555,8 +533,6 @@ end
         @test isempty(out)
 
         # γ metadata is true or absent
-        s5, _ = simulate(p; starting_conditions=smld, photons=5.0, camera=cam32)
-        @test s5.metadata["γ"] == 1e4
         st = [DiffusingEmitter2D{Float64}(1.0, 1.0, 77.0, 0.0, 1, 1, i, :monomer, nothing) for i in 1:2]
         sv, _ = simulate(p; starting_conditions=st, camera=cam32)
         @test sv.metadata["γ"] ≈ 77.0 / p.dt
@@ -1018,13 +994,6 @@ end
         @test !isempty(still)
         moved = sum(count(e -> (e.x, e.y) != (start[id].x, start[id].y), filter(e -> e.track_id == id, sm2.emitters)) for id in still)
         @test moved == 0
-
-        # 3. extract_final_state on fitted emitters is the 0.7.1 largest-frame filter
-        fits = [SD.Emitter2DFit{Float64}(1.0 * i, 2.0, 100.0, 1.0, 0.01, 0.01, 1.0, 0.1; frame=f, track_id=mod1(i, 2), id=i + 10 * f)
-                for f in 1:3 for i in 1:4]
-        sfit = BasicSMLD(fits, cam32, 3, 1)
-        ffit = @test_logs (:warn, r"extract_final_state is deprecated") match_mode=:any extract_final_state(sfit)
-        @test ffit == filter(e -> e.frame == 3, sfit.emitters)
 
         # 4. extraction is idempotent when dimers reorder tracks
         pd = static_params(dt=1.25e-3, t_max=0.1, box_size=1.0, diff_monomer=0.5, r_react=0.2, k_off=0.0)
@@ -1681,12 +1650,12 @@ end
     @testset "(m) main reviewer of #36" begin
         pa = static_params(dt=0.01, diff_monomer=0.5)
         pb = static_params(dt=0.001, diff_monomer=0.5)
-        # B2. default and photons= sources keep their photons per record at a new dt, as in 0.7.1, over two hops;
+        # B2. default and Vector (photons per record) sources keep their photons per record at a new dt, as in 0.7.1, over two hops;
         # the stored γ is the kept photons over the new dt
         Random.seed!(41)
         sd, _ = simulate(pa; override_count=3, camera=cam32)
-        sp, _ = @test_logs (:warn, r"photons is ignored") match_mode=:any simulate(
-            pa; photons=200.0, override_count=3, camera=cam32)
+        st200 = [DiffusingEmitter2D{Float64}(1.0 + i, 1.0, 200.0, 0.0, 1, 1, i, :monomer, nothing) for i in 1:3]
+        sp, _ = simulate(pa; starting_conditions=st200, camera=cam32)
         for (src, p, source) in ((sd, 1000.0, "default"), (sp, 200.0, "photons"))
             @test src.metadata["rate_source"] == source
             h1, _ = simulate(pb; starting_conditions=src, camera=cam32)
@@ -1744,7 +1713,8 @@ end
         # two sources at dt 0.0025, so a concatenation's colliding ids resume the other run's records
         srcs = [(1e4, cfg(), go(cfg(); γ=1e4)), (2e4, cfg(dt=0.0025, mix=mixA), go(cfg(dt=0.0025, mix=mixA); γ=2e4)),
                 (nothing, cfg(), go(cfg())), (nothing, cfg(dt=0.0025, mix=mixA), go(cfg(dt=0.0025, mix=mixA))),
-                (nothing, cfg(), @test_logs((:warn, r"deprecated"), match_mode=:any, go(cfg(); photons=300.0)))]
+                (nothing, cfg(), simulate(cfg(); camera=cam32, starting_conditions=
+                    [DiffusingEmitter2D{Float64}(0.5 * i, 1.0, 300.0, 0.0, 1, 1, i, :monomer, nothing) for i in 1:4])[1])]
         wrap(es, s) = BasicSMLD(es, s.camera, s.n_frames, 1, copy(s.metadata))
         shift(es, k) = [DiffusingEmitter2D{Float64}(e.x, e.y, e.photons, e.timestamp, e.frame, e.dataset, e.track_id + k,
                                                     e.state, e.partner_id) for e in es]
