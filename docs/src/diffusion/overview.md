@@ -105,6 +105,18 @@ than the frame period `1/camera_framerate`; otherwise `n_sub = round(camera_expo
 `add_camera_frame_emitters!` (internal, no replacement). The default emission rate is now a fixed 1e5 photons/s:
 1000 per record at the default dt = 0.01 s, as before; at another dt the per-record count follows the rate.
 
+Brightness can be modulated per molecule with four keywords of `DiffusionSMLMConfig`:
+`brightness_jitter` (stationary sd s of a log-brightness Ornstein-Uhlenbeck process X, default 0),
+`jitter_time` (its correlation time in s, default 0.01), `excitation` (for example
+`EvanescentExcitation(; depth, stray)`, default `nothing`) and `z_range` (the heights, μm, from which each
+molecule draws one uniformly; `ndims = 2`). Each record then carries `γ·dt·exp(X)·I(z)` photons, with X
+advancing every `dt` (recorded or not) independently per molecule. With the defaults nothing is drawn and the
+output is that of 0.7.2. Every `simulate` call redraws each molecule's X (from its stationary law) and its
+height, a pristine continuation included, so neither is carried: even a very long `jitter_time` still gives a
+continued molecule a new multiplier. The unmodulated photons per track are saved in
+`metadata["base_photons"]` (only when modulation is on) and continuation resumes each track at that base, so a
+filtered or edited SMLD does not apply the modulation twice; an SMLD of unknown provenance drops it.
+
 To continue a run, pass `starting_conditions=smld` or `extract_end_state(smld)`; both resume
 at the exact end state of an unchanged run. Brightness: a run whose rate was set with `γ` continues at
 that rate (each record carries γ·dt at the new `dt`) when every resumed molecule still carries γ·dt at
@@ -124,7 +136,7 @@ it in the metadata) or, as a backstop, a last frame holding two records of one t
 timestamp, which no single run produces, is taken as unknown provenance: no γ, rate source or saved D
 is carried, with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
 its last frame, which is not the exact end state and carries no per-molecule history beyond that record
-(blinking, bleaching or brightness-jitter state is not rebuilt).
+(blinking, bleaching or brightness-jitter state is not rebuilt; see above).
 The full continuation rule is in [Placement and Continuation Rules](rules.md).
 
 Monomers can be given a mixture of mobility populations with

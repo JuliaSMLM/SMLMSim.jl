@@ -38,6 +38,16 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `boundary::String`: boundary condition type ("periodic" or "reflecting")
 - `camera_framerate::Float64`: camera frames per second (Hz)
 - `camera_exposure::Float64`: camera exposure time per frame (s)
+- `brightness_jitter::Float64`, `jitter_time::Float64`, `z_range::Tuple{Float64,Float64}`,
+  `excitation`: per-molecule brightness modulation, off by default (`0.0`, `0.01`, `(0.0, 0.0)`,
+  `nothing`; no random draws, output unchanged). `brightness_jitter` (s ≥ 0) is the stationary sd of a
+  log-brightness Ornstein-Uhlenbeck process X with correlation time `jitter_time` (s, > 0); X advances
+  every `dt`, recorded or not, independently per molecule. `excitation` (for example
+  [`EvanescentExcitation`](@ref); needs `ndims = 2`) gives a relative intensity I(z) at a height drawn
+  uniformly once per molecule in `z_range` (finite ends, `z_range[1] <= z_range[2]`). Each record then
+  carries γ·dt·exp(X)·I(z) photons. Every `simulate` call redraws each molecule's X (from its stationary
+  law) and height; neither is carried into a continuation, a pristine one included. The unmodulated
+  photons per track are saved in `metadata["base_photons"]` and used on continuation.
 - `monomer_mobility::Vector{Tuple{Float64,Float64}}`: optional mixture of monomer mobility
   populations, each entry `(fraction, D)` with fractions summing to 1 and `D` in μm²/s.
   Each molecule draws its population once, at initialization (or when it enters through
@@ -208,6 +218,8 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         (isfinite(brightness_jitter) && brightness_jitter >= 0) ||
             throw(ArgumentError("brightness_jitter must be finite and >= 0, got $brightness_jitter"))
         jitter_time > 0 || throw(ArgumentError("jitter_time must be > 0, got $jitter_time"))
+        (isfinite(z_range[1]) && isfinite(z_range[2])) ||
+            throw(ArgumentError("z_range must have finite ends, got $z_range"))
         z_range[1] <= z_range[2] || throw(ArgumentError("z_range must satisfy z_range[1] <= z_range[2], got $z_range"))
         excitation !== nothing && ndims != 2 &&
             throw(ArgumentError("excitation needs ndims = 2 (the height comes from z_range)"))
@@ -580,9 +592,12 @@ with emitters that have both frame number and timestamp information.
   An SMLD resumes at its exact end state (`extract_end_state`) and carries each track's D and γ
   forward. A Vector keeps each emitter's own `photons`, gets fresh D draws, and is deduplicated
   to the latest record per track_id (with a warning) if track_ids repeat.
-- `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (finite, ≥ 0); each of the
+- `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (finite, ≥ 0); without brightness
+  modulation each of the
   n_sub records in a frame carries γ·dt, so a frame holds γ·n_sub·dt photons (γ·camera_exposure
-  when the exposure is a whole number of steps and not capped at the frame period).
+  when the exposure is a whole number of steps and not capped at the frame period). With
+  `brightness_jitter` or `excitation` set (see [`DiffusionSMLMConfig`](@ref)) each record carries
+  γ·dt·exp(X)·I(z); the state X and the height are redrawn on every call, a continuation included.
   An explicit γ restamps starting emitters to γ·dt. Default for new emitters: a fixed
   γ = 1e5 photons/s, which is 1000 photons per record at the default `dt = 0.01` s.
   `smld.metadata["rate_source"]` records how the rate was set: `"γ"`, `"photons"` or `"default"`.
@@ -822,6 +837,9 @@ function simulate(params::DiffusionSMLMConfig;
     t_end = n_frames * steps_per_frame * params.dt
     smld.metadata["last_frame_latest"] = _last_frame_latest(smld.emitters)
     smld.metadata["final_state"] = [restamp(e; timestamp=t_end, frame=n_frames) for e in emitters]
+    # Records carry modulated photons; the live emitters carry each track's base, saved for continuation
+    (jit || exc !== nothing) &&
+        (smld.metadata["base_photons"] = Dict{Int,Float64}(e.track_id => Float64(e.photons) for e in emitters))
 
     elapsed_s = (time_ns() - start_time) / 1e9
 
@@ -916,12 +934,13 @@ unchanged from that run (the latest record per track of the last frame matches
 `metadata["last_frame_latest"]`). Otherwise (filtered, edited or re-wrapped
 without metadata) the record with the largest timestamp per track in the last frame present is
 used, with its photons as they are; tracks absent from that frame are not resumed. The result carries
-copies of `"γ"`, `"rate_source"`, `"dt"`, `"monomer_mobility"`, `"monomer_D"` and `"monomer_class"` when
-present. A concatenation or merge of runs has unknown provenance: metadata `"concatenated_from"` or
+copies of `"γ"`, `"rate_source"`, `"dt"`, `"monomer_mobility"`, `"monomer_D"`, `"monomer_class"` and
+`"base_photons"` (each track's unmodulated photons per record, saved when brightness jitter or an excitation
+was on; every track listed resumes at its base rather than at its modulated record) when present. A concatenation or merge of runs has unknown provenance: metadata `"concatenated_from"` or
 `"merged_from"` (written by SMLMData's `cat_smld` and `merge_smld`), or, as a backstop, a last frame
 holding two records of one track at the same timestamp, which no single run produces. Then the latest
-record per track (the first of tied ones) is resumed, `"γ"`, `"rate_source"`, `"monomer_D"` and
-`"monomer_class"` are left out, and one warning is given. `simulate` then applies the continuation rule: a γ-set rate is restamped to γ·dt only if
+record per track (the first of tied ones) is resumed, `"γ"`, `"rate_source"`, `"monomer_D"`, `"monomer_class"` and
+`"base_photons"` are left out, and one warning is given. `simulate` then applies the continuation rule: a γ-set rate is restamped to γ·dt only if
 every molecule carries γ·dt at the saved dt, and otherwise photons per record are kept; a kept D stays,
 other tracks take the current setting. Extracting twice gives the same result. Continuation assumes the
 SMLD comes from one simulation run, or a filtered subset of one; continuing a concatenation of different
@@ -951,12 +970,15 @@ function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingE
     final = get(smld.metadata, "final_state", nothing)
     exact = !tie && final !== nothing && _final_state_matches(smld, final)
     resumed = exact ? final : _last_frame_latest(smld.emitters)
-    final_emitters = [restamp(e; frame=1) for e in resumed]
+    # Records of a modulated run carry base·exp(X)·I photons; each track resumes at its saved base
+    base = tie ? nothing : get(smld.metadata, "base_photons", nothing)
+    final_emitters = [restamp(e; frame=1, photons=(base !== nothing && haskey(base, e.track_id) ?
+                                                   typeof(e.photons)(base[e.track_id]) : e.photons)) for e in resumed]
 
     metadata = Dict{String,Any}("n_substeps" => 1)
     for key in ("simulation_type", "simulation_parameters", "dt", "camera_framerate", "camera_exposure", "γ", "rate_source",
-                "monomer_mobility", "monomer_D", "monomer_class")
-        tie && key in ("γ", "rate_source", "monomer_D", "monomer_class") && continue
+                "monomer_mobility", "monomer_D", "monomer_class", "base_photons")
+        tie && key in ("γ", "rate_source", "monomer_D", "monomer_class", "base_photons") && continue
         haskey(smld.metadata, key) && (metadata[key] = _md_copy(smld.metadata[key]))
     end
     tie && @warn "extract_end_state: a concatenation or merge of runs (metadata \"concatenated_from\" or \"merged_from\", or two last-frame records of one track at the same timestamp), which continuation does not support; provenance unknown: no γ, rate source or saved D is carried, so each molecule keeps its photons per record and takes the current diff_monomer or monomer_mobility" maxlog=1
