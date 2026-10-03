@@ -303,9 +303,11 @@ One row of [`frame_truth`](@ref): what one emitter did during the last exposure 
 `T = t_b - t_a`. `frame` is the exposure number, `id` the emitter, `pop` its index into
 `world.pops`, `m` the fluorophores left at the end of presence. `x`, `y` (μm) are the
 photon-weighted mean position (the presence-weighted mean if no photons, else the reference
-position), `z` its height. `photons` is the emitted total, `lit` the fraction of `T` in state 1
-with `m > 0`, `excitation` the presence-weighted mean relative intensity (NaN if never present).
-`lit`, `bound` and `lit_bound` are fractions of `T` in [0, 1]. For an emitter whose `m`, brightness and excitation `I`
+position), `z` its height. `photons` is the emitted total, `excitation` the presence-weighted mean relative
+intensity (NaN if never present). `lit` is the fraction of `T` the emitter spent in its emitting state, state 1 with
+`m > 0`. It is defined by state, not by light: an emitter in state 1 that receives no excitation counts as lit and
+emits nothing. Excitation enters its value only through the state-1 exit rate and bleaching. The light received
+shows in `excitation` and `photons`. `lit`, `bound` and `lit_bound` are fractions of `T` in [0, 1]. For an emitter whose `m`, brightness and excitation `I`
 are constant over its presence (no bleach in the exposure, `brightness_jitter = 0`), `photons = m γ_i I lit T`; a
 bleach inside the exposure leaves `photons > 0` with `m = 0`.
 `t_birth`, `t_bleach` and `t_depart` are event times inside the exposure, else NaN. The

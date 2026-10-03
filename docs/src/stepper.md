@@ -77,15 +77,18 @@ a lateral `tilt = (tan θ, φ)` that walks the beam axis with depth. Everything 
 
 ```julia
 rig = SpotExcitation(; base = 1.0, spots = [Spot(; x = 6.4, y = 6.4, σ = 0.0934, gain = 50.0, z_R = 0.23)])
-SMLMSim.step!(world, 0.0, 0.01, rig)
+world2 = SimWorld(Random.Xoshiro(4), camera, [diffusers]; n_sub = 8)
+SMLMSim.step!(world2, 0.0, 0.01, rig)
 ```
 
 A spot adds `gain (σ/s)² exp(-r²/(2s²))` with `s = σ √(1 + (z/z_R)²)`, so the rig spot at gain 50 falls to
 about 4 at `z = 0.75` μm. `z_R = Inf` is a z-independent column. A spot contributes only for
 `t_on <= t < t_off`, and [`next_switch`](@ref) returns the next such time, so a spot that switches inside an
 exposure acts from its exact time, not from the next sub-step. An emitter at the centre of a spot that turns
-on part-way through emits `γ · gain · (t_b - t_on)` more photons; the baseline `base` is always on. A warning
-at construction names a spot whose `z_R` is more than 2x from `π (2σ)² n/λ`.
+on part-way through emits `γ · gain · (t_b - t_on)` more photons when it stays in its emitting state over that
+interval (one state, no bleach, `brightness_jitter = 0`); a blink or a bleach while the spot is on reduces it.
+The baseline `base` is always on. A warning at construction names a spot whose `z_R` is more than 2x from
+`π (2σ)² n/λ`.
 
 ## Pairs
 
@@ -98,30 +101,29 @@ never pairs, and a binding population needs `multiplicity <= 1`. Each sub-step r
    forms with probability `1 - exp(-k_on h)`, or on first contact for `k_on = Inf`;
 3. splits: every pair whose break time falls before the end of the sub-step dissociates, a pair formed in
    step 2 of the same sub-step included;
-4. the usual per-population kinetics, births and motion;
-5. at the end, a pair whose members are both bleached is removed.
+4. the usual per-population kinetics, births and motion.
 
 A pair that splits in a sub-step is bound when the sub-step's contacts are tested, so it is first tested
 again in the next sub-step: dissociate, diffuse, form. `D_dimer = :min` gives the complex the smaller
-member `D`, so a pair with an immobile member does not move and that member is an anchor.
+member `D`, so a pair with an immobile member does not move and that member is an anchor. Pair placement follows
+the diffusion path's rules (`docs/src/diffusion/rules.md`: one distance, orientation from the displacement,
+rigid-body reflection, the split margin), in the stepper's rectangular box and in-plane.
 
-**The unbinding rule.** After a split the partners sit `r_react` apart along their in-plane axis (an anchor
-stays), so the chance that they are within `r_react` again at the next sub-step start is the Gaussian mass
-of the disk of radius `r_react` around the partner, seen from distance `r_react`, with per-axis variance
-`2 (D_a + D_b) h` (`2 D h` for a mover and an anchor). That is about 6% at `r_react = 0.03` μm,
-`D = 0.37` μm²/s and `h = 10` ms, and about half at 0.3 μm. A contact then forms with probability
-`1 - exp(-k_on h)`. A finite `k_on` is a binding rate in place of a capture radius; `k_on = Inf` is the
-0.7 contact rule.
+**The unbinding rule.** After a split, partners closer than `r_react` (3D) are moved apart in-plane along their axis
+to just over `r_react` (an anchor stays); partners already `r_react` or more apart keep their positions. For
+partners at equal height, away from the walls, with `d_dimer < r_react`, the chance that they are within `r_react`
+again at the next sub-step start is the Gaussian mass of the disk of radius `r_react` around one partner, seen from
+distance `r_react`, with per-axis variance `2 (D_a + D_b) h` (`2 D h` for a mover and an anchor): about 6% at
+`r_react = 0.03` μm, `D = 0.37` μm²/s and `h = 10` ms, and about half at 0.3 μm, as MicroscopeAdapt measured. With
+`d_dimer >= r_react` the disk is seen from `d_dimer`; a height difference `Δz` shrinks its radius to
+`sqrt(r_react² - Δz²)`; a wall changes the mass. A contact then forms with probability `1 - exp(-k_on h)`. A finite
+`k_on` is a binding rate in place of a capture radius; `k_on = Inf` is the 0.7 contact rule.
 
-**Dark members.** Bleaching changes emission only, never binding. A bleached member of a pair stays in the
-pair, dark, and its partner keeps emitting at its own brightness. An unbound emitter that bleaches is
-removed at that instant, so a formation never involves an already bleached molecule; a dark member freed by
-a split is removed at the split. When both members have bleached, the pair is removed at the end of that
-sub-step.
-
-**Difference from `DimerSim`.** `DimerSim` keeps bleached molecules, so they keep forming dark pairs; the
-stepper removes an unbound bleached emitter, so `vis_form = false` comes from blink-off states only (and
-from a bleach inside the forming sub-step).
+**Dark members.** Bleaching changes emission only, never binding. A molecule of a binding population that bleaches
+(and an unlabeled one, `multiplicity = 0`) stays present, dark, diffusing and pairing until it departs, so dark
+pairs form and `vis_form`/`vis_bound` separate visible pairs. A binding population with births needs a finite
+`lifetime`, since its bleached molecules leave only by departure. A `binds = false` molecule is removed when it
+bleaches, as without `dimers`. `DimerSim` also keeps bleached molecules.
 
 ```julia
 dimers = DimerKinetics(k_on = 50.0, r_react = 0.03, k_off = 0.5, D_rot = 1.0, d_dimer = 0.02)
@@ -170,8 +172,11 @@ exactly at `t_b` belongs to the next exposure. The fields:
 - `frame`, `id`, `pop` (index into `world.pops`) and `m`, the fluorophores left at the end of presence;
 - `x`, `y`: the photon-weighted mean position (the presence-weighted mean when the emitter emitted nothing),
   wrapped into the box under `:periodic`; `z` is the emitter's height;
-- `photons`: the emitted total; `lit`: the fraction of `T` in state 1 with `m > 0`, which excitation does
-  not change; `excitation`: the presence-weighted mean relative intensity, `NaN` if never present;
+- `photons`: the emitted total; `excitation`: the presence-weighted mean relative intensity, `NaN` if never
+  present; `lit` is the fraction of `T` the emitter spent in its emitting state, state 1 with `m > 0`. It is
+  defined by state, not by light: an emitter in state 1 that receives no excitation counts as lit and emits
+  nothing. Excitation enters its value only through the state-1 exit rate and bleaching. The light received
+  shows in `excitation` and `photons`;
 - `t_birth`, `t_bleach` and `t_depart`: event times inside the exposure, else `NaN`; `t_bleach` is the time
   `m` reached 0, and a bleach during a gap shows only as `m = 0` in the next row;
 - `partner` (an id, 0 when unbound at the end or at removal), `partner_pop`, `bound` (the fraction of `T`
@@ -183,7 +188,9 @@ exactly at `t_b` belongs to the next exposure. The fields:
   the forming sub-step; `vis_bound`: true when the emitter was bound at some point in the exposure and it and
   its last partner both have `lit_bound > 0`, so a pair that breaks inside the exposure is still marked;
 - `overlap`: with `SimWorld(...; merge_radius)`, set on both rows of every pair of `:signal` rows within
-  `merge_radius` μm that were not a pair in this exposure.
+  `merge_radius` μm, unless one is the other's partner at the end of the exposure or its last partner in the
+  exposure (a pair that broke in it); two partners that broke and each paired again with another molecule in the
+  same exposure can still be marked.
 
 Without `dimers` the pair fields are 0, `NaN` or `false`. [`params_dict`](@ref)`(world)` records the world's
 configuration as HDF5-attribute-ready values.
@@ -228,7 +235,6 @@ FrameTruth
 frame_truth
 params_dict
 UniformExcitation
-EvanescentExcitation
 Spot
 SpotExcitation
 step!

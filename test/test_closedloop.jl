@@ -5,6 +5,9 @@ using Random: randexp
 using Distributions: Uniform
 using SMLMSim.InteractionDiffusion: _disp, _norm
 
+# the design section 7a configuration, defined once in the benchmark (included, it runs nothing)
+include(joinpath(@__DIR__, "..", "dev", "benchmark_stepper.jl"))
+
 cam32() = IdealCamera(1:32, 1:32, 0.1)
 one_state(γ) = GenericFluor(; γ, q=zeros(1, 1))
 two_state(γ, k_off, k_on) = GenericFluor(; γ, q=[-k_off k_off; k_on -k_on])
@@ -838,31 +841,13 @@ end
     end
 end
 
-# the full MicroscopeAdapt configuration: dimers, blinking, bleaching, births, Cell9-like background
-# (pattern, OOF blobs and haze), merge_radius, and SpotExcitation
-function full_world(seed)
-    flu = two_state(3000.0, 200.0, 20.0)
-    sig = Population(name=:sig, density=1.0, lifetime=0.1, fluor=flu, budget=100.0,
-                     mobility=[(0.5, 0.3), (0.5, 0.05)], psf=GaussianPSF(0.13))
-    anchor = Population(name=:anchor, density=0.5, fluor=flu, mobility=[(1.0, 0.0)], psf=GaussianPSF(0.13))
-    blobs = Population(name=:oof, layer=:oof, density=0.5, lifetime=0.1, fluor=flu, budget=200.0,
-                       mobility=[(1.0, 0.25)], brightness_sigma=0.3, z=(0.5, 1.0), psf=GaussianPSF(0.39), binds=false)
-    haze = Population(name=:haze, layer=:oof, density=0.5, lifetime=0.002, fluor=one_state(25000.0),
-                      z=(0.5, 1.0), psf=GaussianPSF(0.195), binds=false)
-    bg = BackgroundModel(level=87.7, jitter=0.025, contrast=0.1, feature_size=0.8,
-                         correlation_time=0.3, illumination_width=30.0, stretch=0.2)
-    dk = DimerKinetics(k_on=50.0, r_react=0.05, k_off=5.0, D_rot=1.0, d_dimer=0.02)
-    return SimWorld(StableRNG(seed), cam32(), [sig, anchor, blobs, haze]; n_sub=4, background=bg, dimers=dk,
-                    merge_radius=0.25)
-end
-
+# the design section 7a configuration itself (`bench_setup`: 256 x 256 sCMOS, about 250 in-focus binders with
+# blinking, bleaching, births and dimers, about 20 OOF blobs, about 30 haze blobs, the Cell9-like background,
+# merge_radius, a SpotExcitation with a switching spot): the measured steps 2.01-3.01 s include both switches
 @testset "closedloop/zero_alloc_full" begin
-    w = full_world(31)
-    exc = SpotExcitation(; base=1.0, spots=[Spot(; x=0.8, y=0.8, σ=0.0934, gain=10.0, z_R=0.23),
-                                            Spot(; x=2.2, y=2.0, σ=0.0934, gain=10.0, z_R=0.23, t_on=2.013, t_off=2.467)])
-    scam = SCMOSCamera(32, 32, 0.1, 1.6; offset=100.0, gain=2.0, qe=1.0)
+    w, scam, exc = bench_setup(31)
     nrng = StableRNG(98)
-    dst = zeros(32, 32)
+    dst = zeros(BENCH_N, BENCH_N)
     function count_allocs(k)
         return @allocated begin
             SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01, exc)
@@ -879,15 +864,20 @@ end
     end
     count_allocs(201)
     total = 0
-    nrows = 0
+    nmol = 0
+    noof = 0
     npair = 0
     for k in 202:301
         total += count_allocs(k)
-        nrows += length(frame_truth(w))
-        npair += count(r -> r.partner != 0, frame_truth(w))
+        for r in frame_truth(w)
+            r.photons > 0 && w.pops[r.pop].p.name === :mol && (nmol += 1)
+            r.photons > 0 && w.pops[r.pop].p.name === :oof && (noof += 1)
+            r.partner != 0 && (npair += 1)
+        end
     end
     @test total == 0
-    @test nrows > 100 && npair > 0   # the loop ran with rows and pairs
+    # the workload: section 7a's render budget has every in-focus emitter and blob rendering
+    @test nmol / 100 >= 250 && noof / 100 >= 20 && npair > 0
 end
 
 @testset "closedloop/params_dict" begin
@@ -907,7 +897,10 @@ end
     end
     @test d["pop1.binds"] === true && d["pop2.binds"] === false
     @test d["pop1.mobility.fraction"] == [0.5, 0.5] && d["pop1.mobility.D"] == [0.3, 0.05]
-    @test d["pop1.fluor.q"] == [-200.0, 200.0, 20.0, -20.0] && d["pop1.fluor.q.n"] == 2
+    # design section 6.6: the rate matrix as `.q` (row-major) with `.q.n`
+    @test d["pop1.q"] == [-200.0, 200.0, 20.0, -20.0] && d["pop1.q.n"] == 2
+    @test !haskey(d, "pop1.fluor.q") && !haskey(d, "pop1.fluor.q.n")
+    @test d["pop1.fluor.gamma"] == 3000.0
     @test d["pop1.psf.sigma_um"] == 0.13
     @test d["pop2.psf.stamp.radius"] == 12 && d["pop2.psf.stamp.z_min"] ≈ -0.3 && d["pop2.psf.stamp.z_max"] ≈ 1.0
     @test d["pop2.psf.stamp.oversample"] == 4 && d["pop2.psf.stamp.z_step"] ≈ 1.3 / 7
@@ -941,11 +934,11 @@ end
 # the 5 ms budget of design section 7a, measured only on request (kitt): SMLMSIM_BENCH=1
 if get(ENV, "SMLMSIM_BENCH", "") == "1"
     @testset "closedloop/benchmark" begin
-        include(joinpath(@__DIR__, "..", "dev", "benchmark_stepper.jl"))
         r = bench_run()
         bench_report(r)
         @test r.both <= 5e-3
-        @test r.alloc_step == 0 && r.alloc_noise == 0
+        @test r.alloc_step == 0 && r.alloc_sweep == 0 && r.alloc_noise == 0
+        @test r.emitting_mol >= 250 && r.emitting_oof >= 20
     end
 end
 

@@ -137,7 +137,7 @@ The configuration of `world` as a flat dictionary whose values are only `String`
   `"camera.readnoise"`, `"camera.qe"` for an sCMOS camera: the scalar, or `".mean"` appended to the key for a
   per-pixel map;
 - `"pop<k>.<field>"` for every field of the `k`th [`Population`](@ref): `mobility` as `.mobility.fraction` and
-  `.mobility.D`, `fluor` as `.fluor.gamma` and the rate matrix `.fluor.q` (row-major) with its size `.fluor.q.n`,
+  `.mobility.D`, `fluor` as `.fluor.gamma` and the rate matrix `.q` (row-major) with its size `.q.n`,
   `z` as a two-element vector, and `psf` as `.psf.sigma_um` or `.psf.stamp.z_min`, `.z_max`, `.z_step`,
   `.radius` and `.oversample`;
 - `"dimers.k_on"`, `.r_react`, `.k_off`, `.D_rot`, `.d_dimer` and `"dimers.D_dimer"` (a number, or the String
@@ -183,8 +183,8 @@ function params_dict(w::SimWorld)
         d[pre * "mobility.D"] = Float64[D for (_, D) in p.mobility]
         d[pre * "fluor.gamma"] = Float64(p.fluor.γ)
         q = Matrix{Float64}(p.fluor.q)
-        d[pre * "fluor.q"] = vec(permutedims(q))
-        d[pre * "fluor.q.n"] = size(q, 1)
+        d[pre * "q"] = vec(permutedims(q))
+        d[pre * "q.n"] = size(q, 1)
         d[pre * "brightness_sigma"] = p.brightness_sigma
         d[pre * "budget"] = p.budget
         d[pre * "multiplicity"] = p.multiplicity

@@ -14,6 +14,8 @@ makedocs(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://JuliaSMLM.github.io/SMLMSim.jl",
         assets=String[],
+        size_threshold=400 * 2^10,
+        size_threshold_warn=250 * 2^10,
     ),
     doctest = false,
     pages=[
