@@ -7,7 +7,14 @@ TIRF excitation: relative intensity `I(z) = stray + (1 - stray) exp(-max(z, 0)/d
 glass. `z` is the emitter's height (μm, z > 0 into the sample); z <= 0 gets 1. `depth` (μm, > 0)
 is the 1/e intensity depth, about 0.08-0.3 μm; `stray` (in [0, 1]) is the fraction of the glass
 intensity that is propagating (scattered) light and reaches every height. Callable as
-`e(x, y, z, t)`. Used by `DiffusionSMLMConfig(; excitation)` with `z_range`.
+`e(x, y, z, t)`.
+
+One type serves both simulation paths:
+- the diffusion path, `DiffusionSMLMConfig(; excitation)` with heights drawn in `z_range`;
+- the stepper, `SMLMSim.step!(world, excitation)`, where `z` is each emitter's height (the
+  [`Population`](@ref) convention) and the focal plane is at the glass. There it applies to every
+  population, `:oof` included, so a population calibrated under [`UniformExcitation`](@ref) needs
+  its γ rescaled; like every excitation it scales emission and the state-1 exit rate.
 """
 struct EvanescentExcitation
     depth::Float64

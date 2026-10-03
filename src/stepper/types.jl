@@ -241,31 +241,7 @@ struct UniformExcitation end
 
 (::UniformExcitation)(x::Float64, y::Float64, z::Float64, t::Float64) = 1.0
 
-"""
-    EvanescentExcitation(; depth = 0.1, stray = 0.0)
-
-TIRF excitation: relative intensity `I(z) = stray + (1 - stray) exp(-max(z, 0)/depth)`, 1 at the
-glass. `z` is the emitter's height (the [`Population`](@ref) convention, z > 0 into the sample); the
-focal plane is at the glass, so z <= 0 gets 1. `depth` (μm, > 0) is the 1/e intensity depth, about
-0.08-0.3 μm; `stray` (in [0, 1]) is the fraction of the glass intensity that is propagating
-(scattered) light and reaches every height. It applies to every population, `:oof` included, so a
-population calibrated under [`UniformExcitation`](@ref) needs its γ rescaled. Like every excitation it
-scales emission and the state-1 exit rate.
-"""
-struct EvanescentExcitation
-    depth::Float64
-    stray::Float64
-    function EvanescentExcitation(depth::Real, stray::Real)
-        depth > 0 || throw(ArgumentError("depth must be > 0, got $depth"))
-        0 <= stray <= 1 || throw(ArgumentError("stray must be in [0, 1], got $stray"))
-        return new(Float64(depth), Float64(stray))
-    end
-end
-
-EvanescentExcitation(; depth::Real=0.1, stray::Real=0.0) = EvanescentExcitation(depth, stray)
-
-(e::EvanescentExcitation)(x::Float64, y::Float64, z::Float64, t::Float64) =
-    e.stray + (1 - e.stray) * exp(-max(z, 0.0) / e.depth)
+# EvanescentExcitation is defined in Core (src/core/excitation.jl) and shared with the diffusion path
 
 """
     next_switch(excitation, t) -> Float64

@@ -16,7 +16,7 @@ module Stepper
 using Random
 using SMLMData: AbstractCamera, IdealCamera, SCMOSCamera
 using MicroscopePSFs: GaussianPSF
-using ..Core: GenericFluor
+using ..Core: GenericFluor, EvanescentExcitation, _ou_coeffs
 using ..InteractionDiffusion: DiffusionSMLMConfig
 using ..CameraImages: _uniform_pitch, RenderBuffer, render_gaussian!, StampTable, render_stamp!
 

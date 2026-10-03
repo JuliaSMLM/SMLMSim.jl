@@ -362,8 +362,7 @@ end
 function _jitter!(w::SimWorld, ps::PopState, h::Float64)
     s = ps.p.brightness_jitter
     τ = ps.p.jitter_time
-    a = exp(-h / τ)
-    b = s * sqrt(-expm1(-2h / τ))
+    a, b = _ou_coeffs(s, τ, h)
     rng = w.rng
     @inbounds for i in 1:ps.n
         ps.lj[i] = a * ps.lj[i] + b * randn(rng)

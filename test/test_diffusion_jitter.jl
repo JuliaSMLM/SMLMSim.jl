@@ -76,3 +76,17 @@ end
     @test all(v -> exp(-3) - 1e-12 <= v[1] <= 1 + 1e-12, values(fac))
     @test length(unique(round(v[1]; digits=9) for v in values(fac))) > 10
 end
+
+@testset "one EvanescentExcitation and one OU step for both paths" begin
+    # The diffusion path and the stepper share Core's type and coefficients
+    @test SMLMSim.Stepper.EvanescentExcitation === SMLMSim.Core.EvanescentExcitation
+    @test EvanescentExcitation === SMLMSim.Core.EvanescentExcitation
+    @test SMLMSim.Stepper._ou_coeffs === SMLMSim.Core._ou_coeffs
+    e = EvanescentExcitation(; depth=0.2, stray=0.1)
+    @test e(0.0, 0.0, 0.3, 0.0) === 0.1 + 0.9 * exp(-0.3 / 0.2)
+    @test e(0.0, 0.0, -1.0, 0.0) === 1.0
+    @test e(0, 0, 0.3f0, 0) === 0.1 + 0.9 * exp(-Float64(0.3f0) / 0.2)
+    # the exact AR(1) coefficients the stepper used inline before
+    a, b = SMLMSim.Core._ou_coeffs(0.3, 0.02, 0.001)
+    @test a === exp(-0.001 / 0.02) && b === 0.3 * sqrt(-expm1(-2 * 0.001 / 0.02))
+end

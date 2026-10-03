@@ -89,7 +89,7 @@ using .StaticSMLM: StaticSMLMConfig, apply_noise
 using .CameraImages: gen_images, gen_image, poisson_noise, poisson_noise!, scmos_noise, scmos_noise!
 using .CameraImages: RenderBuffer, render_gaussian!, StampTable, render_stamp!
 
-using .Stepper: Population, DimerKinetics, BackgroundModel, SimWorld, UniformExcitation, EvanescentExcitation, FrameTruth, frame_truth, step!, layers, next_switch, gen_background
+using .Stepper: Population, DimerKinetics, BackgroundModel, SimWorld, UniformExcitation, FrameTruth, frame_truth, step!, layers, next_switch, gen_background
 # step! and layers are public but not exported: the names are generic (SciML and Agents.jl export a
 # step!), so callers write SMLMSim.step! and SMLMSim.layers.
 @static if VERSION >= v"1.11.0-DEV.469"
@@ -167,7 +167,7 @@ export
     # Concrete molecule types
     GenericFluor,
 
-    # Excitation (diffusion path; the stepper shares it)
+    # Excitation (one type for the diffusion path and the stepper)
     EvanescentExcitation,
 
     # Static SMLM types
@@ -194,7 +194,6 @@ export
     BackgroundModel,
     SimWorld,
     UniformExcitation,
-    EvanescentExcitation,
     next_switch,
     gen_background
 
