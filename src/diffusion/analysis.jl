@@ -266,8 +266,9 @@ one row per (frame, track_id) present, sorted by (frame, track_id).
 - `t_break::Float64`: the same for `:monomer` after `:dimer`
 - `mixed::Bool`: `true` when the row's `partner_id` is nonzero and exactly one of the track and its
   partner is immobile (monomer D == 0), read from `smld.metadata["monomer_D"]`, or for an SMLD without
-  a track there from its `"monomer_class"` and the `monomer_mobility` of `"simulation_parameters"`;
-  `false` when unbound or when neither D is known. Two mobile partners with different D, or two
+  a track there from its `"monomer_class"` and the `monomer_mobility` of `"simulation_parameters"`, else
+  that config's `diff_monomer` (the D a track without a saved D moves with); `false` when unbound or
+  when a D is not known. Two mobile partners with different D, or two
   immobile ones, are not mixed.
 
 This is sub-step resolution. With exposure shorter than the frame period, a change that
@@ -283,8 +284,10 @@ function frame_dimer_truth(smld::BasicSMLD)
     class = get(smld.metadata, "monomer_class", nothing)
     cfg = get(smld.metadata, "simulation_parameters", nothing)
     mix = cfg isa DiffusionSMLMConfig ? cfg.monomer_mobility : Tuple{Float64,Float64}[]
+    # The D each track moved with: its saved D, else its class's D in the saved mixture, else the run's diff_monomer
     D_of(id) = Dsaved !== nothing && haskey(Dsaved, id) ? Float64(Dsaved[id]) :
-               class !== nothing && haskey(class, id) && 1 <= class[id] <= length(mix) ? mix[class[id]][2] : nothing
+               class !== nothing && haskey(class, id) && 1 <= class[id] <= length(mix) ? mix[class[id]][2] :
+               cfg isa DiffusionSMLMConfig ? cfg.diff_monomer : nothing
     function is_mixed(id, partner)
         partner == 0 && return false
         D1, D2 = D_of(id), D_of(partner)

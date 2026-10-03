@@ -30,7 +30,8 @@ makedocs(;
         ],
         "Diffusion-Interaction" => [
             "Overview" => "diffusion/overview.md",
-            "Examples" => "diffusion/examples.md"
+            "Examples" => "diffusion/examples.md",
+            "Placement and Continuation Rules" => "diffusion/rules.md"
         ],
         "Microscope Images" => "images.md",
         "Stepper" => "stepper.md",
