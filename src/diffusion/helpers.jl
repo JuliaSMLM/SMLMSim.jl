@@ -381,14 +381,15 @@ _nimg(p::Float64, q::Float64, L::Float64) = round((q - p) / L)
 # image when `L` is `_period(params)` under periodic boundaries (`nothing`: the plain difference)
 _dispv(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} =
     ntuple(k -> _disp(p[k], q[k], L), Val(N))
-# (scaled by its largest component first when squaring could underflow, below 2^-500, so no normal displacement
-# measures as zero; the same value otherwise)
-function _sep(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N}
-    v = _dispv(p, q, L)
+
+# The Euclidean norm of the Float64 displacement v, scaled by its largest component first when squaring could
+# underflow (below 2^-500), so no normal displacement measures as zero; the plain norm otherwise
+function _norm(v::NTuple{N,Float64}) where {N}
     m = maximum(abs, v)
     (m == 0 || m >= 0x1p-500) && return sqrt(sum(abs2, v))
     return m * sqrt(sum(abs2, v ./ m))
 end
+_sep(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} = _norm(_dispv(p, q, L))
 _period(params) = params.boundary == "reflecting" ? nothing : params.box_size
 
 # `p` at the minimum image of its offset from `r` under periodic boundaries (the image `_disp` measures), in

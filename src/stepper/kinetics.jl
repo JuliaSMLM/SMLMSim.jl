@@ -18,7 +18,7 @@ _capacity(n0::Integer) = n0 + ceil(Int, 10 * sqrt(n0)) + 64
 _vectors(ps::PopState) = ((ps.id, ps.x, ps.y, ps.z, ps.D, ps.γ, ps.m, ps.state, ps.clock, ps.budget,
                           ps.t_depart, ps.t_birth, ps.lj, ps.xr, ps.yr, ps.sx, ps.sy, ps.sxp, ps.syp,
                           ps.sph, ps.t_present, ps.t_lit, ps.sI, ps.t_bleach_f, ps.partner, ps.partner_pop),
-                          (ps.partner_id, ps.θ, ps.t_form, ps.t_break_due, ps.t_bound, ps.t_break_f, ps.t_litb, ps.vis_form,
+                          (ps.partner_id, ps.t_form, ps.t_break_due, ps.t_bound, ps.t_break_f, ps.t_litb, ps.vis_form,
                            ps.partner_f))
 
 @inline function _each_vector(f, ps::PopState)
@@ -87,7 +87,7 @@ function _add_emitter!(w::SimWorld, ps::PopState, t_birth::Float64)
     ps.t_birth[i] = t_birth
     ps.lj[i] = p.brightness_jitter > 0 ? p.brightness_jitter * randn(rng) : 0.0
     ps.partner[i] = 0; ps.partner_pop[i] = 0; ps.partner_id[i] = 0
-    ps.θ[i] = 0.0; ps.t_form[i] = -Inf; ps.t_break_due[i] = -Inf; ps.vis_form[i] = false; ps.partner_f[i] = 0
+    ps.t_form[i] = -Inf; ps.t_break_due[i] = -Inf; ps.vis_form[i] = false; ps.partner_f[i] = 0
     _reset_acc!(ps, i)
     return i
 end
@@ -215,7 +215,7 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, 
             m -= Int32(1)
             if m == 0
                 tbf = t0 + τ
-                dimers || (alive = false; break)   # with dimers a bleached emitter stays, dark
+                (dimers && ps.p.binds) || (alive = false; break)   # with dimers a bleached binder stays, dark
             else
                 budget = bmean * randexp(rng)
             end

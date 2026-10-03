@@ -39,6 +39,9 @@ are per second.
 - `lifetime::Float64 = Inf`: s, mean residence time (exponential departure, independent of excitation).
 - `birth_rate::Float64 = isfinite(lifetime) ? density/lifetime : 0.0`: μm⁻² s⁻¹. Holds `density`
   steady only if `budget = Inf`; with a finite budget it settles at `birth_rate` times the mean residence.
+  A molecule that never bleaches (`multiplicity = 0` or `fluor.γ = 0`), and in a world with `dimers` any molecule
+  of a `binds = true` population (it stays after bleaching), leaves only by departure, so births need a finite
+  `lifetime`; the count then settles at `birth_rate × lifetime` per μm².
 - `mobility = [(1.0, 0.0)]`: `(fraction, D μm²/s)` components, one drawn per emitter.
 - `fluor::GenericFluor` (required): `γ` is the median photon rate in state 1 at relative intensity 1
   and `q` the CTMC rates at intensity 1. It must be irreducible when it has more than one state.
@@ -72,8 +75,8 @@ z, the baseline for calibrated populations; a z-dependent law is supplied by the
 excitation function.
 
 Throws `ArgumentError` for mobility fractions that do not sum to 1, `multiplicity > 1`
-with a multi-state `q`, a multi-state `q` that is not irreducible or has more than 255 states, births with both
-`lifetime` and `budget` infinite, a `StampTable` that does not cover `z`, an unknown `layer`, or a nonfinite
+with a multi-state `q`, a multi-state `q` that is not irreducible or has more than 255 states, births with an
+infinite `lifetime` and a molecule that cannot bleach (`budget` infinite, `multiplicity = 0` or `fluor.γ = 0`), a `StampTable` that does not cover `z`, an unknown `layer`, or a nonfinite
 `density`, `birth_rate`, `brightness_sigma`, mobility `D`, `z` or `fluor.γ` (a nonfinite `q` entry fails its row check;
 `lifetime`, `budget` and `jitter_time` may be `Inf`).
 """
@@ -130,8 +133,8 @@ struct Population
             throw(ArgumentError("multiplicity > 1 needs a one-state q, got $nst states"))
         nst > 1 && !_irreducible(q) &&
             throw(ArgumentError("q must be irreducible (no absorbing or unreachable state); use budget for permanent loss"))
-        birth_rate > 0 && !isfinite(lifetime) && !isfinite(budget) &&
-            throw(ArgumentError("birth_rate > 0 with infinite lifetime and budget would grow without bound"))
+        birth_rate > 0 && !isfinite(lifetime) && !(isfinite(budget) && multiplicity > 0 && fluor.γ > 0) &&
+            throw(ArgumentError("birth_rate > 0 with an infinite lifetime needs a molecule that can bleach (finite budget, multiplicity > 0 and fluor.γ > 0); otherwise the count would grow without bound"))
         if psf isa StampTable
             zlo, zhi = first(psf.zs), last(psf.zs)
             (z[1] >= zlo - 1e-12 && z[2] <= zhi + 1e-12) ||
@@ -173,23 +176,28 @@ keyword. Units are μm, s and rad.
 - `D_dimer`: μm²/s of the complex centre; `:min` is min(D_i, D_j), so a pair with an immobile member does not move,
   and that member keeps its position (the anchor), or a fixed value.
 - `D_rot`: rad²/s, rotational diffusion of the pair axis.
-- `d_dimer`: μm, member separation while bound.
+- `d_dimer`: μm, the in-plane (x, y) separation of the members while bound; each keeps its own height, so their 3D
+  distance is `sqrt(d_dimer² + Δz²)`.
 
 A pair leaves as one: its members share one departure time drawn from the longer of their two lifetimes (`Inf`
 if either is `Inf`), so the shorter-lived member of a cross pair cannot depart while bound and its population's
 steady count exceeds `birth_rate * lifetime` by its time bound to longer-lived partners. After a split each
-member draws a fresh departure time. Bleaching changes emission only, never binding: a bleached member (and an
-unlabeled one, `multiplicity = 0`) keeps diffusing and pairing.
+member draws a fresh departure time. Bleaching changes emission only, never binding: a molecule of a `binds = true`
+population that bleaches (and an unlabeled one, `multiplicity = 0`) stays present, dark, diffusing and pairing until
+it departs. A `binds = false` molecule is removed when it bleaches, as without `dimers`.
 
-After a split the partners sit `r_react` apart, along their axis (an anchor stays), so the chance that they are
-within `r_react` again at the next sub-step start is the Gaussian mass of the disk of radius `r_react` around the
-partner, seen from distance `r_react`, with per-axis variance σ² = 2(D_a + D_b)h (2 D h for a mover and an
-anchor). That is about 6% at `r_react` = 0.03 μm, D = 0.37 μm²/s, h = 10 ms, and about half at 0.3 μm, as
-MicroscopeAdapt measured. Each contact then forms with probability 1 - exp(-k_on h). A finite `k_on` is
+After a split, partners closer than `r_react` (3D) are moved apart in-plane along their axis to just over `r_react`
+(an anchor stays); partners already `r_react` or more apart keep their positions. For partners at equal height, away
+from the walls, with `d_dimer < r_react`, the chance that they are within `r_react` again at the next sub-step start
+is the Gaussian mass of the disk of radius `r_react` around one partner, seen from distance `r_react`, with per-axis
+variance σ² = 2(D_a + D_b)h (2Dh for a mover and an anchor): about 6% at `r_react` = 0.03 μm, D = 0.37 μm²/s,
+h = 10 ms, and about half at 0.3 μm, as MicroscopeAdapt measured. With `d_dimer >= r_react` the disk is seen from
+`d_dimer`; a height difference Δz shrinks its radius to `sqrt(r_react² - Δz²)`; a wall changes the mass.
+Each contact then forms with probability 1 - exp(-k_on h). A finite `k_on` is
 MicroscopeAdapt's "binding rate in place of a capture radius" option; `k_on = Inf` is the 0.7 contact rule.
 
-Throws `ArgumentError` unless `k_on > 0`, `0 < r_react < Inf`, `0 <= k_off < Inf`, `D_rot >= 0`, `d_dimer >= 0`
-and `D_dimer` is `:min` or a real >= 0.
+Throws `ArgumentError` unless `k_on > 0`, `0 < r_react < Inf`, `0 <= k_off < Inf`, `0 <= D_rot < Inf`,
+`0 <= d_dimer < Inf` and `D_dimer` is `:min` or a finite real >= 0.
 """
 struct DimerKinetics
     k_on::Float64
@@ -203,10 +211,10 @@ struct DimerKinetics
         k_on > 0 || throw(ArgumentError("k_on must be > 0 (Inf allowed), got $k_on"))
         (r_react > 0 && isfinite(r_react)) || throw(ArgumentError("r_react must be in (0, Inf), got $r_react"))
         (k_off >= 0 && isfinite(k_off)) || throw(ArgumentError("k_off must be in [0, Inf), got $k_off"))
-        D_rot >= 0 || throw(ArgumentError("D_rot must be >= 0, got $D_rot"))
-        d_dimer >= 0 || throw(ArgumentError("d_dimer must be >= 0, got $d_dimer"))
-        (D_dimer === :min || (D_dimer isa Real && D_dimer >= 0)) ||
-            throw(ArgumentError("D_dimer must be :min or a real >= 0, got $D_dimer"))
+        (D_rot >= 0 && isfinite(D_rot)) || throw(ArgumentError("D_rot must be in [0, Inf), got $D_rot"))
+        (d_dimer >= 0 && isfinite(d_dimer)) || throw(ArgumentError("d_dimer must be in [0, Inf), got $d_dimer"))
+        (D_dimer === :min || (D_dimer isa Real && D_dimer >= 0 && isfinite(D_dimer))) ||
+            throw(ArgumentError("D_dimer must be :min or a finite real >= 0, got $D_dimer"))
         return new(Float64(k_on), Float64(r_react), Float64(k_off),
                    D_dimer === :min ? :min : Float64(D_dimer), Float64(D_rot), Float64(d_dimer))
     end
@@ -367,7 +375,6 @@ mutable struct PopState
     partner::Vector{Int32}                            # dimers: index within the partner's population, 0 = unbound
     partner_pop::Vector{Int32}                        # index into world.pops of the partner's population
     partner_id::Vector{Int}                           # id of the partner (truth; outlives the link at removal)
-    θ::Vector{Float64}                                # pair axis angle
     t_form::Vector{Float64}; t_break_due::Vector{Float64}   # -Inf if never bound
     t_bound::Vector{Float64}; t_break_f::Vector{Float64}    # frame accumulators
     t_litb::Vector{Float64}                           # frame accumulator: time bound and emitting
@@ -393,8 +400,9 @@ separate call on the caller's own RNG.
   puts the walls at the field-of-view edge.
 - `t0`: start time in s.
 - `dimers`: `nothing` or a [`DimerKinetics`](@ref): emitters of `binds = true` populations pair within and across
-  populations. Every binding population needs `multiplicity <= 1`, and every box side must exceed
-  `2 max(r_react, d_dimer)`, else `ArgumentError`.
+  populations. Every binding population needs `multiplicity <= 1` and, when it has births, a finite `lifetime` (its
+  bleached molecules stay until they depart), and every box side must exceed twice the larger of `d_dimer` and the
+  split separation (`r_react` plus a rounding margin), else `ArgumentError`.
 - `merge_radius`: μm; when > 0, truth rows of `:signal` emitters closer than this get `overlap = true`,
   unless one is the other's partner at the end of this exposure, or its last partner in this exposure (as for
   a pair that broke in it; two partners that broke and each paired again with another in the same exposure can

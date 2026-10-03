@@ -1,64 +1,86 @@
 # Cross-population dimers: cell list, formation, dissociation with the unbinding rule, pair motion
 
-# Cells per axis: the side is at least r_react; an axis with fewer than 3 cells gets 1 (no neighbour visits)
+# Pair geometry follows the diffusion path (docs/src/diffusion/rules.md): the numeric primitives _disp, _dir, _angles and
+# _norm are the diffusion path's; the placement is the stepper's own, in its rectangular box with a nonzero origin
+
+# Cells per axis: the side is at least r_react; an axis with fewer than 3 cells gets 1 (no neighbour visits). The
+# quotient saturates at 128 before conversion, so a tiny r_react cannot overflow Int
 function _cells_per_axis(L::Float64, r::Float64)
-    n = clamp(floor(Int, L / r), 1, 128)
+    n = floor(Int, min(L / r, 128.0))
     return n < 3 ? 1 : n
 end
 
-# Put the members of a pair (A, ia) < (B, ib) at centre ± (s/2) u; reflecting walls clamp the centre, periodic wrap
-@inline function _put_centered!(w::SimWorld, A::PopState, ia::Int, B::PopState, ib::Int,
-                                cx::Float64, cy::Float64, ux::Float64, uy::Float64, s::Float64)
-    xmin, xmax, ymin, ymax = w.box
-    periodic = w.boundary === :periodic
-    if !periodic
-        hx = 0.5 * s * abs(ux)
-        hy = 0.5 * s * abs(uy)
-        cx = clamp(cx, xmin + hx, xmax - hx)
-        cy = clamp(cy, ymin + hy, ymax - hy)
+# Separation of split partners closer than r_react: r_react plus a margin that survives rounding coordinates as
+# large as the box's largest |coordinate| (rules.md, Definitions), and at least 1e-9 r_react
+_split_sep(box::NTuple{4,Float64}, r::Float64) = max(r * (1 + 1e-9), r + 8 * eps(Float64) * (maximum(abs, box) + r))
+
+# In-plane displacement from (A, ia) to (B, ib): each axis in Float64, rounded once, the minimum image under
+# :periodic (rules.md, Distance)
+@inline function _pair_disp(w::SimWorld, A::PopState, ia::Int, B::PopState, ib::Int)
+    if w.boundary === :periodic
+        return (_disp(A.x[ia], B.x[ib], w.box[2] - w.box[1]), _disp(A.y[ia], B.y[ib], w.box[4] - w.box[3]))
     end
-    A.x[ia] = _fold(cx - 0.5 * s * ux, xmin, xmax, periodic)
-    A.y[ia] = _fold(cy - 0.5 * s * uy, ymin, ymax, periodic)
-    B.x[ib] = _fold(cx + 0.5 * s * ux, xmin, xmax, periodic)
-    B.y[ib] = _fold(cy + 0.5 * s * uy, ymin, ymax, periodic)
+    return (_disp(A.x[ia], B.x[ib], nothing), _disp(A.y[ia], B.y[ib], nothing))
+end
+
+# The one contact distance of formation and split: the scaled norm of (dx, dy, dz), each emitter at its own z
+@inline function _contact(w::SimWorld, A::PopState, ia::Int, B::PopState, ib::Int)
+    d = _pair_disp(w, A, ia, B, ib)
+    return _norm((d[1], d[2], B.z[ib] - A.z[ia]))
+end
+
+# (A, ia) to c - (s/2)u and (B, ib) to c + (s/2)u. :periodic wraps the centre, then each end. :reflecting keeps the
+# centre (s/2)|u_k| from each wall: clamped when placing (formation, split), folded as often as it crosses when
+# moving (reflect = true: the rigid-body reflection of rules.md); each end is then clamped into the box
+@inline function _put_pair!(w::SimWorld, A::PopState, ia::Int, B::PopState, ib::Int,
+                            cx::Float64, cy::Float64, ux::Float64, uy::Float64, s::Float64, reflect::Bool)
+    xmin, xmax, ymin, ymax = w.box
+    hs = 0.5 * s
+    if w.boundary === :periodic
+        cx = _wrap(cx, xmin, xmax); cy = _wrap(cy, ymin, ymax)
+        A.x[ia] = _wrap(cx - hs * ux, xmin, xmax); A.y[ia] = _wrap(cy - hs * uy, ymin, ymax)
+        B.x[ib] = _wrap(cx + hs * ux, xmin, xmax); B.y[ib] = _wrap(cy + hs * uy, ymin, ymax)
+    else
+        hx = hs * abs(ux); hy = hs * abs(uy)
+        cx = reflect ? _reflect(cx, xmin + hx, xmax - hx) : clamp(cx, xmin + hx, xmax - hx)
+        cy = reflect ? _reflect(cy, ymin + hy, ymax - hy) : clamp(cy, ymin + hy, ymax - hy)
+        A.x[ia] = clamp(cx - hs * ux, xmin, xmax); A.y[ia] = clamp(cy - hs * uy, ymin, ymax)
+        B.x[ib] = clamp(cx + hs * ux, xmin, xmax); B.y[ib] = clamp(cy + hs * uy, ymin, ymax)
+    end
     return nothing
 end
 
-# Place the pair (A, ia) < (B, ib) at in-plane separation s along its current axis (the 0.7.3 rule);
-# returns the unit axis from A to B. An anchored pair (D_dimer = :min with an immobile member) keeps the anchor.
+# Place the pair (A, ia) < (B, ib) at in-plane separation s along its current axis (the displacement from A to B).
+# An anchored pair (D_dimer = :min with an immobile member; of two immobile members the smaller id) keeps the anchor
 function _place_pair!(w::SimWorld, A::PopState, ia::Int, B::PopState, ib::Int, s::Float64)
-    xmin, xmax, ymin, ymax = w.box
-    periodic = w.boundary === :periodic
-    Lx, Ly = xmax - xmin, ymax - ymin
     if w.dimers.D_dimer === :min && min(A.D[ia], B.D[ib]) == 0
+        xmin, xmax, ymin, ymax = w.box
         a_anchor = A.D[ia] == 0 && (B.D[ib] != 0 || A.id[ia] < B.id[ib])
         P, ip, Q, iq = a_anchor ? (A, ia, B, ib) : (B, ib, A, ia)
-        dx = _sep(Q.x[iq] - P.x[ip], Lx, periodic)
-        dy = _sep(Q.y[iq] - P.y[ip], Ly, periodic)
-        n = hypot(dx, dy)
-        ux, uy = n > 0 ? (dx / n, dy / n) : (1.0, 0.0)
+        ux, uy = _dir(_pair_disp(w, P, ip, Q, iq))
         nx = P.x[ip] + s * ux
         ny = P.y[ip] + s * uy
-        if periodic
+        if w.boundary === :periodic
             nx = _wrap(nx, xmin, xmax)
             ny = _wrap(ny, ymin, ymax)
         else
             (nx < xmin || nx > xmax) && (nx = P.x[ip] - s * ux)
             (ny < ymin || ny > ymax) && (ny = P.y[ip] - s * uy)
+            nx = clamp(nx, xmin, xmax)
+            ny = clamp(ny, ymin, ymax)
         end
         Q.x[iq] = nx
         Q.y[iq] = ny
-        return a_anchor ? (ux, uy) : (-ux, -uy)
+        return nothing
     end
-    dx = _sep(B.x[ib] - A.x[ia], Lx, periodic)
-    dy = _sep(B.y[ib] - A.y[ia], Ly, periodic)
-    n = hypot(dx, dy)
-    ux, uy = n > 0 ? (dx / n, dy / n) : (1.0, 0.0)
-    _put_centered!(w, A, ia, B, ib, A.x[ia] + 0.5 * dx, A.y[ia] + 0.5 * dy, ux, uy, s)
-    return ux, uy
+    d = _pair_disp(w, A, ia, B, ib)
+    ux, uy = _dir(d)
+    _put_pair!(w, A, ia, B, ib, A.x[ia] + 0.5 * d[1], A.y[ia] + 0.5 * d[2], ux, uy, s, false)
+    return nothing
 end
 
-# A bound pair moves once, at its member with the larger (population, index); an anchored pair does not move
+# A bound pair moves once, at its member with the larger (population, index); an anchored pair does not move. The
+# orientation is that of the current displacement from the partner, plus the rotational step
 function _move_pair!(w::SimWorld, k::Int, ps::PopState, i::Int, h::Float64)
     kp = Int(ps.partner_pop[i])
     ip = Int(ps.partner[i])
@@ -69,17 +91,11 @@ function _move_pair!(w::SimWorld, k::Int, ps::PopState, i::Int, h::Float64)
     Dc = dk.D_dimer === :min ? min(ps.D[i], Q.D[ip]) : dk.D_dimer
     rng = w.rng
     ξ1 = randn(rng); ξ2 = randn(rng); ξ3 = randn(rng)
-    xmin, xmax, ymin, ymax = w.box
-    periodic = w.boundary === :periodic
-    dx = _sep(ps.x[i] - Q.x[ip], xmax - xmin, periodic)
-    dy = _sep(ps.y[i] - Q.y[ip], ymax - ymin, periodic)
+    d = _pair_disp(w, Q, ip, ps, i)
     sd = sqrt(2 * Dc * h)
-    cx = _fold(Q.x[ip] + 0.5 * dx + sd * ξ1, xmin, xmax, periodic)
-    cy = _fold(Q.y[ip] + 0.5 * dy + sd * ξ2, ymin, ymax, periodic)
-    θ = Q.θ[ip] + sqrt(2 * dk.D_rot * h) * ξ3
-    Q.θ[ip] = θ
-    ps.θ[i] = θ
-    _put_centered!(w, Q, ip, ps, i, cx, cy, cos(θ), sin(θ), dk.d_dimer)
+    φ = _angles(d) + sqrt(2 * dk.D_rot * h) * ξ3
+    _put_pair!(w, Q, ip, ps, i, Q.x[ip] + 0.5 * d[1] + sd * ξ1, Q.y[ip] + 0.5 * d[2] + sd * ξ2,
+               cos(φ), sin(φ), dk.d_dimer, true)
     return nothing
 end
 
@@ -123,11 +139,7 @@ function _try_pair!(w::SimWorld, e1::Int, e2::Int, t0::Float64, t1::Float64)
     B = w.pops[kb]
     (A.partner[ia] != 0 || B.partner[ib] != 0) && return nothing
     dk = w.dimers
-    periodic = w.boundary === :periodic
-    dx = _sep(A.x[ia] - B.x[ib], w.box[2] - w.box[1], periodic)
-    dy = _sep(A.y[ia] - B.y[ib], w.box[4] - w.box[3], periodic)
-    dz = A.z[ia] - B.z[ib]
-    dx * dx + dy * dy + dz * dz < dk.r_react^2 || return nothing
+    _contact(w, A, ia, B, ib) < dk.r_react || return nothing
     if kb < ka || (kb == ka && ib < ia)
         ka, ia, kb, ib = kb, ib, ka, ia
         A, B = B, A
@@ -137,14 +149,12 @@ function _try_pair!(w::SimWorld, e1::Int, e2::Int, t0::Float64, t1::Float64)
     tform = t0 + E
     tform < t1 || return nothing
     (A.t_depart[ia] <= tform || B.t_depart[ib] <= tform) && return nothing
-    ux, uy = _place_pair!(w, A, ia, B, ib, dk.d_dimer)
-    θ = atan(uy, ux)
+    _place_pair!(w, A, ia, B, ib, dk.d_dimer)
     tbd = tform + (dk.k_off > 0 ? randexp(rng) / dk.k_off : Inf)
     τc = max(A.p.lifetime, B.p.lifetime)
     tdep = isfinite(τc) ? tform + τc * randexp(rng) : Inf
     A.partner[ia] = ib; A.partner_pop[ia] = kb; A.partner_id[ia] = B.id[ib]
     B.partner[ib] = ia; B.partner_pop[ib] = ka; B.partner_id[ib] = A.id[ia]
-    A.θ[ia] = θ; B.θ[ib] = θ
     A.t_form[ia] = tform; B.t_form[ib] = tform
     vis = A.state[ia] == 1 && A.m[ia] > 0 && B.state[ib] == 1 && B.m[ib] > 0
     A.vis_form[ia] = vis; B.vis_form[ib] = vis
@@ -194,7 +204,7 @@ end
 function _split_pairs!(w::SimWorld, t0::Float64, t1::Float64)
     dk = w.dimers
     rng = w.rng
-    periodic = w.boundary === :periodic
+    s = _split_sep(w.box, dk.r_react)
     for (k, ps) in enumerate(w.pops)
         for i in 1:ps.n
             ip = Int(ps.partner[i])
@@ -207,11 +217,7 @@ function _split_pairs!(w::SimWorld, t0::Float64, t1::Float64)
             ps.t_break_f[i] = tbd; Q.t_break_f[ip] = tbd
             ps.partner[i] = 0; ps.partner_pop[i] = 0; ps.partner_id[i] = 0
             Q.partner[ip] = 0; Q.partner_pop[ip] = 0; Q.partner_id[ip] = 0
-            dx = _sep(ps.x[i] - Q.x[ip], w.box[2] - w.box[1], periodic)
-            dy = _sep(ps.y[i] - Q.y[ip], w.box[4] - w.box[3], periodic)
-            dz = ps.z[i] - Q.z[ip]
-            dx * dx + dy * dy + dz * dz < dk.r_react^2 &&
-                _place_pair!(w, ps, i, Q, ip, dk.r_react * (1 + 1e-9))
+            _contact(w, ps, i, Q, ip) < dk.r_react && _place_pair!(w, ps, i, Q, ip, s)
             ps.t_depart[i] = isfinite(ps.p.lifetime) ? tbd + ps.p.lifetime * randexp(rng) : Inf
             Q.t_depart[ip] = isfinite(Q.p.lifetime) ? tbd + Q.p.lifetime * randexp(rng) : Inf
         end

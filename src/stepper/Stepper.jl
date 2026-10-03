@@ -17,7 +17,7 @@ using Random
 using SMLMData: AbstractCamera, IdealCamera, SCMOSCamera
 using MicroscopePSFs: GaussianPSF
 using ..Core: GenericFluor, EvanescentExcitation, _ou_coeffs
-using ..InteractionDiffusion: DiffusionSMLMConfig
+using ..InteractionDiffusion: DiffusionSMLMConfig, _disp, _dir, _angles, _norm
 using ..CameraImages: _uniform_pitch, RenderBuffer, render_gaussian!, StampTable, render_stamp!
 
 include("types.jl")

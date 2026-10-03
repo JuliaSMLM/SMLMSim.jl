@@ -43,7 +43,7 @@ function _pop_state(rng::AbstractRNG, p::Population, px::Float64, box::NTuple{4,
                   zeros(Int32, cap), zeros(UInt8, cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
                   zeros(cap), zeros(cap), zeros(cap), zeros(cap), zeros(cap),
-                  zeros(Int32, cap), zeros(Int32, cap), zeros(Int, cap), zeros(cap), zeros(cap), zeros(cap),
+                  zeros(Int32, cap), zeros(Int32, cap), zeros(Int, cap), zeros(cap), zeros(cap),
                   zeros(cap), zeros(cap), zeros(cap), zeros(Bool, cap), zeros(Int, cap), Inf)
     return ps, n0, A
 end
@@ -67,13 +67,15 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
         for p in pops
             p.binds && p.multiplicity > 1 &&
                 throw(ArgumentError("population :$(p.name) binds with multiplicity $(p.multiplicity); dimers need multiplicity <= 1 (set binds = false)"))
+            p.binds && p.birth_rate > 0 && !isfinite(p.lifetime) &&
+                throw(ArgumentError("population :$(p.name) binds and has births with an infinite lifetime; with dimers its bleached molecules stay until they depart, so births need a finite lifetime"))
         end
     end
     box = (x0 - margin, x0 + nx * px + margin, y0 - margin, y0 + ny * px + margin)
     if dimers !== nothing
-        need = 2 * max(dimers.r_react, dimers.d_dimer) * (1 + 1e-9)
+        need = 2 * max(_split_sep(box, dimers.r_react), dimers.d_dimer * (1 + 1e-9))
         (box[2] - box[1] > need && box[4] - box[3] > need) ||
-            throw(ArgumentError("every side of the world box must exceed 2 max(r_react, d_dimer) = $need μm"))
+            throw(ArgumentError("every side of the world box must exceed 2 max(s, d_dimer) = $need μm, s the split separation (r_react plus a rounding margin)"))
     end
     ncx = dimers === nothing ? 0 : _cells_per_axis(box[2] - box[1], dimers.r_react)
     ncy = dimers === nothing ? 0 : _cells_per_axis(box[4] - box[3], dimers.r_react)

@@ -1,8 +1,9 @@
 using SMLMSim, Test, Statistics, Random, StableRNGs, MicroscopePSFs
 using SMLMSim: frame_truth, DimerKinetics, DiffusionSMLMConfig, FrameTruth
-using SMLMSim.Stepper: _add_emitter!, _substep!, _begin_truth!, _finish_truth!, _advance_acc!, _write_row!
+using SMLMSim.Stepper: _put_pair!, _add_emitter!, _substep!, _begin_truth!, _finish_truth!, _advance_acc!, _write_row!
 using Random: randexp
 using Distributions: Uniform
+using SMLMSim.InteractionDiffusion: _disp, _norm
 
 cam32() = IdealCamera(1:32, 1:32, 0.1)
 one_state(γ) = GenericFluor(; γ, q=zeros(1, 1))
@@ -572,7 +573,7 @@ function det_world(seed)
     return SimWorld(StableRNG(seed), cam32(), [sig, oof, oof2, anchor]; n_sub=4, background=bg, dimers=dk)
 end
 
-const DIMER_GOLDEN = 55106.829324442115
+const DIMER_GOLDEN = 50337.671348101125
 
 @testset "closedloop/dimer_determinism" begin
     a, b = det_world(21), det_world(21)
@@ -1107,4 +1108,188 @@ end
     @test r.m == 0
     @test r.lit ≈ 0.4 rtol = 1e-12
     @test r.t_bleach ≈ 0.004 rtol = 1e-12
+end
+
+# ---- 0.8.0 fix (Codex r1 on lane B): pairs ----
+
+# one binding one_state(1000.0) population of immobile emitters, for the pair tests below
+bpop(; kw...) = Population(density=0.0, fluor=one_state(1000.0), psf=GaussianPSF(0.05); kw...)
+
+step_alloc(w, k) = @allocated SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01)
+
+@testset "closedloop/pair_swap_order" begin
+    # a swap-remove inside a bound pair's population must not exchange the members
+    dk = DimerKinetics(k_on=Inf, r_react=0.02, k_off=0.0, D_rot=0.0, d_dimer=0.01, D_dimer=0.0)
+    w = SimWorld(StableRNG(1), cam32(), [bpop()]; n_sub=2, margin=0.0, dimers=dk)
+    ps = w.pops[1]
+    for _ in 1:3
+        _add_emitter!(w, ps, 0.0)
+    end
+    place!(ps, [2.5, 0.997, 1.007], [2.5, 1.6, 1.6])
+    ps.t_depart[1] = 0.003
+    SMLMSim.step!(w, 0.0, 0.01)
+    SMLMSim.step!(w, 0.01, 0.02)
+    x = Dict(ps.id[i] => ps.x[i] for i in 1:ps.n)
+    @test x[2] ≈ 0.997 atol = 1e-12
+    @test x[3] ≈ 1.007 atol = 1e-12
+end
+
+@testset "closedloop/dark_retention_bounds" begin
+    dk = DimerKinetics(k_on=Inf, r_react=0.01, k_off=1.0, D_rot=0.0, d_dimer=0.005)
+    g(; kw...) = Population(density=0.0, lifetime=Inf, budget=1.0, birth_rate=1000.0, fluor=one_state(1000.0),
+                            psf=GaussianPSF(0.05); kw...)
+    mkw(pops; kw...) = SimWorld(StableRNG(4), cam32(), pops; n_sub=1, margin=0.0, kw...)
+    # (a) a binder with births and an infinite lifetime keeps its bleached molecules: no bound on the count
+    @test_throws ArgumentError mkw([g()]; dimers=dk)
+    @test mkw([g()]) isa SimWorld
+    @test mkw([g(binds=false)]; dimers=dk) isa SimWorld
+    # (b) births with an infinite lifetime need a molecule that can bleach
+    @test_throws ArgumentError Population(density=0.0, birth_rate=10.0, budget=100.0, multiplicity=0,
+                                          fluor=one_state(1000.0), psf=GaussianPSF(0.05))
+    @test_throws ArgumentError Population(density=0.0, birth_rate=10.0, budget=100.0, multiplicity=1,
+                                          fluor=one_state(0.0), psf=GaussianPSF(0.05))
+    # (c) a non-binder is removed at bleaching even with dimers: the count stays bounded and steps allocate nothing
+    w = mkw([g(binds=false)]; dimers=dk)
+    total = 0
+    for k in 1:300
+        a = step_alloc(w, k)
+        k > 200 && (total += a)
+    end
+    @test w.pops[1].n < 200
+    @test total == 0
+    # (d) a bleached binder stays, a bleached non-binder leaves
+    pb = bpop(name=:b, budget=1e6)
+    pn = bpop(name=:nb, budget=1e6, binds=false)
+    w = mkw([pb, pn]; dimers=dk)
+    for (k, ps) in enumerate(w.pops)
+        _add_emitter!(w, ps, 0.0)
+        place!(ps, [1.0 + 2.0 * (k - 1)], [1.6])
+        ps.budget[1] = 4.0
+    end
+    SMLMSim.step!(w, 0.0, 0.01)
+    rows = collect(frame_truth(w))
+    @test length(rows) == 2
+    @test all(r -> isapprox(r.t_bleach, 0.004; rtol=1e-9), rows)
+    SMLMSim.step!(w, 0.01, 0.02)
+    r = only(frame_truth(w))
+    @test r.pop == 1 && r.m == 0 && r.photons == 0
+end
+
+@testset "closedloop/pair_reflection" begin
+    # (a) a moving pair's centre reflects, a placed pair's is clamped
+    w = SimWorld(StableRNG(1), cam32(), [bpop()]; n_sub=1, margin=0.0)
+    ps = w.pops[1]
+    for _ in 1:2
+        _add_emitter!(w, ps, 0.0)
+    end
+    _put_pair!(w, ps, 1, ps, 2, 0.09, 1.6, 1.0, 0.0, 0.2, true)
+    @test ps.x[1] ≈ 0.01 atol = 1e-12
+    @test ps.x[2] ≈ 0.21 atol = 1e-12
+    _put_pair!(w, ps, 1, ps, 2, 0.09, 1.6, 1.0, 0.0, 0.2, false)
+    @test ps.x[1] ≈ 0.0 atol = 1e-12
+    @test ps.x[2] ≈ 0.2 atol = 1e-12
+    # (b) no bound member piles up on a wall
+    pop = Population(density=20.0, mobility=[(1.0, 1.0)], fluor=one_state(1000.0), psf=GaussianPSF(0.05))
+    dk = DimerKinetics(k_on=Inf, r_react=0.05, k_off=0.0, D_rot=1.0, d_dimer=0.04, D_dimer=1.0)
+    w = SimWorld(StableRNG(2), cam32(), [pop]; n_sub=4, margin=0.0, dimers=dk)
+    ps = w.pops[1]
+    on_wall = 0
+    outside = 0
+    nbound = 0
+    for k in 1:100
+        SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01)
+        for i in 1:ps.n
+            outside += !(0.0 <= ps.x[i] <= 3.2 && 0.0 <= ps.y[i] <= 3.2)
+            if ps.partner[i] != 0
+                nbound += 1
+                on_wall += ps.x[i] == 0.0 || ps.y[i] == 0.0
+            end
+        end
+    end
+    @test nbound > 1000
+    @test on_wall == 0
+    @test outside == 0
+end
+
+@testset "closedloop/dimer_validation" begin
+    mk(; kw...) = DimerKinetics(; k_on=Inf, r_react=0.01, k_off=0.0, D_rot=0.0, d_dimer=0.005, kw...)
+    @test mk() isa DimerKinetics
+    for kw in ((D_rot=Inf,), (D_rot=NaN,), (D_dimer=Inf,), (D_dimer=NaN,), (d_dimer=Inf,))
+        @test_throws ArgumentError mk(; kw...)
+    end
+end
+
+@testset "closedloop/split_margin" begin
+    # coincident partners split to just over r_react, a distance that survives rounding: no re-formation
+    for D_dimer in (:min, 0.0)
+        dk = DimerKinetics(k_on=Inf, r_react=1e-8, k_off=1e4, D_rot=0.0, d_dimer=0.0, D_dimer=D_dimer)
+        w = SimWorld(StableRNG(1), cam32(), [bpop()]; n_sub=1, margin=0.0, dimers=dk)
+        ps = w.pops[1]
+        for _ in 1:2
+            _add_emitter!(w, ps, 0.0)
+        end
+        place!(ps, [1.6, 1.6], [1.6, 1.6])
+        for k in 1:10
+            SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01)
+            if k == 1
+                @test _norm((_disp(ps.x[1], ps.x[2], nothing), _disp(ps.y[1], ps.y[2], nothing))) >= 1e-8
+            else
+                @test all(r -> r.partner == 0 && isnan(r.t_form), frame_truth(w))
+            end
+        end
+    end
+end
+
+@testset "closedloop/periodic_axis" begin
+    # the periodic displacement keeps the subtraction's rounding error: 1e-17 and 3.2 are 1e-17 apart
+    dk = DimerKinetics(k_on=Inf, r_react=0.01, k_off=0.0, D_rot=0.0, d_dimer=0.005)
+    w = pair_world([bpop()], dk; boundary=:periodic, xs=[1e-17, 3.2], ys=[1.6, 1.6])
+    SMLMSim.step!(w, 0.0, 0.01)
+    ps = w.pops[1]
+    @test ps.x[1] == 1e-17
+    @test ps.x[2] ≈ 3.195 atol = 1e-12
+end
+
+@testset "closedloop/tiny_scale_contact" begin
+    cam = IdealCamera(1:32, 1:32, 1e-200)
+    pop = Population(density=0.0, fluor=one_state(1000.0), psf=GaussianPSF(1e-201))
+    dk = DimerKinetics(k_on=Inf, r_react=1e-200, k_off=0.0, D_rot=0.0, d_dimer=0.0)
+    w = SimWorld(StableRNG(1), cam, [pop]; n_sub=1, margin=0.0, dimers=dk)
+    ps = w.pops[1]
+    for _ in 1:2
+        _add_emitter!(w, ps, 0.0)
+    end
+    place!(ps, [1e-199, 1.05e-199], [1.6e-199, 1.6e-199])
+    SMLMSim.step!(w, 0.0, 0.01)
+    rows = frame_truth(w)
+    @test length(rows) == 2
+    @test rows[1].partner == rows[2].id && rows[2].partner == rows[1].id
+    @test all(r -> r.t_form == 0.0, rows)
+end
+
+@testset "closedloop/cell_count" begin
+    pop = Population(density=1.0, fluor=one_state(1000.0), psf=GaussianPSF(0.1))
+    dk = DimerKinetics(k_on=Inf, r_react=1e-20, k_off=0.0, D_rot=0.0, d_dimer=0.0)
+    w = SimWorld(StableRNG(1), cam32(), [pop]; n_sub=1, margin=0.0, dimers=dk)
+    @test w.ncx == w.ncy == 128
+    @test SMLMSim.step!(w, 0.0, 0.01) isa Matrix{Float64}
+end
+
+@testset "closedloop/formation_timing" begin
+    # a finite k_on forms at the exact time E/k_on (E the first draw of the step) when it falls inside the sub-step
+    mk(k_on) = pair_world([bpop()], DimerKinetics(k_on=k_on, r_react=0.01, k_off=0.0, D_rot=0.0, d_dimer=0.005); n_sub=1)
+    ζ = randexp(copy(mk(50.0).rng))
+    w = mk(ζ / 0.006)
+    SMLMSim.step!(w, 0.0, 0.01)
+    rows = frame_truth(w)
+    @test length(rows) == 2
+    @test all(r -> isapprox(r.t_form, 0.006; rtol=1e-12) && isapprox(r.bound, 0.4; rtol=1e-9), rows)
+    @test rows[1].partner == rows[2].id && rows[2].partner == rows[1].id
+    # a departure before the formation time prevents the pair
+    w2 = mk(ζ / 0.006)
+    w2.pops[1].t_depart[2] = 0.005
+    SMLMSim.step!(w2, 0.0, 0.01)
+    rows = frame_truth(w2)
+    @test all(r -> isnan(r.t_form), rows)
+    @test count(r -> r.t_depart == 0.005, rows) == 1
 end
