@@ -1,6 +1,6 @@
 name = "SMLMSim"
 uuid = "5a0a87e4-02d4-41f5-bf26-b8c94c784a04"
-version = "0.7.3-DEV"
+version = "0.7.2"
 authors = ["klidke@unm.edu"]
 
 [deps]
