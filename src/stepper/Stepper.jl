@@ -30,6 +30,6 @@ include("step.jl")
 
 export Population, DimerKinetics, BackgroundModel, SimWorld, UniformExcitation, EvanescentExcitation
 export Spot, SpotExcitation
-export FrameTruth, frame_truth, next_switch, gen_background  # step! and layers are public, not exported (generic names)
+export FrameTruth, frame_truth, params_dict, next_switch, gen_background  # step! and layers are public, not exported (generic names)
 
 end # module

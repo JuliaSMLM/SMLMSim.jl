@@ -2,6 +2,7 @@ using SMLMSim, Test, Statistics, Random, StableRNGs, MicroscopePSFs
 using SMLMSim: frame_truth, DimerKinetics, DiffusionSMLMConfig, FrameTruth
 using SMLMSim.Stepper: _add_emitter!
 using Random: randexp
+using Distributions: Uniform
 
 cam32() = IdealCamera(1:32, 1:32, 0.1)
 one_state(γ) = GenericFluor(; γ, q=zeros(1, 1))
@@ -828,5 +829,116 @@ end
     f = frame!(w, 2)
     for r in (f[ia], f[ib])
         @test r.bound == 0 && r.lit_bound == 0 && !r.vis_bound && r.overlap
+    end
+end
+
+# the full MicroscopeAdapt configuration: dimers, blinking, bleaching, births, Cell9-like background
+# (pattern, OOF blobs and haze), merge_radius, and SpotExcitation
+function full_world(seed)
+    flu = two_state(3000.0, 200.0, 20.0)
+    sig = Population(name=:sig, density=1.0, lifetime=0.1, fluor=flu, budget=100.0,
+                     mobility=[(0.5, 0.3), (0.5, 0.05)], psf=GaussianPSF(0.13))
+    anchor = Population(name=:anchor, density=0.5, fluor=flu, mobility=[(1.0, 0.0)], psf=GaussianPSF(0.13))
+    blobs = Population(name=:oof, layer=:oof, density=0.5, lifetime=0.1, fluor=flu, budget=200.0,
+                       mobility=[(1.0, 0.25)], brightness_sigma=0.3, z=(0.5, 1.0), psf=GaussianPSF(0.39), binds=false)
+    haze = Population(name=:haze, layer=:oof, density=0.5, lifetime=0.002, fluor=one_state(25000.0),
+                      z=(0.5, 1.0), psf=GaussianPSF(0.195), binds=false)
+    bg = BackgroundModel(level=87.7, jitter=0.025, contrast=0.1, feature_size=0.8,
+                         correlation_time=0.3, illumination_width=30.0, stretch=0.2)
+    dk = DimerKinetics(k_on=50.0, r_react=0.05, k_off=5.0, D_rot=1.0, d_dimer=0.02)
+    return SimWorld(StableRNG(seed), cam32(), [sig, anchor, blobs, haze]; n_sub=4, background=bg, dimers=dk,
+                    merge_radius=0.25)
+end
+
+@testset "closedloop/zero_alloc_full" begin
+    w = full_world(31)
+    exc = SpotExcitation(; base=1.0, spots=[Spot(; x=0.8, y=0.8, σ=0.0934, gain=10.0, z_R=0.23),
+                                            Spot(; x=2.2, y=2.0, σ=0.0934, gain=10.0, z_R=0.23, t_on=2.013, t_off=2.467)])
+    scam = SCMOSCamera(32, 32, 0.1, 1.6; offset=100.0, gain=2.0, qe=1.0)
+    nrng = StableRNG(98)
+    dst = zeros(32, 32)
+    function count_allocs(k)
+        return @allocated begin
+            SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01, exc)
+            s = 0.0
+            for r in frame_truth(w)
+                s += r.photons + r.bound + (r.overlap ? 1.0 : 0.0)
+            end
+            SMLMSim.scmos_noise!(nrng, copyto!(dst, w.expected), scam)
+            s
+        end
+    end
+    for k in 1:200
+        SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01, exc)
+    end
+    count_allocs(201)
+    total = 0
+    nrows = 0
+    npair = 0
+    for k in 202:301
+        total += count_allocs(k)
+        nrows += length(frame_truth(w))
+        npair += count(r -> r.partner != 0, frame_truth(w))
+    end
+    @test total == 0
+    @test nrows > 100 && npair > 0   # the loop ran with rows and pairs
+end
+
+@testset "closedloop/params_dict" begin
+    allowed(v) = v isa Union{String,Bool,Int,Float64,Vector{Float64}}
+    haskey_prefix(d, k) = haskey(d, k) || any(s -> startswith(s, k * "."), keys(d))
+    w = det_world(21)
+    d = SMLMSim.params_dict(w)
+    @test d isa Dict{String,Any}
+    @test all(allowed, values(d))
+    @test d["smlmsim.version"] == string(pkgversion(SMLMSim))
+    @test d["world.n_sub"] == 4 && d["world.boundary"] == "reflecting" && d["world.merge_radius"] == 0.0
+    @test d["world.box_um"] == collect(Float64, w.box)
+    @test d["camera.type"] == "IdealCamera" && d["camera.nx"] == 32 && d["camera.ny"] == 32
+    @test d["camera.pixel_size_um"] == 0.1
+    for k in eachindex(w.pops), f in fieldnames(Population)
+        @test haskey_prefix(d, "pop$k.$f")
+    end
+    @test d["pop1.binds"] === true && d["pop2.binds"] === false
+    @test d["pop1.mobility.fraction"] == [0.5, 0.5] && d["pop1.mobility.D"] == [0.3, 0.05]
+    @test d["pop1.fluor.q"] == [-200.0, 200.0, 20.0, -20.0] && d["pop1.fluor.q.n"] == 2
+    @test d["pop1.psf.sigma_um"] == 0.13
+    @test d["pop2.psf.stamp.radius"] == 12 && d["pop2.psf.stamp.z_min"] ≈ -0.3 && d["pop2.psf.stamp.z_max"] ≈ 1.0
+    @test d["pop2.psf.stamp.oversample"] == 4 && d["pop2.psf.stamp.z_step"] ≈ 1.3 / 7
+    for k in ("k_on", "r_react", "k_off", "D_rot", "d_dimer")
+        @test d["dimers.$k"] isa Float64
+    end
+    @test d["dimers.D_dimer"] == "min"
+    for f in fieldnames(BackgroundModel)
+        @test haskey(d, "bg.$f")
+    end
+    @test d["bg.level"] == 5000.0 && d["bg.illumination_width"] == 2.0
+    # no dimers, no background, a fixed D_dimer, a distribution level and per-pixel sCMOS maps
+    pop = Population(density=1.0, fluor=one_state(1e3), psf=GaussianPSF(0.1))
+    scam = SCMOSCamera(32, 32, 0.1, fill(1.6, 32, 32); offset=fill(100.0, 32, 32), gain=2.0, qe=0.9)
+    w0 = SimWorld(StableRNG(1), scam, [pop]; n_sub=2)
+    d0 = SMLMSim.params_dict(w0)
+    @test all(allowed, values(d0))
+    @test !any(k -> startswith(k, "dimers.") || startswith(k, "bg."), keys(d0))
+    @test d0["camera.type"] == "SCMOSCamera" && d0["camera.readnoise.mean"] ≈ 1.6 && d0["camera.offset.mean"] ≈ 100.0
+    @test d0["camera.gain"] == 2.0 && d0["camera.qe"] == 0.9
+    wd = SimWorld(StableRNG(1), cam32(), [pop]; n_sub=2, boundary=:periodic, merge_radius=0.25,
+                  dimers=DimerKinetics(k_on=Inf, r_react=0.05, k_off=1.0, D_rot=0.0, d_dimer=0.02, D_dimer=0.5),
+                  background=BackgroundModel(level=Uniform(1.0, 2.0)))
+    dd = SMLMSim.params_dict(wd)
+    @test all(allowed, values(dd))
+    @test dd["dimers.D_dimer"] === 0.5 && dd["dimers.k_on"] == Inf && dd["world.boundary"] == "periodic"
+    @test dd["world.merge_radius"] == 0.25
+    @test dd["bg.level"] isa String && occursin("Uniform", dd["bg.level"])
+end
+
+# the 5 ms budget of design section 7a, measured only on request (kitt): SMLMSIM_BENCH=1
+if get(ENV, "SMLMSIM_BENCH", "") == "1"
+    @testset "closedloop/benchmark" begin
+        include(joinpath(@__DIR__, "..", "dev", "benchmark_stepper.jl"))
+        r = bench_run()
+        bench_report(r)
+        @test r.both <= 5e-3
+        @test r.alloc_step == 0 && r.alloc_noise == 0
     end
 end

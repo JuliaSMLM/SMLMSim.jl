@@ -274,6 +274,7 @@ mutable struct BackgroundState
     ix::Vector{Int}
     wy::Matrix{Float64}
     wx::Matrix{Float64}
+    model::Any                            # the BackgroundModel, kept for params_dict
 end
 
 """

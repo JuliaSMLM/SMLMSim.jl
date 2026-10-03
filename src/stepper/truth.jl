@@ -124,3 +124,100 @@ function _mark_visible_pairs!(w::SimWorld)
     end
     return nothing
 end
+
+"""
+    params_dict(world) -> Dict{String,Any}
+
+The configuration of `world` as a flat dictionary whose values are only `String`, `Bool`, `Int`,
+`Float64` or `Vector{Float64}`, so each can be written as an HDF5 attribute. Keys:
+
+- `"smlmsim.version"`, `"rng.type"`;
+- `"world.n_sub"`, `"world.boundary"`, `"world.box_um"` (xmin, xmax, ymin, ymax), `"world.merge_radius"`;
+- `"camera.type"`, `"camera.nx"`, `"camera.ny"`, `"camera.pixel_size_um"` and `"camera.offset"`, `"camera.gain"`,
+  `"camera.readnoise"`, `"camera.qe"` for an sCMOS camera: the scalar, or `".mean"` appended to the key for a
+  per-pixel map;
+- `"pop<k>.<field>"` for every field of the `k`th [`Population`](@ref): `mobility` as `.mobility.fraction` and
+  `.mobility.D`, `fluor` as `.fluor.gamma` and the rate matrix `.fluor.q` (row-major) with its size `.fluor.q.n`,
+  `z` as a two-element vector, and `psf` as `.psf.sigma_um` or `.psf.stamp.z_min`, `.z_max`, `.z_step`,
+  `.radius` and `.oversample`;
+- `"dimers.k_on"`, `.r_react`, `.k_off`, `.D_rot`, `.d_dimer` and `"dimers.D_dimer"` (a number, or the String
+  `"min"`), only when the world has `dimers`;
+- `"bg.<field>"` for every field of the [`BackgroundModel`](@ref) (the level as a number, or
+  `string(distribution)`), only when the world has a background.
+
+The commit of the code is not recoverable from an installed package: a caller that needs it adds its own
+entries with `merge`, for example the seed.
+"""
+function params_dict(w::SimWorld)
+    d = Dict{String,Any}()
+    d["smlmsim.version"] = string(pkgversion(parentmodule(@__MODULE__)))
+    d["rng.type"] = string(typeof(w.rng))
+    d["world.n_sub"] = w.n_sub
+    d["world.boundary"] = string(w.boundary)
+    d["world.box_um"] = collect(Float64, w.box)
+    d["world.merge_radius"] = w.merge_radius
+    c = w.camera
+    d["camera.type"] = string(nameof(typeof(c)))
+    d["camera.nx"] = size(w.signal, 2)
+    d["camera.ny"] = size(w.signal, 1)
+    d["camera.pixel_size_um"] = w.px
+    if c isa SCMOSCamera
+        for f in (:offset, :gain, :readnoise, :qe)
+            v = getfield(c, f)
+            if v isa AbstractMatrix
+                d["camera.$f.mean"] = Float64(sum(v) / length(v))
+            else
+                d["camera.$f"] = Float64(v)
+            end
+        end
+    end
+    for (k, ps) in enumerate(w.pops)
+        p = ps.p
+        pre = "pop$k."
+        d[pre * "name"] = string(p.name)
+        d[pre * "layer"] = string(p.layer)
+        d[pre * "density"] = p.density
+        d[pre * "lifetime"] = p.lifetime
+        d[pre * "birth_rate"] = p.birth_rate
+        d[pre * "mobility.fraction"] = Float64[f for (f, _) in p.mobility]
+        d[pre * "mobility.D"] = Float64[D for (_, D) in p.mobility]
+        d[pre * "fluor.gamma"] = Float64(p.fluor.γ)
+        q = Matrix{Float64}(p.fluor.q)
+        d[pre * "fluor.q"] = vec(permutedims(q))
+        d[pre * "fluor.q.n"] = size(q, 1)
+        d[pre * "brightness_sigma"] = p.brightness_sigma
+        d[pre * "budget"] = p.budget
+        d[pre * "multiplicity"] = p.multiplicity
+        d[pre * "z"] = Float64[p.z[1], p.z[2]]
+        if p.psf isa StampTable
+            zs = p.psf.zs
+            d[pre * "psf.stamp.z_min"] = Float64(first(zs))
+            d[pre * "psf.stamp.z_max"] = Float64(last(zs))
+            d[pre * "psf.stamp.z_step"] = length(zs) > 1 ? Float64(zs[2] - zs[1]) : 0.0
+            d[pre * "psf.stamp.radius"] = p.psf.radius
+            d[pre * "psf.stamp.oversample"] = p.psf.oversample
+        else
+            d[pre * "psf.sigma_um"] = Float64(p.psf.σ)
+        end
+        d[pre * "brightness_jitter"] = p.brightness_jitter
+        d[pre * "jitter_time"] = p.jitter_time
+        d[pre * "binds"] = p.binds
+    end
+    dk = w.dimers
+    if dk !== nothing
+        d["dimers.k_on"] = dk.k_on
+        d["dimers.r_react"] = dk.r_react
+        d["dimers.k_off"] = dk.k_off
+        d["dimers.D_rot"] = dk.D_rot
+        d["dimers.d_dimer"] = dk.d_dimer
+        d["dimers.D_dimer"] = dk.D_dimer === :min ? "min" : Float64(dk.D_dimer)
+    end
+    if w.bg !== nothing
+        m = w.bg.model
+        for f in fieldnames(typeof(m))
+            v = getfield(m, f)
+            d["bg.$f"] = v isa Real ? Float64(v) : string(v)
+        end
+    end
+    return d
+end

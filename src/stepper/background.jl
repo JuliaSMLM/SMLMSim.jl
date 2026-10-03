@@ -61,7 +61,7 @@ function BackgroundState(rng::AbstractRNG, m::BackgroundModel, ny::Int, nx::Int,
         iy, wy = zeros(Int, ny), zeros(4, ny)
         g = zeros(0, 0)
     end
-    bs = BackgroundState(m.level, m.stretch, m.jitter, m.contrast, m.correlation_time, t0, t0, 0, 0.0, 0.0, zeros(1), P, g, zeros(ny, size(g, 2)), iy, ix, wy, wx)
+    bs = BackgroundState(m.level, m.stretch, m.jitter, m.contrast, m.correlation_time, t0, t0, 0, 0.0, 0.0, zeros(1), P, g, zeros(ny, size(g, 2)), iy, ix, wy, wx, m)
     _draw_level!(bs.draw, rng, bs.level_src)
     bs.level = bs.draw[1]
     return bs
