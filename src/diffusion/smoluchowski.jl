@@ -218,9 +218,12 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         (isfinite(brightness_jitter) && brightness_jitter >= 0) ||
             throw(ArgumentError("brightness_jitter must be finite and >= 0, got $brightness_jitter"))
         jitter_time > 0 || throw(ArgumentError("jitter_time must be > 0, got $jitter_time"))
-        (isfinite(z_range[1]) && isfinite(z_range[2])) ||
-            throw(ArgumentError("z_range must have finite ends, got $z_range"))
-        z_range[1] <= z_range[2] || throw(ArgumentError("z_range must satisfy z_range[1] <= z_range[2], got $z_range"))
+        # checked as stored (Float64), so a BigFloat end beyond floatmax cannot become ±Inf, and the width
+        # z_range[2] - z_range[1] of the uniform height draw must itself be finite
+        zr = (Float64(z_range[1]), Float64(z_range[2]))
+        (isfinite(zr[1]) && isfinite(zr[2]) && isfinite(zr[2] - zr[1])) ||
+            throw(ArgumentError("z_range must have finite ends and a finite width as Float64, got $z_range"))
+        zr[1] <= zr[2] || throw(ArgumentError("z_range must satisfy z_range[1] <= z_range[2], got $z_range"))
         excitation !== nothing && ndims != 2 &&
             throw(ArgumentError("excitation needs ndims = 2 (the height comes from z_range)"))
 

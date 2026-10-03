@@ -17,7 +17,8 @@ logX(e) = log(e.photons / 1000.0)
     @test p.brightness_jitter == 0.0 && p.jitter_time == 0.01
     @test p.z_range == (0.0, 0.0) && p.excitation === nothing
     for kw in ((brightness_jitter=-0.1,), (brightness_jitter=Inf,), (jitter_time=0.0,), (jitter_time=-1.0,),
-               (z_range=(0.3, 0.1),), (z_range=(-Inf, Inf),), (z_range=(0.0, NaN),), (z_range=(0.0, Inf),), (excitation=EvanescentExcitation(), ndims=3))
+               (z_range=(0.3, 0.1),), (z_range=(-Inf, Inf),), (z_range=(0.0, NaN),), (z_range=(0.0, Inf),),
+               (z_range=(-big"1e400", big"1e400"),), (z_range=(-1e308, 1e308),), (excitation=EvanescentExcitation(), ndims=3))
         @test_throws ArgumentError DiffusionSMLMConfig(; kw...)
     end
     # defaults draw nothing: bit-identical to a config with jitter 0 and no excitation
