@@ -250,18 +250,38 @@ end
     @test_throws ArgumentError StampTable(zero_sp, px, range(-0.6, 0.6, length=7); radius=2)
 end
 
-@testset "gen_images/frames_iterable_and_float32_pitch" begin
+# A 1-based view of an offset-indexed vector of frame numbers (axes 0:n-1), without OffsetArrays
+struct OffsetFrames <: AbstractVector{Int}
+    v::Vector{Int}
+end
+Base.size(o::OffsetFrames) = (length(o.v),)
+Base.axes(o::OffsetFrames) = (0:length(o.v)-1,)
+Base.getindex(o::OffsetFrames, i::Int) = o.v[i+1]
+
+@testset "gen_images/frames_iterable" begin
     cam = IdealCamera(16, 16, 0.1)
     smld = BasicSMLD([em2(0.8, 0.8, 500.0, 1), em2(0.9, 0.7, 300.0, 2)], cam, 3, 1)
     a, _ = gen_images(smld, GaussianPSF(0.12); frames=Set([1]))
     b, _ = gen_images(smld, GaussianPSF(0.12); frames=[1])
     @test a == b
-    # Float32 edges are uniform and square; a non-uniform camera is not
-    c32 = IdealCamera(256, 256, 0.1f0)
-    cr = IdealCamera(256, 128, 0.1f0)
-    @test isfinite(SMLMSim.CameraImages._square_pitch(c32.pixel_edges_x, c32.pixel_edges_y))
-    @test isfinite(SMLMSim.CameraImages._square_pitch(cr.pixel_edges_x, cr.pixel_edges_y))
+    of = OffsetFrames([1, 2])
+    @test Base.has_offset_axes(of)
+    c, _ = gen_images(smld, GaussianPSF(0.12); frames=of, threaded=false)
+    d, _ = gen_images(smld, GaussianPSF(0.12); frames=[1, 2], threaded=false)
+    @test c == d
+end
+
+@testset "gen_images/pitch_check_in_edge_type" begin
+    # the check runs in the edges' own type, as in 0.7.2: a Float32 camera that passed keeps its pitch
+    c3 = IdealCamera(3, 3, 0.1f0)
+    e = c3.pixel_edges_x
+    @test SMLMSim.CameraImages._uniform_pitch(e) === Float64((e[end] - e[1]) / (length(e) - 1))
+    # a non-uniform Float32 camera whose per-pixel drift is small but accumulates is rejected (fallback)
+    cam = IdealCamera(2048, 16, 0.1f0)
+    for k in 0:2048
+        cam.pixel_edges_x[k+1] = Float32(Float64(cam.pixel_edges_x[k+1]) + 6e-5 * min(k, 2048 - k))
+    end
+    @test isnan(SMLMSim.CameraImages._uniform_pitch(cam.pixel_edges_x))
     ex = collect(0.0:0.1:1.0); ex[5] += 0.02
     @test isnan(SMLMSim.CameraImages._uniform_pitch(ex))
-    @test isnan(SMLMSim.CameraImages._square_pitch(collect(0.0:0.1:1.0), collect(0.0:0.11:1.1)))
 end

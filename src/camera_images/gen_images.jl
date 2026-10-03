@@ -67,7 +67,8 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
     if frames === nothing
         # Use all frames from 1 to n_frames
         frames = 1:smld.n_frames
-    elseif !(frames isa AbstractVector)
+    elseif !(frames isa AbstractVector) || Base.has_offset_axes(frames)
+        # any iterable of frame numbers (a Set, an offset vector): indexed 1-based below
         frames = collect(frames)
     end
 
@@ -218,35 +219,21 @@ function _support_window(edges_x::AbstractVector, edges_y::AbstractVector, x::Re
     return i_min:i_max, j_min:j_max
 end
 
-# Rounding slack of an edge vector: the relative tolerance plus the edge representation error
-# (Float32 edges are rounded at eps(Float32) times their magnitude)
-function _edge_tol(edges::AbstractVector, d::Float64)
-    mag = max(abs(Float64(edges[1])), abs(Float64(edges[end])))
-    return 1e-6 * abs(d) + 4 * Float64(eps(float(eltype(edges)))) * mag
-end
-
-# Pixel pitch if the edges are uniform, else NaN
+# Pixel pitch if the edges are uniform, else NaN. Computed in the edges' own type: a camera whose
+# Float32 edges fail this check takes the integrate_pixels fallback (correct, slower).
 function _uniform_pitch(edges::AbstractVector)
     length(edges) < 2 && return NaN
-    d = (Float64(edges[end]) - Float64(edges[1])) / (length(edges) - 1)
-    tol = _edge_tol(edges, d)
-    ok = all(k -> abs((Float64(edges[k+1]) - Float64(edges[k])) - d) <= tol, 1:length(edges)-1)
-    return ok ? d : NaN
-end
-
-# Common pitch if both axes are uniform and equal within edge rounding, else NaN
-function _square_pitch(ex::AbstractVector, ey::AbstractVector)
-    px, py = _uniform_pitch(ex), _uniform_pitch(ey)
-    (isfinite(px) && isfinite(py)) || return NaN
-    return abs(px - py) <= _edge_tol(ex, px) + _edge_tol(ey, py) ? px : NaN
+    d = (edges[end] - edges[1]) / (length(edges) - 1)
+    ok = all(k -> abs((edges[k+1] - edges[k]) - d) <= 1e-6 * abs(d), 1:length(edges)-1)
+    return ok ? Float64(d) : NaN
 end
 
 # Returns (render!(frame, frame_emitters, ws, inner_threaded), is_gaussian) where render! accumulates one frame
 function _frame_renderer(psf::AbstractPSF, camera, support, sampling, ::Type{T}) where T
     ex, ey = camera.pixel_edges_x, camera.pixel_edges_y
     if psf isa GaussianPSF
-        px = _square_pitch(ex, ey)
-        if isfinite(px)
+        px, py = _uniform_pitch(ex), _uniform_pitch(ey)
+        if isfinite(px) && isfinite(py) && abs(px - py) <= 1e-9 * px
             σpx = psf.σ / px
             x0, y0 = Float64(ex[1]), Float64(ey[1])
             rinf = ceil(Int, 8σpx) + 1
