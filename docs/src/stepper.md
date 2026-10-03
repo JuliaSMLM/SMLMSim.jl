@@ -59,6 +59,14 @@ declares an excitation's discontinuities. A `Population`'s `brightness_jitter` a
 brightness fluctuation (an Ornstein-Uhlenbeck process in log brightness). `step!` and `layers` are public but not exported, because the
 names are generic (SciML and Agents.jl export a `step!`); write `SMLMSim.step!` and `SMLMSim.layers`.
 
+For small `brightness_jitter`, the per-frame sd of an emitter's log photons is about `brightness_jitter √g`,
+`g = (n + 2 Σ_{k=1}^{n-1} (n - k) ρ^k)/n²`, `n = n_sub`, `ρ = exp(-T/(n jitter_time))`, `T` the exposure
+(`g = 1` at `n_sub = 1`; 0.7385 at `n_sub = 10`, `T = jitter_time = 0.01` s). To reproduce a measured per-frame
+sd `j`, set `brightness_jitter = j/√g`. The calibration of `PPIDetect/dev/output/t15/sim_vs_real.md`:
+the measured within-track sd of log photons per 10 ms frame is 0.37 (Cell9) and 0.48 (Cell1) against a 0.24
+baseline without jitter, so `j = √(target² - 0.24²)` is 0.28 for Cell9 and 0.42 for Cell1, then
+`brightness_jitter = j/√g`.
+
 ## SpotExcitation
 
 [`SpotExcitation`](@ref) is the excitation of one or more focused spots on a baseline, a callable

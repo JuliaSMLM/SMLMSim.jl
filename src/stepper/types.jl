@@ -55,6 +55,10 @@ are per second.
   birth and held over each sub-step, like motion and excitation. The median rate stays `γ_i`; the mean
   rises by `exp(brightness_jitter^2/2)`. It scales emission only, not the CTMC rates, and the budget
   is spent by emitted photons, so bleaching follows it. With `brightness_jitter = 0` nothing is drawn.
+  For small `brightness_jitter`, the per-frame sd of an emitter's log photons is about `brightness_jitter·√g`,
+  `g = (n + 2 Σ_{k=1}^{n−1} (n − k) ρ^k)/n²`, `n = n_sub`, `ρ = exp(−T/(n·jitter_time))`, `T` the exposure (g = 1 at
+  `n_sub = 1`; 0.7385 at `n_sub = 10`, `T = jitter_time = 0.01` s). To reproduce a measured per-frame sd `j`, set
+  `brightness_jitter = j/√g`.
   Real one-molecule movies show a within-track sd of log photons of 0.37-0.48 per 10 ms frame, against
   0.24 without jitter (`PPIDetect/dev/output/t15/sim_vs_real.md`).
 - `binds::Bool = true`: with `SimWorld(...; dimers)`, pairs with other binding emitters, within and across

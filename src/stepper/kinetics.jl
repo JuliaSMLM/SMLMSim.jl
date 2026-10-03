@@ -109,6 +109,10 @@ end
 @noinline _bad_excitation(I) =
     throw(DomainError(I, "excitation must return a finite relative intensity >= 0"))
 
+@noinline _bad_rate(name, ρe, λx) =
+    throw(DomainError((ρe, λx), "population :$name: brightness_jitter, brightness_sigma or the excitation overflowed " *
+                                "the emission or exit rate (photons/s, exit rate/s)"))
+
 @noinline _bad_switch(ts, t) =
     throw(ArgumentError("next_switch returned $ts, which is not after t = $t"))
 
@@ -181,7 +185,8 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, h::Float64, �
         tnow = t0 + τ
         λx = m == 0 ? 0.0 : (s == 1 ? ps.exitrate[1] * I : ps.exitrate[s])
         tx = λx > 0 ? clock / λx : Inf
-        ρe = s == 1 ? m * γi * I : 0.0
+        ρe = lit ? m * γi * I : 0.0
+        (ρe < Inf && λx < Inf) || _bad_rate(ps.p.name, ρe, λx)
         tbl = ρe > 0 ? budget / ρe : Inf
         tdp = tdep - tnow
         trem = h - τ
@@ -353,19 +358,28 @@ function _substep!(w::SimWorld, t0::Float64, h::Float64, excitation::E, record::
             end
         end
         _move!(w, k, ps, h)
-        ps.p.brightness_jitter > 0 && _jitter!(w, ps, h)
+    end
+    for ps in w.pops
+        ps.p.brightness_jitter > 0 && _jitter!(w, ps, t0, t0 + h)
     end
     return nothing
 end
 
-# Advance every emitter's log-brightness multiplier by h: the exact OU (AR(1)) step
-function _jitter!(w::SimWorld, ps::PopState, h::Float64)
+# Advance every emitter's log-brightness multiplier to t1, the end of the sub-step [t0, t1): the exact OU (AR(1))
+# step over the time since t0, or since birth for an emitter born inside the sub-step
+function _jitter!(w::SimWorld, ps::PopState, t0::Float64, t1::Float64)
     s = ps.p.brightness_jitter
     τ = ps.p.jitter_time
-    a, b = _ou_coeffs(s, τ, h)
+    a, b = _ou_coeffs(s, τ, t1 - t0)
     rng = w.rng
     @inbounds for i in 1:ps.n
-        ps.lj[i] = a * ps.lj[i] + b * randn(rng)
+        tb = ps.t_birth[i]
+        if tb > t0
+            ab, bb = _ou_coeffs(s, τ, t1 - tb)
+            ps.lj[i] = ab * ps.lj[i] + bb * randn(rng)
+        else
+            ps.lj[i] = a * ps.lj[i] + b * randn(rng)
+        end
     end
     return nothing
 end
