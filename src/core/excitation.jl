@@ -11,7 +11,7 @@ intensity that is propagating (scattered) light and reaches every height. Callab
 
 One type serves both simulation paths:
 - the diffusion path, `DiffusionSMLMConfig(; excitation)` with heights drawn in `z_range`;
-- the stepper, `SMLMSim.step!(world, excitation)`, where `z` is each emitter's height (the
+- the stepper, `SMLMSim.step!(world, t_a, t_b, excitation)`, where `z` is each emitter's height (the
   [`Population`](@ref) convention) and the focal plane is at the glass. There it applies to every
   population, `:oof` included, so a population calibrated under [`UniformExcitation`](@ref) needs
   its γ rescaled; like every excitation it scales emission and the state-1 exit rate.
@@ -20,9 +20,10 @@ struct EvanescentExcitation
     depth::Float64
     stray::Float64
     function EvanescentExcitation(depth::Real, stray::Real)
-        depth > 0 || throw(ArgumentError("depth must be > 0, got $depth"))
-        0 <= stray <= 1 || throw(ArgumentError("stray must be in [0, 1], got $stray"))
-        return new(Float64(depth), Float64(stray))
+        d, st = Float64(depth), Float64(stray)
+        d > 0 || throw(ArgumentError("depth must be > 0 as a Float64, got $depth"))
+        0 <= st <= 1 || throw(ArgumentError("stray must be in [0, 1] as a Float64, got $stray"))
+        return new(d, st)
     end
 end
 

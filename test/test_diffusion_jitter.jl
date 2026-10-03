@@ -60,6 +60,10 @@ end
     @test_throws ArgumentError EvanescentExcitation(; depth=0.0)
     @test_throws ArgumentError EvanescentExcitation(; stray=1.5)
     @test_throws ArgumentError EvanescentExcitation(; stray=-0.1)
+    # the converted values are checked: a depth that underflows to 0.0, NaN depth, NaN stray
+    @test_throws ArgumentError EvanescentExcitation(; depth=big"1e-1000")
+    @test_throws ArgumentError EvanescentExcitation(; depth=NaN)
+    @test_throws ArgumentError EvanescentExcitation(; stray=NaN)
     # every molecule at z = 0.2: the same trajectories, every record scaled by exp(-2)
     Random.seed!(31); a, _ = simulate(jcfg())
     Random.seed!(31); b, _ = simulate(jcfg(; z_range=(0.2, 0.2), excitation=EvanescentExcitation(; depth=0.1)))
