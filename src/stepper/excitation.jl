@@ -9,7 +9,9 @@ of the focal intensity, so the waist is `w0 = 2σ`; `z_R` is the Rayleigh range 
 z-independent column). The spot contributes only for `t_on <= t < t_off`, in seconds on the world
 clock, the same `t` the excitation receives in [`step!`](@ref); the defaults keep it always on.
 
-Throws `ArgumentError` unless `σ > 0`, `gain >= 0`, `z_R > 0`, `t_on < t_off` and neither time is NaN.
+Every value is converted to `Float64` first and the stored value is checked. Throws `ArgumentError`
+unless `x`, `y`, `σ` and `gain` are finite, `σ > 0`, `gain >= 0`, `z_R > 0` (`Inf` allowed), neither
+time is NaN and `t_on < t_off`.
 """
 struct Spot
     x::Float64
@@ -21,12 +23,15 @@ struct Spot
     t_off::Float64
 
     function Spot(; x::Real, y::Real, σ::Real, gain::Real, z_R::Real, t_on::Real=-Inf, t_off::Real=Inf)
-        σ > 0 || throw(ArgumentError("σ must be > 0, got $σ"))
-        gain >= 0 || throw(ArgumentError("gain must be >= 0, got $gain"))
+        x, y, σ, gain, z_R, t_on, t_off = Float64(x), Float64(y), Float64(σ), Float64(gain), Float64(z_R),
+                                          Float64(t_on), Float64(t_off)
+        (isfinite(x) && isfinite(y)) || throw(ArgumentError("x and y must be finite, got x = $x, y = $y"))
+        (isfinite(σ) && σ > 0) || throw(ArgumentError("σ must be finite and > 0, got $σ"))
+        (isfinite(gain) && gain >= 0) || throw(ArgumentError("gain must be finite and >= 0, got $gain"))
         z_R > 0 || throw(ArgumentError("z_R must be > 0 (Inf allowed), got $z_R"))
         (isnan(t_on) || isnan(t_off)) && throw(ArgumentError("t_on and t_off must not be NaN"))
         t_on < t_off || throw(ArgumentError("t_on must be < t_off, got t_on = $t_on, t_off = $t_off"))
-        return new(Float64(x), Float64(y), Float64(σ), Float64(gain), Float64(z_R), Float64(t_on), Float64(t_off))
+        return new(x, y, σ, gain, z_R, t_on, t_off)
     end
 end
 
@@ -53,8 +58,9 @@ interface. With `f_evan = 0` it is skipped and the result is the plain law.
 [`next_switch`](@ref) is the smallest `t_on` or `t_off` of the spots after `t`, so a switch inside
 an exposure acts at its exact time. The call allocates nothing.
 
-Throws `ArgumentError` unless `base >= 0`, `0 <= f_evan <= 1`, `d_evan > 0`, `λ > 0`, `n > 0`,
-`tan θ` finite and `>= 0`, and `φ` finite.
+Every value is converted to `Float64` first and the stored value is checked. Throws `ArgumentError`
+unless `base` is finite and `>= 0`, `0 <= f_evan <= 1`, `d_evan > 0` (`Inf` allowed: a constant
+evanescent term), `λ` and `n` are finite and `> 0`, `tan θ` is finite and `>= 0`, and `φ` is finite.
 """
 struct SpotExcitation
     base::Float64
@@ -69,22 +75,22 @@ struct SpotExcitation
 
     function SpotExcitation(; spots::Vector{Spot}, base::Real=1.0, λ::Real=0.642, n::Real=1.33,
                             f_evan::Real=0.0, d_evan::Real=0.1, tilt=(0.0, 0.0))
-        base >= 0 || throw(ArgumentError("base must be >= 0, got $base"))
+        base, λ, n, f_evan, d_evan = Float64(base), Float64(λ), Float64(n), Float64(f_evan), Float64(d_evan)
+        tt, φ = Float64(tilt[1]), Float64(tilt[2])
+        (isfinite(base) && base >= 0) || throw(ArgumentError("base must be finite and >= 0, got $base"))
         0 <= f_evan <= 1 || throw(ArgumentError("f_evan must be in [0, 1], got $f_evan"))
-        d_evan > 0 || throw(ArgumentError("d_evan must be > 0, got $d_evan"))
-        λ > 0 || throw(ArgumentError("λ must be > 0, got $λ"))
-        n > 0 || throw(ArgumentError("n must be > 0, got $n"))
-        (isfinite(tilt[1]) && tilt[1] >= 0) || throw(ArgumentError("tilt[1] (tan θ) must be finite and >= 0, got $(tilt[1])"))
-        isfinite(tilt[2]) || throw(ArgumentError("tilt[2] (the azimuth) must be finite, got $(tilt[2])"))
+        d_evan > 0 || throw(ArgumentError("d_evan must be > 0 (Inf allowed), got $d_evan"))
+        (isfinite(λ) && λ > 0) || throw(ArgumentError("λ must be finite and > 0, got $λ"))
+        (isfinite(n) && n > 0) || throw(ArgumentError("n must be finite and > 0, got $n"))
+        (isfinite(tt) && tt >= 0) || throw(ArgumentError("tilt[1] (tan θ) must be finite and >= 0, got $tt"))
+        isfinite(φ) || throw(ArgumentError("tilt[2] (the azimuth) must be finite, got $φ"))
         for (k, sp) in enumerate(spots)
             isfinite(sp.z_R) || continue
             z_exp = π * (2 * sp.σ)^2 * n / λ
             (sp.z_R > 2 * z_exp || sp.z_R < z_exp / 2) &&
                 @warn "spot $k: z_R = $(sp.z_R) μm differs by more than 2x from π (2σ)² n/λ = $z_exp μm"
         end
-        tt, φ = Float64(tilt[1]), Float64(tilt[2])
-        return new(Float64(base), copy(spots), Float64(λ), Float64(n), Float64(f_evan), Float64(d_evan),
-                   (tt, φ), tt * cos(φ), tt * sin(φ))
+        return new(base, copy(spots), λ, n, f_evan, d_evan, (tt, φ), tt * cos(φ), tt * sin(φ))
     end
 end
 

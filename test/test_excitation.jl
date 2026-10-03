@@ -80,6 +80,14 @@ end
     @test_throws ArgumentError Spot(; ok..., t_on=NaN)
     @test_throws ArgumentError Spot(; ok..., t_off=NaN)
     @test Spot(; ok..., t_on=-Inf, t_off=Inf) isa Spot
+    # the stored Float64 values are checked, not the inputs: a value that passes before conversion cannot store
+    # a broken one
+    @test_throws ArgumentError Spot(; ok..., σ=big"1e-400")
+    @test_throws ArgumentError Spot(; ok..., t_on=big(2)^53, t_off=big(2)^53 + 1)
+    @test_throws ArgumentError Spot(; ok..., σ=Inf)
+    @test_throws ArgumentError Spot(; ok..., gain=Inf)
+    @test_throws ArgumentError Spot(; ok..., x=NaN)
+    @test_throws ArgumentError Spot(; ok..., y=Inf)
     sp = [Spot(; ok...)]
     @test_throws UndefKeywordError SpotExcitation()
     @test_throws MethodError SpotExcitation(1.0, sp)
@@ -92,6 +100,10 @@ end
     @test_throws ArgumentError SpotExcitation(; spots=sp, tilt=(-1.0, 0.0))
     @test_throws ArgumentError SpotExcitation(; spots=sp, tilt=(Inf, 0.0))
     @test_throws ArgumentError SpotExcitation(; spots=sp, tilt=(NaN, 0.0))
+    @test_throws ArgumentError SpotExcitation(; spots=sp, tilt=(big"1e400", 0.0))
+    @test_throws ArgumentError SpotExcitation(; spots=sp, base=Inf)
+    @test_throws ArgumentError SpotExcitation(; spots=sp, λ=Inf)
+    @test_throws ArgumentError SpotExcitation(; spots=sp, n=NaN)
     @test SpotExcitation(; spots=sp, base=0.0, f_evan=1.0) isa SpotExcitation
     # the rig spot does not warn; a z_R 7x too long does, once per construction, naming the spot
     @test_logs SpotExcitation(; spots=sp)
@@ -139,7 +151,8 @@ end
 
 # The expectation recorded by the stepper, not a noisy draw: FrameTruth's photons (the noise-free emitted
 # total) and the signal map's sum. `lit` is the fraction of T in the emitting state, which excitation does
-# not change; the switch shows in `excitation`, the presence-weighted mean intensity.
+# not change; the switch shows in `excitation`, the presence-weighted mean intensity. `lit` is `FrameTruth`'s
+# emitting-state fraction (state 1 with `m > 0`, see its docstring), so it is 1 here whatever the spot does.
 @testset "closedloop/spot_switch_mid_exposure" begin
     γ, T, σ, gain, z_R = 1e5, 0.01, 0.0934, 3.0, 0.23
     for nframes in (1, 3), base in (0.0, 1.0)
@@ -173,6 +186,33 @@ end
     @test e(0.0, 0.0, 0.0, 0.1) == gain
     @test e(0.0, 0.0, 0.0, prevfloat(0.2)) == gain
     @test e(0.0, 0.0, 0.0, 0.2) == 0.0
+end
+
+# one immobile emitter at the centre of a spot that turns on at 3.7 ms of a 10 ms exposure (I = 0 before, 3 after),
+# with a finite budget or a state-1 exit that the switch must move
+@testset "closedloop/spot_switch_budget_clock" begin
+    γ, T, t_on = 1e5, 0.01, 0.0037
+    exc = SpotExcitation(; base=0.0, spots=[Spot(; x=1.6, y=1.6, σ=0.0934, gain=3.0, z_R=0.23, t_on)])
+    function frame(fluor, prep!)
+        pop = Population(density=0.0, fluor=fluor, budget=1e9, psf=GaussianPSF(0.05))
+        w = SimWorld(StableRNG(11), cam32(), [pop]; n_sub=8, margin=0.0)
+        ps = w.pops[1]
+        _add_emitter!(w, ps, 0.0)
+        ps.x[1] = 1.6
+        ps.y[1] = 1.6
+        prep!(ps)
+        SMLMSim.step!(w, 0.0, T, exc)
+        return only(frame_truth(w))
+    end
+    # (a) the budget runs out 300/(γ·3) after the switch
+    row = frame(one_state(γ), ps -> (ps.budget[1] = 300.0))
+    @test isapprox(row.t_bleach, t_on + 300 / (γ * 3); rtol=1e-9)
+    @test isapprox(row.photons, 300; rtol=1e-9)
+    @test row.m == 0
+    # (b) the state-1 exit clock runs only while lit: it leaves 1/(100·3) s after the switch
+    row = frame(GenericFluor(; γ, q=[-100.0 100.0; 1e-12 -1e-12]), ps -> (ps.state[1] = 1; ps.clock[1] = 1.0))
+    @test isapprox(row.photons, 1000; rtol=1e-9)
+    @test isapprox(row.lit, (t_on + 1 / 300) / T; rtol=1e-9)
 end
 
 @testset "closedloop/spot_next_switch" begin
