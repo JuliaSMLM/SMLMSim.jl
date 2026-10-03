@@ -32,6 +32,8 @@ function _pop_state(rng::AbstractRNG, p::Population, px::Float64, box::NTuple{4,
     isg = p.psf isa GaussianPSF
     σpx = isg ? p.psf.σ / px : 0.0
     A = (box[2] - box[1]) * (box[4] - box[3])
+    (isfinite(p.density * A) && isfinite(p.birth_rate * A)) ||
+        throw(ArgumentError("population :$(p.name): density or birth_rate times the world-box area $A μm² is not finite"))
     n0 = _poisson_count(rng, p.density * A)
     cap = _capacity(n0)
     ps = PopState(p, Float64(p.fluor.γ), q, exitrate, _stationary(q), σpx,
@@ -53,7 +55,8 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
                   dimers::Union{Nothing,DimerKinetics}=nothing)
     boundary in (:reflecting, :periodic) || throw(ArgumentError("boundary must be :reflecting or :periodic"))
     n_sub >= 1 || throw(ArgumentError("n_sub must be >= 1"))
-    margin >= 0 || throw(ArgumentError("margin must be >= 0"))
+    (margin >= 0 && isfinite(margin)) || throw(ArgumentError("margin must be finite and >= 0"))
+    isfinite(t0) || throw(ArgumentError("t0 must be finite"))
     merge_radius >= 0 || throw(ArgumentError("merge_radius must be >= 0"))
     ny, nx, px, x0, y0 = _pixel_geometry(camera)
     for p in pops
@@ -118,11 +121,12 @@ declares discontinuities so they act at their exact time.
 
 Time never runs backward. A call with `t_a` within `1e-9 max(1, |world.t|)` of `world.t` is
 contiguous (`world.t` is set to `t_a`). A later `t_a` advances the gap unrecorded in
-`ceil(gap/h)` equal sub-steps, `h = (t_b - t_a)/n_sub`. `t_b <= t_a` or an earlier `t_a`
+`ceil(gap/h)` equal sub-steps, `h = (t_b - t_a)/n_sub`. A nonfinite time, `t_b <= t_a` or an earlier `t_a`
 throws `ArgumentError`.
 """
 function step!(w::SimWorld, t_a::Real, t_b::Real, excitation::E=UniformExcitation()) where {E}
     t_a, t_b = Float64(t_a), Float64(t_b)
+    (isfinite(t_a) && isfinite(t_b)) || throw(ArgumentError("t_a and t_b must be finite"))
     t_b > t_a || throw(ArgumentError("t_b must be greater than t_a"))
     ε = 1e-9 * max(1.0, abs(w.t))
     t_a < w.t - ε && throw(ArgumentError("t_a = $t_a is before the world time $(w.t); time does not run backward"))

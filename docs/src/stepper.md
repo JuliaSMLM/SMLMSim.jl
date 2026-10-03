@@ -187,7 +187,8 @@ The structured background is `S(r) = L J P(r) exp(c g(r) - c^2/2) (t_b - t_a)`:
   `feature_size` μm and whose temporal correlation is `exp(-Δt/correlation_time)`,
 - a broad Gaussian illumination profile `P` of mean 1.
 
-Because `exp(c g - c^2/2)` has mean 1, the frame mean of `S` is `L J exposure`. OOF
+Because `exp(c g - c^2/2)` has mean 1 and `P` has mean 1 over the field of view, `L J exposure` is the
+expected frame mean of `S` (with `contrast > 0` one frame's spatial mean scatters around it). OOF
 populations (model B) add their own layer. [`gen_background`](@ref) returns both maps and the
 per-frame level:
 

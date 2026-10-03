@@ -393,3 +393,127 @@ end
     end
     @test total == 0
 end
+
+@testset "stepper/background_gap_draws" begin
+    # every stretch boundary crossed draws a level, including those inside a gap
+    mk() = SimWorld(StableRNG(123), cam32(), Population[]; n_sub=1,
+                    background=BackgroundModel(level=Uniform(1.0, 100.0), stretch=1.0))
+    a = mk(); for t in (1.0, 2.0, 3.0); SMLMSim.step!(a, t, t + 0.01); end
+    b = mk(); SMLMSim.step!(b, 3.0, 3.01)
+    r = StableRNG(123); L = [rand(r, Uniform(1.0, 100.0)) for _ in 1:4]
+    @test a.bg.level == b.bg.level == L[4]          # 5.230326015385788
+    @test rand(a.rng) == rand(b.rng)
+end
+
+@testset "stepper/nonfinite_inputs" begin
+    psf = GaussianPSF(0.13)
+    mkpop(; kw...) = Population(; density=1.0, fluor=one_state(1000.0), psf, kw...)
+    mkworld(; kw...) = SimWorld(StableRNG(1), cam32(), [mkpop()]; n_sub=1, kw...)
+    for exc in ((x, y, z, t) -> NaN, (x, y, z, t) -> Inf, (x, y, z, t) -> -1.0)
+        w = mkworld()
+        @test w.pops[1].n > 0
+        @test_throws DomainError SMLMSim.step!(w, 0.0, 0.01, exc)
+    end
+    @test_throws ArgumentError mkpop(density=Inf)
+    @test_throws ArgumentError mkpop(birth_rate=Inf, lifetime=1.0)
+    @test_throws ArgumentError mkpop(brightness_sigma=Inf)
+    @test_throws ArgumentError mkpop(mobility=[(1.0, Inf)])
+    @test_throws ArgumentError mkpop(z=(0.0, Inf))
+    @test_throws ArgumentError mkpop(fluor=one_state(Inf))
+    @test_throws ArgumentError mkpop(fluor=one_state(NaN))
+    @test_throws ArgumentError mkpop(fluor=GenericFluor(; γ=1000.0, q=[-Inf Inf; 1.0 -1.0]))
+    @test_throws ArgumentError mkworld(margin=Inf)
+    @test_throws ArgumentError mkworld(t0=NaN)
+    @test_throws ArgumentError SimWorld(StableRNG(1), cam32(), [mkpop(density=1e308)]; n_sub=1)
+    @test_throws ArgumentError mkworld(background=BackgroundModel(level=Inf))
+    @test_throws ArgumentError mkworld(background=BackgroundModel(jitter=Inf))
+    @test_throws ArgumentError mkworld(background=BackgroundModel(contrast=Inf))
+    @test_throws DomainError mkworld(background=BackgroundModel(level=Uniform(-2.0, -1.0)))
+    @test_throws ArgumentError SMLMSim.step!(mkworld(), 0.0, Inf)
+    @test_throws ArgumentError SMLMSim.step!(mkworld(), NaN, 0.01)
+    @test mkworld() isa SimWorld
+end
+
+@testset "stepper/ctmc_state_limit" begin
+    function cyc(n)
+        q = zeros(n, n)
+        for i in 1:n
+            q[i, mod1(i + 1, n)] = 1.0
+            q[i, i] = -1.0
+        end
+        return q
+    end
+    mk(n) = Population(density=1.0, fluor=GenericFluor(; γ=1000.0, q=cyc(n)), psf=GaussianPSF(0.13))
+    @test_throws ArgumentError mk(256)
+    w = SimWorld(StableRNG(5), cam32(), [mk(255)]; n_sub=1)
+    @test SMLMSim.step!(w, 0.0, 0.01) isa Matrix{Float64}
+end
+
+@testset "stepper/switch_budget_clock" begin
+    # budgets and CTMC clocks carry across declared switches and across gaps (coverage)
+    function sw_world(fluor; budget=Inf)
+        pop = Population(density=0.0, fluor=fluor, budget=budget, psf=GaussianPSF(0.13))
+        w = SimWorld(StableRNG(1), cam32(), [pop]; n_sub=4, margin=0.0)
+        ps = w.pops[1]
+        _add_emitter!(w, ps, 0.0)
+        place!(ps, [1.6], [1.6])
+        return w, ps
+    end
+    blink = GenericFluor(; γ=1000.0, q=[-100.0 100.0; 1e-12 -1e-12])
+    # (a) the budget runs out after the switch: 4 photons at 1000/s, then 6 at 3000/s
+    w, ps = sw_world(one_state(1000.0); budget=1e6)
+    ps.budget[1] = 10.0
+    SMLMSim.step!(w, 0.0, 0.01, SwitchExc(0.004, true))
+    r = only(SMLMSim.frame_truth(w))
+    @test r.t_bleach ≈ 0.006 rtol = 1e-9
+    @test r.photons ≈ 10 rtol = 1e-9
+    @test r.m == 0
+    # (b) the clock runs out after the switch
+    w, ps = sw_world(blink)
+    ps.state[1] = 1; ps.clock[1] = 1.0
+    SMLMSim.step!(w, 0.0, 0.01, SwitchExc(0.004, true))
+    r = only(SMLMSim.frame_truth(w))
+    @test r.lit ≈ 0.6 rtol = 1e-9
+    @test r.photons ≈ 10 rtol = 1e-9
+    # (c) a switch inside the gap, the clock carried through
+    w, ps = sw_world(blink)
+    ps.state[1] = 1; ps.clock[1] = 3.5
+    SMLMSim.step!(w, 0.0, 0.01, SwitchExc(0.015, true))
+    r = only(SMLMSim.frame_truth(w))
+    @test r.photons ≈ 10 rtol = 1e-9
+    @test r.lit ≈ 1 rtol = 1e-9
+    SMLMSim.step!(w, 0.02, 0.03, SwitchExc(0.015, true))
+    r = only(SMLMSim.frame_truth(w))
+    @test r.photons ≈ 5 rtol = 1e-9
+    @test r.lit ≈ 1 / 6 rtol = 1e-9
+    # (d) a switch inside the gap, the budget carried through
+    w, ps = sw_world(one_state(1000.0); budget=1e6)
+    ps.budget[1] = 32.0
+    SMLMSim.step!(w, 0.0, 0.01, SwitchExc(0.015, true))
+    @test only(SMLMSim.frame_truth(w)).photons ≈ 10 rtol = 1e-9
+    SMLMSim.step!(w, 0.02, 0.03, SwitchExc(0.015, true))
+    r = only(SMLMSim.frame_truth(w))
+    @test r.photons ≈ 2 rtol = 1e-9
+    @test r.t_bleach ≈ 0.02 + 1 / 1500 rtol = 1e-9
+    @test r.m == 0
+end
+
+@testset "stepper/mixed_mobility" begin
+    pop = Population(density=40.0, mobility=[(0.5, 0.0), (0.5, 0.3)], fluor=one_state(1000.0),
+                     psf=GaussianPSF(0.13))
+    for boundary in (:reflecting, :periodic)
+        w = SimWorld(StableRNG(7), IdealCamera(1:64, 1:64, 0.1), [pop]; n_sub=4, margin=5.0, boundary)
+        ps = w.pops[1]
+        n = ps.n
+        start = Dict(ps.id[i] => (ps.x[i], ps.y[i]) for i in 1:n)
+        for k in 1:10
+            SMLMSim.step!(w, (k - 1) * 0.01, k * 0.01)
+        end
+        @test ps.n == n
+        still = [(ps.x[i], ps.y[i]) == start[ps.id[i]] for i in 1:n if ps.D[i] == 0.0]
+        moved = [(ps.x[i], ps.y[i]) != start[ps.id[i]] for i in 1:n if ps.D[i] == 0.3]
+        @test all(still)
+        @test count(moved) > 0.95 * length(moved)
+        @test abs(length(still) - n / 2) < 3 * sqrt(n / 4)
+    end
+end

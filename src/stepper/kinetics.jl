@@ -106,8 +106,8 @@ function _remove!(w::SimWorld, ps::PopState, i::Int)
     return nothing
 end
 
-@noinline _negative_excitation(I) =
-    throw(DomainError(I, "excitation must return a relative intensity >= 0"))
+@noinline _bad_excitation(I) =
+    throw(DomainError(I, "excitation must return a finite relative intensity >= 0"))
 
 @noinline _bad_switch(ts, t) =
     throw(ArgumentError("next_switch returned $ts, which is not after t = $t"))
@@ -120,7 +120,7 @@ end
 
 @inline function _excite(excitation::E, x::Float64, y::Float64, z::Float64, t::Float64) where {E}
     I = Float64(excitation(x, y, z, t))
-    I < 0 && _negative_excitation(I)
+    (I >= 0 && I < Inf) || _bad_excitation(I)
     return I
 end
 

@@ -68,8 +68,10 @@ z, the baseline for calibrated populations; a z-dependent law is supplied by the
 excitation function.
 
 Throws `ArgumentError` for mobility fractions that do not sum to 1, `multiplicity > 1`
-with a multi-state `q`, a multi-state `q` that is not irreducible, births with both
-`lifetime` and `budget` infinite, a `StampTable` that does not cover `z`, or an unknown `layer`.
+with a multi-state `q`, a multi-state `q` that is not irreducible or has more than 255 states, births with both
+`lifetime` and `budget` infinite, a `StampTable` that does not cover `z`, an unknown `layer`, or a nonfinite
+`density`, `birth_rate`, `brightness_sigma`, mobility `D`, `z` or `fluor.γ` (a nonfinite `q` entry fails its row check;
+`lifetime`, `budget` and `jitter_time` may be `Inf`).
 """
 struct Population
     name::Symbol
@@ -91,19 +93,23 @@ struct Population
     function Population(name, layer, density, lifetime, birth_rate, mobility, fluor,
                         brightness_sigma, budget, multiplicity, z, psf, brightness_jitter, jitter_time, binds)
         layer in (:signal, :oof) || throw(ArgumentError("layer must be :signal or :oof, got :$layer"))
-        density >= 0 || throw(ArgumentError("density must be >= 0"))
+        (density >= 0 && isfinite(density)) || throw(ArgumentError("density must be finite and >= 0"))
         lifetime > 0 || throw(ArgumentError("lifetime must be > 0"))
         budget > 0 || throw(ArgumentError("budget must be > 0"))
-        birth_rate >= 0 || throw(ArgumentError("birth_rate must be >= 0"))
-        brightness_sigma >= 0 || throw(ArgumentError("brightness_sigma must be >= 0"))
+        (birth_rate >= 0 && isfinite(birth_rate)) || throw(ArgumentError("birth_rate must be finite and >= 0"))
+        (brightness_sigma >= 0 && isfinite(brightness_sigma)) ||
+            throw(ArgumentError("brightness_sigma must be finite and >= 0"))
         multiplicity >= 0 || throw(ArgumentError("multiplicity must be >= 0"))
         (isfinite(brightness_jitter) && brightness_jitter >= 0) ||
             throw(ArgumentError("brightness_jitter must be finite and >= 0"))
         jitter_time > 0 || throw(ArgumentError("jitter_time must be > 0"))
-        z[1] <= z[2] || throw(ArgumentError("z must satisfy z[1] <= z[2]"))
+        (isfinite(z[1]) && isfinite(z[2]) && z[1] <= z[2]) ||
+            throw(ArgumentError("z must be finite and satisfy z[1] <= z[2]"))
+        (isfinite(fluor.γ) && fluor.γ >= 0) || throw(ArgumentError("fluor.γ must be finite and >= 0"))
         isempty(mobility) && throw(ArgumentError("mobility must not be empty"))
         for (f, D) in mobility
-            (f >= 0 && D >= 0) || throw(ArgumentError("mobility fractions and D must be >= 0"))
+            (f >= 0 && D >= 0 && isfinite(D)) ||
+                throw(ArgumentError("mobility fractions must be >= 0 and D finite and >= 0"))
         end
         abs(sum(first, mobility) - 1) <= _FRACTION_TOL ||
             throw(ArgumentError("mobility fractions must sum to 1, got $(sum(first, mobility))"))
@@ -115,6 +121,7 @@ struct Population
                 throw(ArgumentError("row $s of q must have non-negative off-diagonals summing to -q[$s,$s]"))
         end
         nst = size(q, 1)
+        nst <= 255 || throw(ArgumentError("q has $nst states; the CTMC state is stored in a UInt8, so at most 255"))
         multiplicity > 1 && nst > 1 &&
             throw(ArgumentError("multiplicity > 1 needs a one-state q, got $nst states"))
         nst > 1 && !_irreducible(q) &&
@@ -214,7 +221,7 @@ DimerKinetics(cfg::DiffusionSMLMConfig; k_on::Real, D_dimer=cfg.diff_dimer) =
 Parameters of the structured background. Built by keyword.
 
 - `level = 0.0`: photons/px/s; a `Real`, or any distribution drawn per stretch with `rand(rng, level)`.
-- `stretch::Float64 = Inf`: s; a new level is drawn at `t0 + k stretch`, counted from the world's `t0`, not from the end of `t_burn`.
+- `stretch::Float64 = Inf`: s; a new level is drawn at `t0 + k stretch`, counted from the world's `t0`, not from the end of `t_burn`; every boundary crossed draws a level, including those in a gap or `t_burn`.
 - `jitter::Float64 = 0.0`: sd of the iid per-exposure multiplier `max(0, 1 + jitter ξ)`.
 - `feature_size::Float64 = 0.8`: μm, σ of the pattern's spatial autocorrelation.
 - `contrast::Float64 = 0.0`: sd of log pattern; 0 is flat.
@@ -386,8 +393,10 @@ separate call on the caller's own RNG.
   a pair that broke in it; two partners that broke and each paired again with another in the same exposure can
   still be marked).
 
-Pixels must be uniform and square. Initial emitters are the steady ensemble only for
-`multiplicity = 1`, `budget = Inf` and excitation 1; otherwise start the first exposure at
+Pixels must be uniform and square. Initial emitters are the steady ensemble only when
+births balance departures (`birth_rate * lifetime == density`, as the default `birth_rate` gives, or
+`lifetime = Inf` with no births), `multiplicity <= 1`, `budget = Inf`, the excitation is 1 and the world has no
+`dimers` (pairs start unformed); otherwise start the first exposure at
 `t0 + t_burn` so the gap advance runs the kinetics unrecorded, with `t_burn` at least 5 mean
 residence times.
 """

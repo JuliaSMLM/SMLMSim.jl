@@ -31,15 +31,27 @@ function _illumination_axis(n::Int, px::Float64, centre::Float64, width::Float64
     return v ./ (sum(v) / n)
 end
 
-_draw_level!(out::Vector{Float64}, rng::AbstractRNG, level::Real) = (out[1] = Float64(level); nothing)
-_draw_level!(out::Vector{Float64}, rng::AbstractRNG, level) = (out[1] = Float64(rand(rng, level)); nothing)
+@noinline _bad_level(L) = throw(DomainError(L, "a drawn background level must be finite and >= 0"))
+
+# A Real level is the level; a distribution draws n times (one per stretch boundary crossed), keeping the last
+_draw_level!(out::Vector{Float64}, rng::AbstractRNG, level::Real, n::Int) = (out[1] = Float64(level); nothing)
+function _draw_level!(out::Vector{Float64}, rng::AbstractRNG, level, n::Int)
+    L = 0.0
+    for _ in 1:n
+        L = Float64(rand(rng, level))
+    end
+    (L >= 0 && L < Inf) || _bad_level(L)
+    out[1] = L
+    return nothing
+end
 
 function BackgroundState(rng::AbstractRNG, m::BackgroundModel, ny::Int, nx::Int, px::Float64, t0::Float64)
-    (m.level isa Real ? m.level >= 0 : true) || throw(ArgumentError("level must be >= 0"))
+    (m.level isa Real ? (m.level >= 0 && isfinite(m.level)) : true) ||
+        throw(ArgumentError("level must be finite and >= 0"))
     m.stretch > 0 || throw(ArgumentError("stretch must be > 0"))
-    m.jitter >= 0 || throw(ArgumentError("jitter must be >= 0"))
+    (m.jitter >= 0 && isfinite(m.jitter)) || throw(ArgumentError("jitter must be finite and >= 0"))
     m.feature_size > 0 || throw(ArgumentError("feature_size must be > 0"))
-    m.contrast >= 0 || throw(ArgumentError("contrast must be >= 0"))
+    (m.contrast >= 0 && isfinite(m.contrast)) || throw(ArgumentError("contrast must be finite and >= 0"))
     m.correlation_time > 0 || throw(ArgumentError("correlation_time must be > 0"))
     m.illumination_width > 0 || throw(ArgumentError("illumination_width must be > 0"))
     P = ones(ny, nx)
@@ -62,7 +74,7 @@ function BackgroundState(rng::AbstractRNG, m::BackgroundModel, ny::Int, nx::Int,
         g = zeros(0, 0)
     end
     bs = BackgroundState(m.level, m.stretch, m.jitter, m.contrast, m.correlation_time, t0, t0, 0, 0.0, 0.0, zeros(1), P, g, zeros(ny, size(g, 2)), iy, ix, wy, wx, m)
-    _draw_level!(bs.draw, rng, bs.level_src)
+    _draw_level!(bs.draw, rng, bs.level_src, 1)
     bs.level = bs.draw[1]
     return bs
 end
@@ -73,8 +85,9 @@ function _update_background!(w, bs::BackgroundState, t_a::Float64, t_b::Float64)
     if isfinite(bs.stretch)
         idx = floor(Int, (t_a - bs.t0 + 1e-9 * max(1.0, abs(w.t))) / bs.stretch)
         if idx > bs.stretch_idx
+            n = idx - bs.stretch_idx
             bs.stretch_idx = idx
-            _draw_level!(bs.draw, rng, bs.level_src)
+            _draw_level!(bs.draw, rng, bs.level_src, n)
             bs.level = bs.draw[1]
         end
     end
@@ -128,8 +141,9 @@ size `(ny, nx, n_frames)` and the per-frame level.
   the `oof` populations, since their initial ensemble is stationary only for an infinite budget.
 
 `structured` is the pattern map (zeros for `bg = nothing`); `oof` is the out-of-focus light
-(zeros without populations); `level[k]` is `L J exposure`, the true mean of `structured` in
-frame `k`. The two maps are kept apart so the caller decides the background target: `structured`,
+(zeros without populations); `level[k]` is `L J exposure`, the expected value of a pixel of `structured` in
+frame `k` (the pattern factor `exp(c ĝ − c²/2)` has mean 1 and the illumination `P` has mean 1 over the field of view);
+with `contrast > 0` one frame's spatial mean scatters around it. The two maps are kept apart so the caller decides the background target: `structured`,
 `oof` or their sum. Camera noise is a separate call, for example
 `gen_images(smld, psf; bg = structured .+ oof, camera_noise = true, rng)`.
 
