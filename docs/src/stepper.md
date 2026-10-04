@@ -84,9 +84,10 @@ SMLMSim.step!(world2, 0.0, 0.01, rig)
 A spot adds `gain (σ/s)² exp(-r²/(2s²))` with `s = σ √(1 + (z/z_R)²)`, so the rig spot at gain 50 falls to
 about 4 at `z = 0.75` μm. `z_R = Inf` is a z-independent column. A spot contributes only for
 `t_on <= t < t_off`, and [`next_switch`](@ref) returns the next such time, so a spot that switches inside an
-exposure acts from its exact time, not from the next sub-step. An emitter at the centre of a spot that turns
-on part-way through emits `γ · gain · (t_b - t_on)` more photons when it stays in its emitting state over that
-interval (one state, no bleach, `brightness_jitter = 0`); a blink or a bleach while the spot is on reduces it.
+exposure acts from its exact time, not from the next sub-step. An emitter of one label (`multiplicity = 1`),
+one state, no bleach and `brightness_jitter = 0`, at the centre of a spot (in focus, or with `z_R = Inf`) that is on
+from `t_on` through `t_b`, emits `γ · gain · (t_b - t_on)` more photons in an exposure the spot turns on in; a
+blink or a bleach while the spot is on reduces it.
 The baseline `base` is always on. A warning at construction names a spot whose `z_R` is more than 2x from
 `π (2σ)² n/λ`.
 

@@ -28,21 +28,20 @@ function bench_setup(seed::Integer = 1; dimers::Bool = true, background::Bool = 
     mol = Population(name = :mol, density = 250 / L^2, lifetime = 3.0,
         mobility = [(0.67, 0.37), (0.33, 0.075)], fluor = GenericFluor(; γ = 9500.0, q = q), budget = 2e5,
         psf = GaussianPSF(0.0936))
-    pops = Population[mol]
-    if oof
-        blobs = Population(name = :oof, layer = :oof, density = 20 / L^2, lifetime = 0.1,
-            mobility = [(1.0, 0.25)], brightness_sigma = 0.3, fluor = GenericFluor(; γ = 5000.0, q = q),
-            budget = 2e4, z = (0.5, 1.0), psf = GaussianPSF(5 * BENCH_PX), binds = false)
-        haze = Population(name = :haze, layer = :oof, density = 30 / L^2, lifetime = 0.002,
-            fluor = GenericFluor(; γ = 25000.0, q = zeros(1, 1)), z = (0.5, 1.0),
-            psf = GaussianPSF(2.5 * BENCH_PX), binds = false)
-        push!(pops, blobs, haze)
-    end
+    blobs = Population(name = :oof, layer = :oof, density = 20 / L^2, lifetime = 0.1,
+        mobility = [(1.0, 0.25)], brightness_sigma = 0.3, fluor = GenericFluor(; γ = 5000.0, q = q),
+        budget = 2e4, z = (0.5, 1.0), psf = GaussianPSF(5 * BENCH_PX), binds = false)
+    haze = Population(name = :haze, layer = :oof, density = 30 / L^2, lifetime = 0.002,
+        fluor = GenericFluor(; γ = 25000.0, q = zeros(1, 1)), z = (0.5, 1.0),
+        psf = GaussianPSF(2.5 * BENCH_PX), binds = false)
+    # every world keeps the full world's box, so a reduced world holds the same signal molecules
+    margin = SMLMSim.Stepper.default_margin(Population[mol, blobs, haze])
+    pops = oof ? Population[mol, blobs, haze] : Population[mol]
     bg = background ? BackgroundModel(level = 87.7, jitter = 0.025, contrast = 0.1, feature_size = 0.8,
                                       correlation_time = 0.3, illumination_width = 30.0) : nothing
     dk = dimers ? DimerKinetics(k_on = 50.0, r_react = 0.05, k_off = 0.5, D_rot = 1.0, d_dimer = 0.02) : nothing
     world = SimWorld(Random.Xoshiro(seed), camera, pops; n_sub = 8, background = bg, dimers = dk,
-                     merge_radius = 0.25)
+                     merge_radius = 0.25, margin)
     excitation = SpotExcitation(; base = 1.0, spots = [
         Spot(; x = 0.3L, y = 0.3L, σ = 0.0934, gain = 5.0, z_R = 0.23),
         Spot(; x = 0.7L, y = 0.5L, σ = 0.0934, gain = 5.0, z_R = 0.23, t_on = 2.013, t_off = 2.467)])
