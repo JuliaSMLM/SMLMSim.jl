@@ -435,6 +435,21 @@ end
     @test mkworld() isa SimWorld
 end
 
+@testset "stepper/finite_inputs_converted" begin
+    psf = GaussianPSF(0.13)
+    mkpop(; kw...) = Population(; density=1.0, fluor=one_state(1000.0), psf, kw...)
+    mkworld(; kw...) = SimWorld(StableRNG(1), cam32(), [mkpop()]; n_sub=1, kw...)
+    # Codex's input: every row passes the sum test with an infinite off-diagonal
+    @test_throws ArgumentError mkpop(fluor=GenericFluor(; γ=1000.0, q=[-1.0 Inf; 1.0 -1.0]), multiplicity=0)
+    @test_throws ArgumentError mkpop(fluor=GenericFluor(; γ=1000.0, q=[-1.0 1.0; NaN -1.0]), multiplicity=0)
+    # a number that overflows Float64 is checked after the conversion
+    @test_throws ArgumentError mkworld(background=BackgroundModel(level=big"1e400"))
+    @test_throws ArgumentError mkworld(t0=big"1e400")
+    @test_throws ArgumentError mkworld(margin=big"1e400")
+    w = mkworld(t0=big"0.5")
+    @test w.t === 0.5
+end
+
 @testset "stepper/ctmc_state_limit" begin
     function cyc(n)
         q = zeros(n, n)

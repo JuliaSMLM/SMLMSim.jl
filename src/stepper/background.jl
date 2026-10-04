@@ -46,7 +46,8 @@ function _draw_level!(out::Vector{Float64}, rng::AbstractRNG, level, n::Int)
 end
 
 function BackgroundState(rng::AbstractRNG, m::BackgroundModel, ny::Int, nx::Int, px::Float64, t0::Float64)
-    (m.level isa Real ? (m.level >= 0 && isfinite(m.level)) : true) ||
+    level = m.level isa Real ? Float64(m.level) : m.level
+    (level isa Float64 ? (level >= 0 && isfinite(level)) : true) ||
         throw(ArgumentError("level must be finite and >= 0"))
     m.stretch > 0 || throw(ArgumentError("stretch must be > 0"))
     (m.jitter >= 0 && isfinite(m.jitter)) || throw(ArgumentError("jitter must be finite and >= 0"))
@@ -73,7 +74,7 @@ function BackgroundState(rng::AbstractRNG, m::BackgroundModel, ny::Int, nx::Int,
         iy, wy = zeros(Int, ny), zeros(4, ny)
         g = zeros(0, 0)
     end
-    bs = BackgroundState(m.level, m.stretch, m.jitter, m.contrast, m.correlation_time, t0, t0, 0, 0.0, 0.0, zeros(1), P, g, zeros(ny, size(g, 2)), iy, ix, wy, wx, m)
+    bs = BackgroundState(level, m.stretch, m.jitter, m.contrast, m.correlation_time, t0, t0, 0, 0.0, 0.0, zeros(1), P, g, zeros(ny, size(g, 2)), iy, ix, wy, wx, m)
     _draw_level!(bs.draw, rng, bs.level_src, 1)
     bs.level = bs.draw[1]
     return bs

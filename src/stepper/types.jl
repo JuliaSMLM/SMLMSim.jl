@@ -121,6 +121,7 @@ struct Population
         abs(sum(first, mobility) - 1) <= _FRACTION_TOL ||
             throw(ArgumentError("mobility fractions must sum to 1, got $(sum(first, mobility))"))
         q = Matrix{Float64}(fluor.q)
+        all(isfinite, q) || throw(ArgumentError("q must be finite"))
         (size(q, 1) == size(q, 2) && size(q, 1) >= 1) || throw(ArgumentError("q must be a square matrix"))
         for s in 1:size(q, 1)
             off = sum(q[s, j] for j in 1:size(q, 2) if j != s; init=0.0)

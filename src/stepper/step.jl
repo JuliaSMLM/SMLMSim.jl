@@ -55,6 +55,7 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
                   dimers::Union{Nothing,DimerKinetics}=nothing)
     boundary in (:reflecting, :periodic) || throw(ArgumentError("boundary must be :reflecting or :periodic"))
     n_sub >= 1 || throw(ArgumentError("n_sub must be >= 1"))
+    margin, t0, merge_radius = Float64(margin), Float64(t0), Float64(merge_radius)
     (margin >= 0 && isfinite(margin)) || throw(ArgumentError("margin must be finite and >= 0"))
     isfinite(t0) || throw(ArgumentError("t0 must be finite"))
     merge_radius >= 0 || throw(ArgumentError("merge_radius must be >= 0"))
@@ -79,12 +80,11 @@ function SimWorld(rng::AbstractRNG, camera::Union{IdealCamera,SCMOSCamera}, pops
     end
     ncx = dimers === nothing ? 0 : _cells_per_axis(box[2] - box[1], dimers.r_react)
     ncy = dimers === nothing ? 0 : _cells_per_axis(box[4] - box[3], dimers.r_react)
-    t0 = Float64(t0)
     w = SimWorld(rng, camera, px, x0, y0, box, boundary, Int(n_sub), t0, 0, PopState[], nothing,
                  zeros(ny, nx), zeros(ny, nx), zeros(ny, nx), zeros(ny, nx), 0,
                  RenderBuffer(maximum((p.psf isa StampTable ? p.psf.radius : ceil(Int, 5 * p.psf.σ / px) + 1
                                        for p in pops); init=0)),
-                 0, FrameTruth[], 0, Float64(merge_radius), Bool[], Int[], t0, t0,
+                 0, FrameTruth[], 0, merge_radius, Bool[], Int[], t0, t0,
                  dimers, zeros(Int32, ncx * ncy), Int32[], Int32[], Int32[], ncx, ncy)
     for p in pops
         ps, n0, A = _pop_state(rng, p, px, box, t0)
