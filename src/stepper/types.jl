@@ -82,6 +82,8 @@ infinite `lifetime` and a molecule that cannot bleach (`budget` infinite, `multi
 `lifetime`, `budget` and `jitter_time` may be `Inf`). Every number is checked as the `Float64` the world stores, so a
 `BigFloat` beyond `floatmax` or below the smallest subnormal fails as `Inf` or 0 would: that holds for `fluor.γ`, each
 `q` row's off-diagonal sum (nonfinite after conversion) and a `GaussianPSF`'s `σ` (must be finite and `> 0`) as well.
+`step!` throws `DomainError` when a state's exit rate (times the excitation, for state 1) exceeds `1/eps(t)` at the
+simulated time `t` (a mean dwell below the time resolution).
 """
 struct Population
     name::Symbol

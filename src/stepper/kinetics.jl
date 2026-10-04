@@ -113,6 +113,10 @@ end
     throw(DomainError((ρe, λx), "population :$name: brightness_jitter, brightness_sigma or the excitation overflowed " *
                                 "the emission or exit rate (photons/s, exit rate/s)"))
 
+@noinline _unresolvable_rate(name, λx, s, tnow) =
+    throw(DomainError(λx, "population :$name: the exit rate λ = $λx/s from state $s is too fast to resolve at " *
+                          "t = $tnow s (its mean dwell is below one ulp of t); lower q or the excitation"))
+
 @noinline _bad_switch(ts, t) =
     throw(ArgumentError("next_switch returned $ts, which is not after t = $t"))
 
@@ -234,6 +238,7 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, 
                 budget = bmean * randexp(rng)
             end
         elseif ev == 3                 # CTMC exit
+            λx * eps(tnow) > 1.0 && _unresolvable_rate(ps.p.name, λx, s, tnow)   # t0 + τ could not advance
             Δ = max(tx, 0.0)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))

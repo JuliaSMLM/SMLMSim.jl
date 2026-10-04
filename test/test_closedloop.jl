@@ -1651,3 +1651,23 @@ switch_photons(te, hi, w0, w1) =
         @test only(frame_truth(w)).lit == 0
     end
 end
+
+@testset "closedloop/unresolvable_rate" begin
+    # a state whose mean dwell is below one ulp of t cannot advance t0 + τ: the exit loop would not end
+    @testset "every dwell below half an ulp: step! throws" begin
+        pop = Population(density=0.0, birth_rate=100.0, lifetime=1.0, psf=GaussianPSF(0.05),
+                         fluor=GenericFluor(; γ=0.0, q=[-1e25 1e25; 1e25 -1e25]))
+        w = SimWorld(Xoshiro(1), cam32(), [pop]; n_sub=1, margin=0.0)
+        @test_throws DomainError SMLMSim.step!(w, 0.0, 0.01)
+    end
+    fast = two_state(1000.0, 1e12, 1e12)
+    @testset "a fast but resolvable rate steps" begin
+        w, ps = ev_world(n_sub=1, fluor=fast, t0=0.01)
+        SMLMSim.step!(w, 0.01, 0.01 + 1e-9)             # about 1000 exits, dwell 1e-12 s against ulp(0.01) 1.7e-18 s
+        @test only(frame_truth(w)).m == 1
+    end
+    @testset "the threshold scales with t" begin
+        w, ps = ev_world(n_sub=1, fluor=fast, t0=1e5)   # λ eps(t) = 1e12 * 1.5e-11
+        @test_throws DomainError SMLMSim.step!(w, 1e5, 1e5 + 1e-6)
+    end
+end
