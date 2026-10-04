@@ -26,6 +26,7 @@ to provide a unified user interface.
 # Usage
 ```julia
 using SMLMSim
+using MicroscopePSFs  # for GaussianPSF
 
 # Example: Static simulation
 params_static = StaticSMLMConfig(density=1.0, σ_psf=0.13)

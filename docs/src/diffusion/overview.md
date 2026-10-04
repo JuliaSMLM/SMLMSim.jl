@@ -172,9 +172,11 @@ camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
 using MicroscopePSFs
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
+# Photons come from the simulation, not gen_images: γ (photons/s) = 1000/dt gives 1000 photons per record
+smld, info = simulate(params; camera=camera, γ=1000.0/params.dt)
+
 # Generate images
 image_stack, img_info = gen_images(smld, psf;
-    photons=1000.0,
     bg=5.0,
     poisson_noise=true
 )

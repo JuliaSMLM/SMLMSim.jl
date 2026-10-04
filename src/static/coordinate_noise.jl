@@ -125,7 +125,8 @@ additional parameters to compute non-zero covariance.
 
 # Example
 ```julia
-# Then add localization noise with specific PSF widths
+# smld_model: a 3D SMLD, e.g. info.smld_model from simulate(StaticSMLMConfig(ndims=3))
+# Add localization noise with specific PSF widths
 σ_psf = [0.13, 0.13, 0.39]  # 130nm lateral, 390nm axial
 smld_noisy = apply_noise(smld_model, σ_psf)
 ```

@@ -855,11 +855,11 @@ Convert regular emitters to diffusing emitters for use as starting conditions.
 ```julia
 # Convert static emitters to diffusing emitters
 static_emitters = smld_static.emitters
-diffusing_emitters = convert_to_diffusing_emitters(static_emitters)
+diffusing_emitters = SMLMSim.InteractionDiffusion.convert_to_diffusing_emitters(static_emitters)
 
 # Use as starting conditions for a diffusion simulation
 params = DiffusionSMLMConfig(t_max=10.0)
-smld = simulate(params; starting_conditions=diffusing_emitters)
+smld, info = simulate(params; starting_conditions=diffusing_emitters)
 ```
 """
 function convert_to_diffusing_emitters(emitters::Vector{<:AbstractEmitter}, photons::Float64=1000.0, state::Symbol=:monomer)

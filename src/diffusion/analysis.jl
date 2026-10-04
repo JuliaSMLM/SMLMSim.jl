@@ -19,7 +19,7 @@ Extract a new BasicSMLD containing only emitters in dimer state.
 # Example
 ```julia
 # Extract only dimers from simulation results
-smld = simulate(params)
+smld, info = simulate(params)
 dimer_smld = get_dimers(smld)
 ```
 """
@@ -77,10 +77,10 @@ Filter emitters by their state (monomer or dimer).
 # Example
 ```julia
 # Get only monomers
-monomer_smld = filter_by_state(smld, :monomer)
+monomer_smld = SMLMSim.InteractionDiffusion.filter_by_state(smld, :monomer)
 
 # Get only dimers
-dimer_smld = filter_by_state(smld, :dimer)
+dimer_smld = SMLMSim.InteractionDiffusion.filter_by_state(smld, :dimer)
 ```
 """
 function filter_by_state(smld::BasicSMLD, state::Symbol)
@@ -112,7 +112,7 @@ Calculate the fraction of dimers per frame.
 ```julia
 # Calculate dimer fraction over time
 frames, fractions = analyze_dimer_fraction(smld)
-plot(frames, fractions, xlabel="Frame", ylabel="Dimer Fraction")
+# plot frames against fractions with a plotting package of your choice
 ```
 """
 function analyze_dimer_fraction(smld::BasicSMLD)
@@ -157,7 +157,7 @@ Track state changes of molecules over time.
 # Example
 ```julia
 # Track state changes of molecules
-state_history = track_state_changes(smld)
+state_history = SMLMSim.InteractionDiffusion.track_state_changes(smld)
 
 # Plot state history for molecule 1
 history = state_history[1]

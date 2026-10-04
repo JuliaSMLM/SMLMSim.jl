@@ -331,8 +331,8 @@ labeling = BinomialLabeling(4, 0.8; efficiency=0.9)
 camera = IdealCamera(128, 128, 0.1)  # 128×128 pixels, 100nm pixels
 
 # Specify field of view with an array of pixel edges
-pixel_edges_x = 0.0:0.1:12.8  # 0 to 12.8μm in 0.1μm steps
-pixel_edges_y = 0.0:0.1:12.8
+pixel_edges_x = collect(0.0:0.1:12.8)  # 0 to 12.8μm in 0.1μm steps
+pixel_edges_y = collect(0.0:0.1:12.8)
 camera = IdealCamera(pixel_edges_x, pixel_edges_y)
 
 # SCMOSCamera: Realistic noise model with per-pixel calibration (SMLMData 0.4+)
@@ -342,10 +342,9 @@ camera_scmos = SCMOSCamera(128, 128, 0.1, 1.6)  # 1.6 e⁻ RMS read noise
 # Advanced: Specify all calibration parameters
 # offset (ADU), gain (e⁻/ADU), readnoise (e⁻ RMS), quantum efficiency (0-1)
 camera_scmos = SCMOSCamera(
-    128, 128, 0.1;
+    128, 128, 0.1, 1.6;   # 1.6 e⁻ RMS read noise (positional)
     offset=100.0,      # 100 ADU dark level
     gain=0.5,          # 0.5 e⁻/ADU
-    readnoise=1.6,     # 1.6 e⁻ RMS
     qe=0.95            # 95% quantum efficiency
 )
 ```
@@ -409,7 +408,8 @@ Generate kinetic blinking model from existing localization data.
 ```julia
 # Example of how to call kinetic_model
 # First create or obtain the required inputs
-smld_true = ... # Some BasicSMLD with true positions
+_, sim_info = simulate(StaticSMLMConfig(); pattern=Nmer2D(), camera=IdealCamera(128, 128, 0.1))
+smld_true = sim_info.smld_true  # Some BasicSMLD with true positions
 fluor = GenericFluor(1e5, [-10.0 10.0; 0.5 -0.5])  # Fluorophore model
 nframes = 1000    # Number of frames
 framerate = 50.0  # Frames per second
@@ -452,9 +452,9 @@ Returns a tuple: `(images, ImageInfo)`.
 
 ```julia
 images, info = gen_images(
-    smld::SMLD,
-    psf::AbstractPSF;
-    dataset::Int=1,                # Dataset number to use from SMLD
+    smld,
+    psf;
+    dataset=1,                     # Dataset number to use from SMLD
     frames=nothing,                # Specific frames to generate (default: all frames)
     support=Inf,                   # PSF support region size (see details below)
     sampling=2,                    # Supersampling factor for PSF integration
@@ -500,9 +500,10 @@ Returns a tuple: `(image, ImageInfo)`.
 
 ```julia
 # Example of generating a single frame image
+using MicroscopePSFs
 
 # First, define variables
-smld = ... # Your SMLD data
+smld, _ = simulate(DiffusionSMLMConfig(box_size=5.0, t_max=5.0))  # Your SMLD data
 psf = GaussianPSF(0.15)  # PSF model with 150nm width
 frame_number = 10  # The frame you want to generate
 
@@ -547,7 +548,7 @@ truth = frame_dimer_truth(smld)
 smld2, info2 = simulate(params; starting_conditions=smld)  # resumes at extract_end_state(smld)
 
 # Track state changes over time
-state_history = track_state_changes(smld)
+state_history = SMLMSim.InteractionDiffusion.track_state_changes(smld)
 ```
 
 #### Track Utilities
@@ -662,6 +663,8 @@ x, y, z, pattern_ids = uniform3D(density, pattern3d, field_x, field_y, zrange=[-
 6. Generate microscope images or analyze the data
 
 ```julia
+using MicroscopePSFs
+
 # 1. Define parameters
 params = StaticSMLMConfig(
     density = 1.0,
@@ -706,6 +709,8 @@ images, img_info = gen_images(smld_model, psf;
 4. Generate microscope images
 
 ```julia
+using MicroscopePSFs
+
 # 1. Define parameters
 params = DiffusionSMLMConfig(
     density = 0.5,        # molecules per μm²
@@ -779,6 +784,7 @@ println("Simulation took $(info.elapsed_s) seconds")
 ```julia
 using SMLMSim
 using MicroscopePSFs
+using Statistics
 
 # Set diffusion simulation parameters
 params = DiffusionSMLMConfig(

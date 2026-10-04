@@ -47,7 +47,7 @@ Fluorophore state transitions are modeled using a Continuous Time Markov Chain (
 ```julia
 # Create a CTMC for a two-state system
 # State 1: ON (fluorescent), State 2: OFF (dark)
-q = [-5 5; 10 -10]  # Units: s⁻¹
+q = [-5.0 5.0; 10.0 -10.0]  # Units: s⁻¹
 simulation_time = 10.0  # seconds
 initial_state = 2  # Start in dark state
 
@@ -93,7 +93,7 @@ To simulate the fluorescence signal over time, SMLMSim integrates photon emissio
 
 ```julia
 # Generate intensity trace for 1000 frames at 50 fps
-fluor = GenericFluor(10000.0, [-5 5; 10 -10])
+fluor = GenericFluor(10000.0, [-5.0 5.0; 10.0 -10.0])
 photons = intensity_trace(fluor, 1000, 50.0)
 ```
 
@@ -113,7 +113,7 @@ The simplest model contains just ON and OFF states:
 # kon = 5 s⁻¹, koff = 10 s⁻¹
 fluor = GenericFluor(
     1e4,                  # 10,000 photons/s
-    [-10 10; 5 -5]        # [ON→OFF; OFF→ON] rates in s⁻¹
+    [-10.0 10.0; 5.0 -5.0]  # [ON→OFF; OFF→ON] rates in s⁻¹
 )
 ```
 
@@ -124,11 +124,11 @@ This produces exponentially distributed ON and OFF times.
 For more realistic behavior including photobleaching:
 
 ```julia
-# Three-state model (ON ⟷ OFF → BLEACHED)
+# Three-state model (ON ⟷ OFF, ON → BLEACHED)
 # State 1: ON, State 2: OFF, State 3: BLEACHED
 fluor = GenericFluor(
     1e4,
-    [-10.1 10 0.1; 5 -5 0; 0 0 0]    # Note: state 3 is absorbing (no outgoing transitions)
+    [-10.1 10.0 0.1; 5.0 -5.0 0.0; 0.0 0.0 0.0]    # Note: state 3 is absorbing (no outgoing transitions)
 )
 ```
 
@@ -141,15 +141,14 @@ The `simulate()` function integrates these photophysical models automatically:
 ```julia
 # Simulation with custom fluorophore
 camera = IdealCamera(128, 128, 0.1)
-fluor = GenericFluor(2e4, [-20 20; 5 -5])
+fluor = GenericFluor(2e4, [-20.0 20.0; 5.0 -5.0])
 
-smld_noisy, info = simulate(
-    molecule=fluor,
+params = StaticSMLMConfig(
     framerate=50.0,     # frames per second
     nframes=2000,       # total frames
-    minphotons=100,     # detection threshold
-    camera=camera
+    minphotons=100      # detection threshold
 )
+smld_noisy, info = simulate(params; molecule=fluor, camera=camera)
 ```
 
 Behind the scenes, this uses the `kinetic_model()` function to apply the photophysical model to each emitter position.

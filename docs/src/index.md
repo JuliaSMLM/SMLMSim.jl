@@ -60,9 +60,12 @@ using SMLMSim
 camera = IdealCamera(128, 128, 0.1)
 
 # Run a basic static simulation
+params = StaticSMLMConfig(
+    density=1.0,          # 1 pattern per μm²
+    σ_psf=0.13            # 130nm PSF width
+)
 smld_noisy, info = simulate(
-    density=1.0,                # 1 pattern per μm²
-    σ_psf=0.13,           # 130nm PSF width
+    params;
     pattern=Nmer2D(n=8, d=0.1),  # 8-molecule circular pattern (100nm diameter)
     camera=camera
 )

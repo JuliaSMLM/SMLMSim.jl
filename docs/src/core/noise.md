@@ -78,8 +78,10 @@ You can access the uncertainty values for each emitter:
 σ_x_values = [e.σ_x for e in smld_noisy.emitters]
 σ_y_values = [e.σ_y for e in smld_noisy.emitters]
 
-# For 3D data
-σ_z_values = [e.σ_z for e in smld_noisy.emitters]
+# For 3D data (a simulation with ndims=3; 2D emitters have no σ_z)
+if hasfield(eltype(smld_noisy.emitters), :σ_z)
+    σ_z_values = [e.σ_z for e in smld_noisy.emitters]
+end
 
 # Plot relationship between photons and uncertainty
 using CairoMakie
@@ -101,10 +103,10 @@ The PSF width is the most important parameter affecting localization uncertainty
 
 ```julia
 # Simulation with wider PSF (150nm)
-smld_wide_psf, info_wide = simulate(σ_psf=0.15)
+smld_wide_psf, info_wide = simulate(StaticSMLMConfig(σ_psf=0.15))
 
 # Simulation with narrower PSF (100nm)
-smld_narrow_psf, info_narrow = simulate(σ_psf=0.10)
+smld_narrow_psf, info_narrow = simulate(StaticSMLMConfig(σ_psf=0.10))
 ```
 
 Realistic PSF widths depend on:
@@ -131,9 +133,9 @@ bright_fluor = GenericFluor(5e4, [-5.0 5.0; 1.0 -1.0])
 dim_fluor = GenericFluor(5e3, [-5.0 5.0; 1.0 -1.0])
 
 # Bright emitters with lower uncertainty
-smld_bright, info_bright = simulate(molecule=bright_fluor)
+smld_bright, info_bright = simulate(StaticSMLMConfig(); molecule=bright_fluor)
 
 # Dim emitters with higher uncertainty
-smld_dim, info_dim = simulate(molecule=dim_fluor)
+smld_dim, info_dim = simulate(StaticSMLMConfig(); molecule=dim_fluor)
 ```
 

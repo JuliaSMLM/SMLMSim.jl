@@ -63,14 +63,16 @@ smld_noisy, info = simulate(
 )
 ```
 
-Alternatively, you can use keyword arguments directly:
+Alternatively, construct the configuration inline:
 
 ```julia
 smld_noisy, info = simulate(
-    density=1.0,                # patterns per μm²
-    σ_psf=0.13,           # PSF width in μm
-    nframes=1000,         # frames
-    framerate=50.0,       # frames per second
+    StaticSMLMConfig(
+        density=1.0,          # patterns per μm²
+        σ_psf=0.13,           # PSF width in μm
+        nframes=1000,         # frames
+        framerate=50.0        # frames per second
+    );
     pattern=Nmer2D(n=8, d=0.1),  # pattern type
     molecule=GenericFluor(1e4, [-10.0 10.0; 0.5 -0.5]), # γ=1e4, k_off=10, k_on=0.5
     camera=camera
