@@ -41,7 +41,8 @@ are per second.
   steady only if `budget = Inf`; with a finite budget it settles at `birth_rate` times the mean residence.
   A molecule that never bleaches (`multiplicity = 0` or `fluor.γ = 0`), and in a world with `dimers` any molecule
   of a `binds = true` population (it stays after bleaching), leaves only by departure, so births need a finite
-  `lifetime`; the count then settles at `birth_rate × lifetime` per μm².
+  `lifetime`; the count then settles at `birth_rate × lifetime` per μm² (in a world with `dimers`, a binding
+  molecule bound to a longer-lived partner departs with the pair, so its count settles higher; see `DimerKinetics`).
 - `mobility = [(1.0, 0.0)]`: `(fraction, D μm²/s)` components, one drawn per emitter.
 - `fluor::GenericFluor` (required): `γ` is the median photon rate in state 1 at relative intensity 1
   and `q` the CTMC rates at intensity 1. It must be irreducible when it has more than one state.
@@ -209,15 +210,18 @@ struct DimerKinetics
     d_dimer::Float64
 
     function DimerKinetics(k_on, r_react, k_off, D_dimer, D_rot, d_dimer)
+        k_on, r_react, k_off, D_rot, d_dimer = Float64(k_on), Float64(r_react), Float64(k_off), Float64(D_rot), Float64(d_dimer)
+        (D_dimer === :min || D_dimer isa Real) ||
+            throw(ArgumentError("D_dimer must be :min or a finite real >= 0, got $D_dimer"))
+        D_dimer === :min || (D_dimer = Float64(D_dimer))
         k_on > 0 || throw(ArgumentError("k_on must be > 0 (Inf allowed), got $k_on"))
         (r_react > 0 && isfinite(r_react)) || throw(ArgumentError("r_react must be in (0, Inf), got $r_react"))
         (k_off >= 0 && isfinite(k_off)) || throw(ArgumentError("k_off must be in [0, Inf), got $k_off"))
         (D_rot >= 0 && isfinite(D_rot)) || throw(ArgumentError("D_rot must be in [0, Inf), got $D_rot"))
         (d_dimer >= 0 && isfinite(d_dimer)) || throw(ArgumentError("d_dimer must be in [0, Inf), got $d_dimer"))
-        (D_dimer === :min || (D_dimer isa Real && D_dimer >= 0 && isfinite(D_dimer))) ||
+        (D_dimer === :min || (D_dimer >= 0 && isfinite(D_dimer))) ||
             throw(ArgumentError("D_dimer must be :min or a finite real >= 0, got $D_dimer"))
-        return new(Float64(k_on), Float64(r_react), Float64(k_off),
-                   D_dimer === :min ? :min : Float64(D_dimer), Float64(D_rot), Float64(d_dimer))
+        return new(k_on, r_react, k_off, D_dimer, D_rot, d_dimer)
     end
 end
 

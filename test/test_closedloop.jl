@@ -1210,6 +1210,12 @@ end
     for kw in ((D_rot=Inf,), (D_rot=NaN,), (D_dimer=Inf,), (D_dimer=NaN,), (d_dimer=Inf,))
         @test_throws ArgumentError mk(; kw...)
     end
+    # a number that overflows or underflows Float64 is checked after the conversion
+    for kw in ((D_rot=big"1e400",), (D_dimer=big"1e400",), (d_dimer=big"1e400",), (k_off=big"1e400",),
+               (r_react=big"1e400",), (r_react=big"1e-400",))
+        @test_throws ArgumentError mk(; kw...)
+    end
+    @test mk(; k_on=big"1e400").k_on == Inf
 end
 
 @testset "closedloop/split_margin" begin
