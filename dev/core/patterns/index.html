@@ -34,7 +34,7 @@ ruler3d = Nanoruler3D(spacing=0.02)
 # 5-mark ruler with 50 nm spacing
 ruler3d = Nanoruler3D(n=5, spacing=0.05)</code></pre><h2 id="Creating-Pattern-Distributions"><a class="docs-heading-anchor" href="#Creating-Pattern-Distributions">Creating Pattern Distributions</a><a id="Creating-Pattern-Distributions-1"></a><a class="docs-heading-anchor-permalink" href="#Creating-Pattern-Distributions" title="Permalink"></a></h2><p>Individual patterns define the arrangement of a single group of molecules. To create realistic samples, you&#39;ll typically want to distribute many instances of a pattern throughout the field of view.</p><p>The <code>simulate()</code> function handles this automatically with the <code>density</code> parameter:</p><pre><code class="language-julia hljs"># Simulate with 2 patterns per square micron
 smld_noisy, info = simulate(
-    density=2.0,
+    StaticSMLMConfig(density=2.0);
     pattern=Nmer2D(n=6, d=0.2)
 )</code></pre><p>Behind the scenes, this uses the <code>uniform2D()</code> or <code>uniform3D()</code> functions, which:</p><ol><li>Generate a random number of patterns based on the density and field size</li><li>Place patterns randomly within the field of view</li><li>Apply random rotations to each pattern</li><li>Return the complete set of molecular coordinates</li></ol><p>For advanced usage, you can access these functions directly:</p><pre><code class="language-julia hljs"># Create custom distribution of 2D patterns
 field_x = 10.0  # μm
@@ -56,9 +56,11 @@ nmer3d = Nmer3D(n=8, d=0.1)
 rotate!(nmer3d, π/4, π/6, π/3)  # α, β, γ angles in radians
 
 # Rotate a 3D pattern using a rotation matrix
+θ = π/6
 R = [cos(θ) -sin(θ) 0; sin(θ) cos(θ) 0; 0 0 1]  # Z-axis rotation
 rotate!(nmer3d, R)</code></pre><h3 id="Custom-Patterns"><a class="docs-heading-anchor" href="#Custom-Patterns">Custom Patterns</a><a id="Custom-Patterns-1"></a><a class="docs-heading-anchor-permalink" href="#Custom-Patterns" title="Permalink"></a></h3><p>You can create your own pattern types by:</p><ol><li>Define a new struct that inherits from <code>Pattern2D</code> or <code>Pattern3D</code></li><li>Implement the necessary fields and constructors</li><li>Use your custom pattern with the existing simulation framework</li></ol><p>Example:</p><pre><code class="language-julia hljs"># Create a custom 2D grid pattern
 mutable struct Grid2D &lt;: Pattern2D
+    n::Int   # total number of points (every pattern needs n, x and y)
     nx::Int  # number of columns
     ny::Int  # number of rows
     dx::Float64  # column spacing
@@ -79,9 +81,9 @@ function Grid2D(; nx=3, ny=3, dx=0.1, dy=0.1)
         idx += 1
     end
     
-    return Grid2D(nx, ny, dx, dy, x, y)
+    return Grid2D(n, nx, ny, dx, dy, x, y)
 end
 
 # Use your custom pattern
 grid = Grid2D(nx=4, ny=3, dx=0.1, dy=0.15)
-smld_noisy, info = simulate(pattern=grid)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../labeling/">Labeling »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Saturday 3 October 2026 21:27">Saturday 3 October 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+smld_noisy, info = simulate(StaticSMLMConfig(); pattern=grid)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../labeling/">Labeling »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Sunday 4 October 2026 15:22">Sunday 4 October 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
