@@ -330,7 +330,8 @@ emits nothing. Excitation enters its value only through the state-1 exit rate an
 shows in `excitation` and `photons`. `lit`, `bound` and `lit_bound` are fractions of `T` in [0, 1]. For an emitter whose `m`, brightness and excitation `I`
 are constant over its presence (no bleach in the exposure, `brightness_jitter = 0`), `photons = m γ_i I lit T`; a
 bleach inside the exposure leaves `photons > 0` with `m = 0`.
-`t_birth`, `t_bleach` and `t_depart` are event times inside the exposure, else NaN. The
+`t_birth`, `t_bleach` and `t_depart` are event times inside the exposure, else NaN. Event times follow the
+sub-step boundary contract of [`step!`](@ref). The
 `partner`, `partner_pop`, `bound`, `t_form`, `t_break`, `lit_bound` and `vis_*` fields are 0,
 NaN or false without dimers. `partner` is the partner at the end of the exposure (or at removal),
 0 if unbound then. `bound` is the fraction of `T` the emitter is bound, and `lit_bound`

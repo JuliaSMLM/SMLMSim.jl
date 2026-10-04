@@ -86,7 +86,7 @@ about 4 at `z = 0.75` μm. `z_R = Inf` is a z-independent column. A spot contrib
 `t_on <= t < t_off`, and [`next_switch`](@ref) returns the next such time, so a spot that switches inside an
 exposure acts from its exact time, not from the next sub-step. An emitter of one label (`multiplicity = 1`),
 one state, no bleach, `brightness_jitter = 0` and `brightness_sigma = 0` (or read `γ` as that emitter's own `γ_i`), at
-the centre of a spot (in focus, or with `z_R = Inf` and `f_evan = 0`) that is on from `t_on` through `t_b`, emits
+the centre of a spot (in focus, or with `z_R = Inf` and `f_evan = 0`) that is on from `t_on` through `t_b`, with the emitter present over that interval, emits
 `γ · gain · (t_b - t_on)` more photons in an exposure the spot turns on in; a blink or a bleach while the spot is on
 reduces it.
 The baseline `base` is always on. A warning at construction names a spot whose `z_R` is more than 2x from
@@ -168,8 +168,16 @@ long  = Population(name = :long, density = 0.0, birth_rate = 0.18 * rate, lifeti
 
 [`SMLMSim.frame_truth`](@ref)`(world)` returns one [`FrameTruth`](@ref) row for every emitter present at any
 time in the last exposure `[t_a, t_b)`, `T = t_b - t_a`, as a view of the world's buffer that stays valid
-until the next `step!`. Gap sub-steps write no rows. Every sub-step is a half-open window `[t0, t1)`: an event
-exactly at `t_b` belongs to the next exposure. The fields:
+until the next `step!`. Gap sub-steps write no rows. Every sub-step is a half-open window `[t0, t1)`, and the last one ends exactly at `t_b`. Stored event times (a
+departure, a birth, a declared switch, a formation, a break) obey this exactly: an event at a time before `t1`
+belongs to `[t0, t1)`, one at or after `t1` to the next sub-step, and one at `t_b` to the next exposure. Computed
+event times (a bleach when the photon budget runs out, a state exit when its clock runs out) are the times the rates
+give, to within one ulp of `t`: an event computed within one ulp of a sub-step end or of a declared switch may fall on
+either side of it, with that side's consequences (for example, a bleach due one ulp after a switch-off may fire at
+the switch-off, and the molecule then reads bleached while dark). An event due exactly at a sub-step end fires at the
+start of the next sub-step, whatever the excitation there.
+
+The fields:
 
 - `frame`, `id`, `pop` (index into `world.pops`) and `m`, the fluorophores left at the end of presence;
 - `x`, `y`: the photon-weighted mean position (the presence-weighted mean when the emitter emitted nothing),

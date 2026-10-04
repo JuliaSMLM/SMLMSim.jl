@@ -160,7 +160,9 @@ end
 # relative delays and absolute times round differently, and the absolute time decides. Otherwise the sub-step ends. A
 # pending event is one whose absolute time is exactly t1: the end branch sets its budget (bleach) or clock (exit) to
 # exactly 0, never to a rounding residual, and a budget or clock at or below 0 fires at the next sub-step's start
-# whatever the excitation. An event with an absolute time above t1 keeps its positive residual. Returns the photons
+# whatever the excitation. An event with an absolute time above t1 keeps its positive residual. Stored times are exact; a bleach or exit
+# time computed from rates is exact to one ulp: the subtraction that carries its residual can round it to 0 for a
+# time one ulp past t1, which then fires at t1 (the documented contract). Returns the photons
 # emitted, whether the emitter is still present and whether it left by departure.
 function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, τ0::Float64, excitation::E) where {E}
     rng = w.rng
