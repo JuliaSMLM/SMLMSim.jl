@@ -454,6 +454,21 @@ end
 # numeric input of each type, hands it as a BigFloat beyond or below the Float64 range, and compares the outcome
 # with the Float64 conversion of the same number: both throw, or both construct with isequal stored values. The
 # field lists are reflected, so a new numeric field fails here until a case covers it.
+# a probe for the field detector of stepper/inputs_as_stored: a through h can hold a number, i through k cannot
+struct _DetectorProbe
+    a::Float64
+    b::Float32
+    c::Real
+    d::AbstractFloat
+    e::Matrix{Float64}
+    f::Any
+    g::Tuple{Int,Float64}
+    h::Vector{Float32}
+    i::Symbol
+    j::String
+    k::Vector{Symbol}
+end
+
 @testset "stepper/inputs_as_stored" begin
     bigs = (big"1e400", big"1e-400", -big"1e400", -big"1e-400")
     snap(x::Union{Number,Symbol,Bool}) = x
@@ -491,8 +506,8 @@ end
     add!(:Population, :mobility, "mobility D 2", v -> pop_snap(; mobility=[(1.0, 0.1), (0.0, v)]); fin=true)
     add!(:Population, :z, "z 1", v -> pop_snap(; z=(v, 0.1)); fin=true)
     add!(:Population, :z, "z 2", v -> pop_snap(; z=(0.0, v)); fin=true)
-    add!(:Population, nothing, "fluor.γ", v -> pop_snap(; fluor=GenericFluor(; γ=v, q=q0)); fin=true)
-    add!(:Population, nothing, "psf σ", v -> pop_snap(; psf=GaussianPSF(v)); fin=true, pos=true)
+    add!(:GenericFluor, :γ, "fluor.γ", v -> pop_snap(; fluor=GenericFluor(; γ=v, q=q0)); fin=true)
+    add!(:GaussianPSF, :σ, "psf σ", v -> pop_snap(; psf=GaussianPSF(v)); fin=true, pos=true)
     for (i, j) in ((1, 2), (2, 1))              # one off-diagonal entry, its diagonal set so the row sums to 0 in BigFloat
         function qmk(v)
             q = big.(q0)
@@ -500,14 +515,14 @@ end
             q[i, i] = -v
             return pop_snap(; fluor=GenericFluor(; γ=g0, q))
         end
-        add!(:Population, nothing, "fluor.q[$i,$j]", qmk; fin=true)
+        add!(:GenericFluor, :q, "fluor.q[$i,$j]", qmk; fin=true)
     end
     # StampTable: pixel_size and the two ends of zs
     stamp_snap(px, zs) = (t = StampTable(GaussianPSF(0.13), px, zs; radius=3, oversample=2);
                           (t.stamps, collect(t.zs), t.radius, t.oversample, t.zinterp, t.pixel_size))
-    add!(:Population, nothing, "StampTable pixel_size", v -> stamp_snap(v, range(big"-0.3", big"0.3"; length=5)); fin=true, pos=true)
-    add!(:Population, nothing, "StampTable zs start", v -> stamp_snap(big"0.1", range(v, big"0.3"; length=5)); fin=true)
-    add!(:Population, nothing, "StampTable zs stop", v -> stamp_snap(big"0.1", range(big"-0.3", v; length=5)); fin=true)
+    add!(:StampTable, :pixel_size, "StampTable pixel_size", v -> stamp_snap(v, range(big"-0.3", big"0.3"; length=5)); fin=true, pos=true)
+    add!(:StampTable, :zs, "StampTable zs start", v -> stamp_snap(big"0.1", range(v, big"0.3"; length=5)); fin=true)
+    add!(:StampTable, :zs, "StampTable zs stop", v -> stamp_snap(big"0.1", range(big"-0.3", v; length=5)); fin=true)
 
     # ---- DimerKinetics: every field; D_dimer is a number here
     dkw = (k_on=10.0, r_react=0.03, k_off=0.2, D_rot=1.0, d_dimer=0.01, D_dimer=0.05)
@@ -568,18 +583,35 @@ end
     add!(:step!, :t_b, "t_b", v -> step_snap(0.0, v); fin=true)
 
     # ---- coverage: the numeric fields of each struct, less the derived ones, are exactly the fields varied above
-    hasnum(ft) = ft === Float64 || ft isa TypeVar || (ft isa Union ? any(hasnum, Base.uniontypes(ft)) :
-                 ft <: Tuple ? any(hasnum, fieldtypes(ft)) : ft <: AbstractVector && hasnum(eltype(ft)))
-    numeric(T, derived) = Set(f for (f, ft) in zip(fieldnames(T), fieldtypes(T)) if hasnum(ft) && !(f in derived))
+    # a field is numeric when its declared type can hold a number: a type parameter, a union with such a member, any
+    # type that meets Number (Float32, Real, AbstractFloat, Integer, Bool, Any), a tuple of them or an array of them
+    hasnum(ft) = ft isa TypeVar || (ft isa Union ? any(hasnum, Base.uniontypes(ft)) :
+                 typeintersect(ft, Number) !== Union{} || (ft <: Tuple && any(hasnum, fieldtypes(ft))) ||
+                 (ft <: AbstractArray && hasnum(eltype(ft))))
+    numeric(T, excluded) = Set(f for (f, ft) in zip(fieldnames(T), fieldtypes(T)) if hasnum(ft) && !(f in excluded))
     covered(T) = Set(c.field for c in cases if c.T === T && c.field !== nothing)
-    # derived: tan_cos and tan_sin follow from tilt. multiplicity is an Int (not converted), name, layer, binds, spots,
-    # fluor and psf are not Float64 inputs; fluor's and psf's numbers have their own cases above.
-    @test numeric(Population, ()) == covered(:Population)
+    # Population: multiplicity is an Integer converted by Int (a BigInt out of range throws InexactError, so no bad
+    # value is stored); binds is a Bool. fluor and psf are not numbers; their numbers are the GenericFluor,
+    # GaussianPSF and StampTable cases, reached below. SpotExcitation: tan_cos and tan_sin are derived from tilt.
+    # StampTable: stamps is derived (built from the PSF); radius (>= 0) and oversample (>= 1) are Integers converted
+    # by Int, a BigInt out of range throws InexactError.
+    @test numeric(Population, (:multiplicity, :binds)) == covered(:Population)
     @test numeric(DimerKinetics, ()) == covered(:DimerKinetics)
     @test numeric(BackgroundModel{Float64}, ()) == covered(:BackgroundModel)
     @test numeric(Spot, ()) == covered(:Spot)
     @test numeric(SpotExcitation, (:tan_cos, :tan_sin)) == covered(:SpotExcitation)
     @test numeric(EvanescentExcitation, ()) == covered(:EvanescentExcitation)
+    @test numeric(GenericFluor, ()) == covered(:GenericFluor) == Set([:γ, :q])
+    @test numeric(GaussianPSF{Float64}, ()) == covered(:GaussianPSF) == Set([:σ])
+    @test numeric(StampTable, (:stamps, :radius, :oversample)) == covered(:StampTable) == Set([:pixel_size, :zs])
+    # the detector itself, on a probe: flags a through h, not the Symbol and String fields
+    @test Set(f for (f, ft) in zip(fieldnames(_DetectorProbe), fieldtypes(_DetectorProbe)) if hasnum(ft)) ==
+          Set(Symbol.('a':'h'))
+    # a new Float32 field on DimerKinetics (Codex's case) is in numeric and not in covered: the guard fails
+    extt = vcat(collect(fieldtypes(DimerKinetics)), [Float32])
+    ext_numeric = Set(f for (f, ft) in zip(vcat(collect(fieldnames(DimerKinetics)), [:extra_rate]), extt) if hasnum(ft))
+    @test ext_numeric != covered(:DimerKinetics)
+    @test setdiff(ext_numeric, covered(:DimerKinetics)) == Set([:extra_rate])
     @test covered(:SimWorld) == Set([:margin, :t0, :merge_radius])
     @test covered(:step!) == Set([:t_a, :t_b])
     @test length(cases) == 54
