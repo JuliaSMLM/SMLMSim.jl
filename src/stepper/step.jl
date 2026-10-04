@@ -127,13 +127,15 @@ contiguous (`world.t` is set to `t_a`). A later `t_a` advances the gap unrecorde
 throws `ArgumentError`.
 
 Every sub-step is a half-open window `[t0, t1)`, and the last one ends exactly at `t_b`. Stored event times (a
-departure, a birth, a declared switch, a formation, a break) obey this exactly: an event at a time before `t1`
-belongs to `[t0, t1)`, one at or after `t1` to the next sub-step, and one at `t_b` to the next exposure. Computed
-event times (a bleach when the photon budget runs out, a state exit when its clock runs out) are the times the rates
-give, to within one ulp of `t`: an event computed within one ulp of a sub-step end or of a declared switch may fall on
-either side of it, with that side's consequences (for example, a bleach due one ulp after a switch-off may fire at
-the switch-off, and the molecule then reads bleached while dark). An event due exactly at a sub-step end fires at the
-start of the next sub-step, whatever the excitation there.
+departure, a birth, a declared switch, a formation, a break) obey this exactly: an event at a time before `t1` belongs
+to `[t0, t1)`, one at or after `t1` to the next sub-step, and one at `t_b` to the next exposure. Computed event times
+(a bleach when the photon budget runs out, a state exit when its clock runs out) are the times the rates give, to
+within the rounding the stepper accumulates while it carries the budget or clock across sub-steps: at most about one
+ulp of the event's time for each sub-step crossed since the budget or clock was drawn (in a measured case, 5 ulps,
+4.3e-18 s, after 50 sub-steps of 0.1 ms). An event computed that close to a sub-step end or a declared switch may fall
+on either side of it, with that side's consequences: for example, a bleach due exactly at a switch-off may fire at it
+or stay pending until light returns, and one due just after may fire at it. An event whose computed time is exactly a
+sub-step end fires at the start of the next sub-step, whatever the excitation there.
 """
 function step!(w::SimWorld, t_a::Real, t_b::Real, excitation::E=UniformExcitation()) where {E}
     t_a, t_b = Float64(t_a), Float64(t_b)

@@ -1671,3 +1671,17 @@ end
         @test_throws DomainError SMLMSim.step!(w, 1e5, 1e5 + 1e-6)
     end
 end
+
+@testset "closedloop/accumulated_rounding_bound" begin
+    # the contract of step!: a computed bleach time is off by about one ulp per sub-step crossed since the budget was drawn
+    # measured error in ulps of 0.005 (computed - 0.005) for n_sub = 1, 10, 50, 100, 1000: 0, 0, -2, +5, -16
+    for n_sub in (1, 10, 50, 100, 1000)
+        w, ps = ev_world(; n_sub, budget=1e6)
+        ps.budget[1] = 5.0                              # due at 5 / 1000 = 0.005, the exposure's middle
+        SMLMSim.step!(w, 0.0, 0.01)
+        r = only(frame_truth(w))
+        k = ceil(Int, 0.5 * n_sub) + 1                  # the sub-steps crossed before the bleach, plus 1
+        @test r.m == 0
+        @test abs(r.t_bleach - 0.005) <= k * eps(0.005)
+    end
+end
