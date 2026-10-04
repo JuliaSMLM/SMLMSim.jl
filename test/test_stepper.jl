@@ -454,7 +454,7 @@ end
 # numeric input of each type, hands it as a BigFloat beyond or below the Float64 range, and compares the outcome
 # with the Float64 conversion of the same number: both throw, or both construct with isequal stored values. The
 # field lists are reflected, so a new numeric field fails here until a case covers it.
-# a probe for the field detector of stepper/inputs_as_stored: a through h can hold a number, i through k cannot
+# a probe for the field detector of stepper/inputs_as_stored: a through h and l can hold a number, i through k and m cannot
 struct _DetectorProbe
     a::Float64
     b::Float32
@@ -467,6 +467,8 @@ struct _DetectorProbe
     i::Symbol
     j::String
     k::Vector{Symbol}
+    l::NamedTuple{(:rate,),Tuple{Float32}}
+    m::NamedTuple{(:tag,),Tuple{Symbol}}
 end
 
 @testset "stepper/inputs_as_stored" begin
@@ -584,9 +586,11 @@ end
 
     # ---- coverage: the numeric fields of each struct, less the derived ones, are exactly the fields varied above
     # a field is numeric when its declared type can hold a number: a type parameter, a union with such a member, any
-    # type that meets Number (Float32, Real, AbstractFloat, Integer, Bool, Any), a tuple of them or an array of them
+    # type that meets Number (Float32, Real, AbstractFloat, Integer, Bool, Any), a tuple or NamedTuple of them (a
+    # NamedTuple is not a Tuple) or an array of them
     hasnum(ft) = ft isa TypeVar || (ft isa Union ? any(hasnum, Base.uniontypes(ft)) :
                  typeintersect(ft, Number) !== Union{} || (ft <: Tuple && any(hasnum, fieldtypes(ft))) ||
+                 (ft <: NamedTuple && any(hasnum, fieldtypes(ft))) ||
                  (ft <: AbstractArray && hasnum(eltype(ft))))
     numeric(T, excluded) = Set(f for (f, ft) in zip(fieldnames(T), fieldtypes(T)) if hasnum(ft) && !(f in excluded))
     covered(T) = Set(c.field for c in cases if c.T === T && c.field !== nothing)
@@ -604,14 +608,20 @@ end
     @test numeric(GenericFluor, ()) == covered(:GenericFluor) == Set([:γ, :q])
     @test numeric(GaussianPSF{Float64}, ()) == covered(:GaussianPSF) == Set([:σ])
     @test numeric(StampTable, (:stamps, :radius, :oversample)) == covered(:StampTable) == Set([:pixel_size, :zs])
-    # the detector itself, on a probe: flags a through h, not the Symbol and String fields
+    # the detector itself, on a probe: flags a through h and the numeric NamedTuple l, not the Symbol and String fields
+    # or the NamedTuple of a Symbol
     @test Set(f for (f, ft) in zip(fieldnames(_DetectorProbe), fieldtypes(_DetectorProbe)) if hasnum(ft)) ==
-          Set(Symbol.('a':'h'))
+          Set([Symbol.('a':'h')..., :l])
     # a new Float32 field on DimerKinetics (Codex's case) is in numeric and not in covered: the guard fails
     extt = vcat(collect(fieldtypes(DimerKinetics)), [Float32])
     ext_numeric = Set(f for (f, ft) in zip(vcat(collect(fieldnames(DimerKinetics)), [:extra_rate]), extt) if hasnum(ft))
     @test ext_numeric != covered(:DimerKinetics)
     @test setdiff(ext_numeric, covered(:DimerKinetics)) == Set([:extra_rate])
+    # and so does a numeric NamedTuple field (Codex's extra_rates)
+    ntt = vcat(collect(fieldtypes(DimerKinetics)), [NamedTuple{(:rate,),Tuple{Float32}}])
+    nt_numeric = Set(f for (f, ft) in zip(vcat(collect(fieldnames(DimerKinetics)), [:extra_rates]), ntt) if hasnum(ft))
+    @test nt_numeric != covered(:DimerKinetics)
+    @test setdiff(nt_numeric, covered(:DimerKinetics)) == Set([:extra_rates])
     @test covered(:SimWorld) == Set([:margin, :t0, :merge_radius])
     @test covered(:step!) == Set([:t_a, :t_b])
     @test length(cases) == 54
