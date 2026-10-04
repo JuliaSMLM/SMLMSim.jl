@@ -91,7 +91,9 @@ phase, a position error of at most `1/(2oversample)` pixel.
 
 Throws `ArgumentError` when `zs` is not strictly increasing, when it extends beyond the z
 range the PSF declares (a `SplinePSF`'s `z_range`, no tolerance), or when a stamp's mass is
-not finite and positive; rendering never clamps or draws empty stamps.
+not finite and positive; rendering never clamps or draws empty stamps. Every number is converted to
+`Float64` first and checked as stored: `pixel_size` must be finite and `> 0`, and the ends of `zs` finite
+(a `BigFloat` beyond `floatmax` or below the smallest subnormal fails as `Inf` or 0 would).
 """
 struct StampTable{R<:AbstractRange{Float64}}
     stamps::Array{Float64,4}    # (2radius+1, 2radius+1, oversample^2, length(zs)); phase = a + os*b + 1
@@ -108,20 +110,24 @@ function StampTable(psf::AbstractPSF, pixel_size::Real, zs::AbstractRange{<:Real
     radius >= 0 || throw(ArgumentError("radius must be >= 0"))
     oversample >= 1 || throw(ArgumentError("oversample must be >= 1"))
     isempty(zs) && throw(ArgumentError("zs must not be empty"))
-    (length(zs) == 1 || step(zs) > 0) ||
-        throw(ArgumentError("zs must be strictly increasing, got step $(step(zs))"))
+    px = Float64(pixel_size)             # every number is converted first and checked as stored
+    (isfinite(px) && px > 0) || throw(ArgumentError("pixel_size must be finite and > 0 as a Float64, got $pixel_size"))
+    zr = zs isa AbstractRange{Float64} ? zs : range(Float64(first(zs)), Float64(last(zs)); length=length(zs))
+    (isfinite(first(zr)) && isfinite(last(zr))) ||
+        throw(ArgumentError("the ends of zs must be finite as Float64, got $(first(zs)) and $(last(zs))"))
+    (length(zr) == 1 || step(zr) > 0) ||
+        throw(ArgumentError("zs must be strictly increasing, got step $(step(zr))"))
     ext = _psf_z_extent(psf)
     if ext !== nothing
-        zlo, zhi = extrema(zs)
+        zlo, zhi = extrema(zr)
         (zlo < ext[1] || zhi > ext[2]) &&
             throw(ArgumentError("z plane $(zlo < ext[1] ? zlo : zhi) of zs = $(zlo)..$(zhi) is outside the PSF's z range $(ext[1])..$(ext[2])"))
     end
-    zr = convert(AbstractRange{Float64}, zs)
     r, os = Int(radius), Int(oversample)
     n = 2r + 1
     nfine = (2r + 2) * os - 1            # emitter sits at the centre of fine cell e0
     e0 = r * os + os - 1
-    h = Float64(pixel_size) / os
+    h = px / os
     edges = ((0:nfine) .- (e0 + 0.5)) .* h
     stamps = zeros(n, n, os^2, length(zr))
     fine = zeros(nfine, nfine)
@@ -144,7 +150,7 @@ function StampTable(psf::AbstractPSF, pixel_size::Real, zs::AbstractRange{<:Real
             st ./= mass
         end
     end
-    return StampTable{typeof(zr)}(stamps, zr, r, os, zinterp, Float64(pixel_size))
+    return StampTable{typeof(zr)}(stamps, zr, r, os, zinterp, px)
 end
 
 """

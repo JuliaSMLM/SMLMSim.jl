@@ -79,7 +79,9 @@ Throws `ArgumentError` for mobility fractions that do not sum to 1, `multiplicit
 with a multi-state `q`, a multi-state `q` that is not irreducible or has more than 255 states, births with an
 infinite `lifetime` and a molecule that cannot bleach (`budget` infinite, `multiplicity = 0` or `fluor.γ = 0`), a `StampTable` that does not cover `z`, an unknown `layer`, or a nonfinite
 `density`, `birth_rate`, `brightness_sigma`, mobility `D`, `z` or `fluor.γ` (a nonfinite `q` entry fails its row check;
-`lifetime`, `budget` and `jitter_time` may be `Inf`).
+`lifetime`, `budget` and `jitter_time` may be `Inf`). Every number is checked as the `Float64` the world stores, so a
+`BigFloat` beyond `floatmax` or below the smallest subnormal fails as `Inf` or 0 would: that holds for `fluor.γ`, each
+`q` row's off-diagonal sum (nonfinite after conversion) and a `GaussianPSF`'s `σ` (must be finite and `> 0`) as well.
 """
 struct Population
     name::Symbol
@@ -113,7 +115,10 @@ struct Population
         jitter_time > 0 || throw(ArgumentError("jitter_time must be > 0"))
         (isfinite(z[1]) && isfinite(z[2]) && z[1] <= z[2]) ||
             throw(ArgumentError("z must be finite and satisfy z[1] <= z[2]"))
-        (isfinite(fluor.γ) && fluor.γ >= 0) || throw(ArgumentError("fluor.γ must be finite and >= 0"))
+        γ0 = Float64(fluor.γ)                 # the value the world runs with, checked as stored
+        (isfinite(γ0) && γ0 >= 0) || throw(ArgumentError("fluor.γ must be finite and >= 0 as a Float64, got $(fluor.γ)"))
+        psf isa GaussianPSF && !(isfinite(psf.σ) && psf.σ > 0) &&
+            throw(ArgumentError("the Gaussian PSF's σ must be finite and > 0 as a Float64, got $(psf.σ)"))
         isempty(mobility) && throw(ArgumentError("mobility must not be empty"))
         for (f, D) in mobility
             (f >= 0 && D >= 0 && isfinite(D)) ||
@@ -126,6 +131,7 @@ struct Population
         (size(q, 1) == size(q, 2) && size(q, 1) >= 1) || throw(ArgumentError("q must be a square matrix"))
         for s in 1:size(q, 1)
             off = sum(q[s, j] for j in 1:size(q, 2) if j != s; init=0.0)
+            isfinite(off) || throw(ArgumentError("row $s of q: the off-diagonal entries sum to a nonfinite rate as Float64"))
             (all(q[s, j] >= 0 for j in 1:size(q, 2) if j != s) && abs(q[s, s] + off) <= 1e-8 * max(1.0, off)) ||
                 throw(ArgumentError("row $s of q must have non-negative off-diagonals summing to -q[$s,$s]"))
         end
@@ -135,7 +141,7 @@ struct Population
             throw(ArgumentError("multiplicity > 1 needs a one-state q, got $nst states"))
         nst > 1 && !_irreducible(q) &&
             throw(ArgumentError("q must be irreducible (no absorbing or unreachable state); use budget for permanent loss"))
-        birth_rate > 0 && !isfinite(lifetime) && !(isfinite(budget) && multiplicity > 0 && fluor.γ > 0) &&
+        birth_rate > 0 && !isfinite(lifetime) && !(isfinite(budget) && multiplicity > 0 && γ0 > 0) &&
             throw(ArgumentError("birth_rate > 0 with an infinite lifetime needs a molecule that can bleach (finite budget, multiplicity > 0 and fluor.γ > 0); otherwise the count would grow without bound"))
         if psf isa StampTable
             zlo, zhi = first(psf.zs), last(psf.zs)
@@ -244,6 +250,9 @@ Parameters of the structured background. Built by keyword.
 - `contrast::Float64 = 0.0`: sd of log pattern; 0 is flat.
 - `correlation_time::Float64 = Inf`: s, OU time constant of the pattern; `Inf` is static.
 - `illumination_width::Float64 = Inf`: μm, σ of a broad Gaussian profile (mean 1 over the FOV); `Inf` is flat.
+
+Every number is converted to `Float64` first (a `level` that is a `Real` is converted when the world is built) and
+[`SimWorld`](@ref) checks the stored value: `level`, `jitter` and `contrast` finite and `>= 0`, the others `> 0`.
 """
 Base.@kwdef struct BackgroundModel{L}
     level::L = 0.0
@@ -254,6 +263,12 @@ Base.@kwdef struct BackgroundModel{L}
     correlation_time::Float64 = Inf
     illumination_width::Float64 = Inf
 end
+
+# Any Real number for a Float64 field is converted first (BigFloat beyond floatmax stores Inf); SimWorld checks the stored values
+BackgroundModel(level::L, stretch::Real, jitter::Real, feature_size::Real, contrast::Real, correlation_time::Real,
+                illumination_width::Real) where {L} =
+    BackgroundModel{L}(level, Float64(stretch), Float64(jitter), Float64(feature_size), Float64(contrast),
+                       Float64(correlation_time), Float64(illumination_width))
 
 """
     UniformExcitation()

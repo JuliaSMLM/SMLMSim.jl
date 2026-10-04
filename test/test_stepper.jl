@@ -450,6 +450,171 @@ end
     @test w.t === 0.5
 end
 
+# Every number a stepper input type takes is checked as the Float64 it is stored as. The walk below takes each
+# numeric input of each type, hands it as a BigFloat beyond or below the Float64 range, and compares the outcome
+# with the Float64 conversion of the same number: both throw, or both construct with isequal stored values. The
+# field lists are reflected, so a new numeric field fails here until a case covers it.
+@testset "stepper/inputs_as_stored" begin
+    bigs = (big"1e400", big"1e-400", -big"1e400", -big"1e-400")
+    snap(x::Union{Number,Symbol,Bool}) = x
+    snap(x::AbstractArray) = map(snap, x)
+    snap(x::Tuple) = map(snap, x)
+    snap(x) = map(f -> snap(getfield(x, f)), fieldnames(typeof(x)))      # structs: field values, not types
+    # any other exception (a MethodError, an InexactError) is an outcome of its own and fails the comparison
+    attempt(f) = try (:ok, f()) catch e; (e isa Union{ArgumentError,DomainError} ? :throw : :error, typeof(e)) end
+
+    # a case varies one input: `mk(v)` builds with v and returns what the world stores; `fin` is true when the docs
+    # require a finite value, `pos` when they require > 0
+    cases = NamedTuple{(:T, :field, :label, :mk, :fin, :pos),Tuple{Symbol,Union{Symbol,Nothing},String,Function,Bool,Bool}}[]
+    add!(T, field, label, mk; fin=false, pos=false) = push!(cases, (; T, field, label, mk, fin, pos))
+
+    # ---- Population: every keyword that is a Float64, or a tuple or vector of them, then fluor and psf
+    g0, q0 = 1000.0, [-5.0 5.0; 2.0 -2.0]
+    pkw = (density=1.0, lifetime=5.0, birth_rate=0.2, mobility=[(1.0, 0.1), (0.0, 0.2)], fluor=GenericFluor(; γ=g0, q=q0),
+           brightness_sigma=0.1, budget=1e5, multiplicity=1, z=(0.0, 0.1), psf=GaussianPSF(0.13),
+           brightness_jitter=0.1, jitter_time=0.01)
+    function pop_snap(; kw...)
+        p = Population(; merge(pkw, kw)...)
+        w = SimWorld(StableRNG(1), cam32(), [p]; n_sub=1)
+        ps = w.pops[1]
+        return (map(f -> snap(getfield(p, f)), filter(!=(:fluor), collect(fieldnames(Population)))),
+                ps.γ0, ps.q, ps.exitrate, ps.sigma_px, ps.n, w.box)
+    end
+    for (k, fin, pos) in ((:density, true, false), (:lifetime, false, true), (:birth_rate, true, false),
+                          (:brightness_sigma, true, false), (:budget, false, true),
+                          (:brightness_jitter, true, false), (:jitter_time, false, true))
+        add!(:Population, k, string(k), v -> pop_snap(; NamedTuple{(k,)}((v,))...); fin, pos)
+    end
+    add!(:Population, :mobility, "mobility fraction 1", v -> pop_snap(; mobility=[(v, 0.1), (0.0, 0.2)]))
+    add!(:Population, :mobility, "mobility D 1", v -> pop_snap(; mobility=[(1.0, v), (0.0, 0.2)]); fin=true)
+    add!(:Population, :mobility, "mobility fraction 2", v -> pop_snap(; mobility=[(1.0, 0.1), (v, 0.2)]))
+    add!(:Population, :mobility, "mobility D 2", v -> pop_snap(; mobility=[(1.0, 0.1), (0.0, v)]); fin=true)
+    add!(:Population, :z, "z 1", v -> pop_snap(; z=(v, 0.1)); fin=true)
+    add!(:Population, :z, "z 2", v -> pop_snap(; z=(0.0, v)); fin=true)
+    add!(:Population, nothing, "fluor.γ", v -> pop_snap(; fluor=GenericFluor(; γ=v, q=q0)); fin=true)
+    add!(:Population, nothing, "psf σ", v -> pop_snap(; psf=GaussianPSF(v)); fin=true, pos=true)
+    for (i, j) in ((1, 2), (2, 1))              # one off-diagonal entry, its diagonal set so the row sums to 0 in BigFloat
+        function qmk(v)
+            q = big.(q0)
+            q[i, j] = v
+            q[i, i] = -v
+            return pop_snap(; fluor=GenericFluor(; γ=g0, q))
+        end
+        add!(:Population, nothing, "fluor.q[$i,$j]", qmk; fin=true)
+    end
+    # StampTable: pixel_size and the two ends of zs
+    stamp_snap(px, zs) = (t = StampTable(GaussianPSF(0.13), px, zs; radius=3, oversample=2);
+                          (t.stamps, collect(t.zs), t.radius, t.oversample, t.zinterp, t.pixel_size))
+    add!(:Population, nothing, "StampTable pixel_size", v -> stamp_snap(v, range(big"-0.3", big"0.3"; length=5)); fin=true, pos=true)
+    add!(:Population, nothing, "StampTable zs start", v -> stamp_snap(big"0.1", range(v, big"0.3"; length=5)); fin=true)
+    add!(:Population, nothing, "StampTable zs stop", v -> stamp_snap(big"0.1", range(big"-0.3", v; length=5)); fin=true)
+
+    # ---- DimerKinetics: every field; D_dimer is a number here
+    dkw = (k_on=10.0, r_react=0.03, k_off=0.2, D_rot=1.0, d_dimer=0.01, D_dimer=0.05)
+    dim(; kw...) = snap(DimerKinetics(; merge(dkw, kw)...))
+    for (k, fin, pos) in ((:k_on, false, true), (:r_react, true, true), (:k_off, true, false), (:D_rot, true, false),
+                          (:d_dimer, true, false), (:D_dimer, true, false))
+        add!(:DimerKinetics, k, string(k), v -> dim(; NamedTuple{(k,)}((v,))...); fin, pos)
+    end
+
+    # ---- BackgroundModel: every field, through SimWorld, where it is checked
+    bkw = (level=5.0, stretch=1.0, jitter=0.1, feature_size=0.8, contrast=0.3, correlation_time=2.0, illumination_width=3.0)
+    function bg_snap(; kw...)
+        w = SimWorld(StableRNG(2), cam32(), [Population(; pkw..., density=0.0, birth_rate=0.0)]; n_sub=1,
+                     background=BackgroundModel(; merge(bkw, kw)...))
+        b = w.bg
+        return (b.level, b.stretch, b.jitter, b.contrast, b.tau, b.P, b.g, b.iy, b.wx)
+    end
+    for (k, fin, pos) in ((:level, true, false), (:stretch, false, true), (:jitter, true, false),
+                          (:feature_size, false, true), (:contrast, true, false), (:correlation_time, false, true),
+                          (:illumination_width, false, true))
+        add!(:BackgroundModel, k, string(k), v -> bg_snap(; NamedTuple{(k,)}((v,))...); fin, pos)
+    end
+
+    # ---- Spot and SpotExcitation (tan_cos and tan_sin are derived from tilt)
+    skw = (x=1.0, y=1.5, σ=0.3, gain=2.0, z_R=Inf, t_on=0.1, t_off=0.2)
+    for (k, fin, pos) in ((:x, true, false), (:y, true, false), (:σ, true, true), (:gain, true, false),
+                          (:z_R, false, true), (:t_on, false, false), (:t_off, false, false))
+        add!(:Spot, k, string(k), v -> snap(Spot(; merge(skw, NamedTuple{(k,)}((v,)))...)); fin, pos)
+    end
+    xkw = (base=1.0, f_evan=0.3, d_evan=0.1, λ=0.642, n=1.33, tilt=(1.0, 0.5))
+    ex(; kw...) = snap(SpotExcitation(; spots=[Spot(; skw...)], merge(xkw, kw)...))
+    for (k, fin, pos) in ((:base, true, false), (:f_evan, true, false), (:d_evan, false, true),
+                          (:λ, true, true), (:n, true, true))
+        add!(:SpotExcitation, k, string(k), v -> ex(; NamedTuple{(k,)}((v,))...); fin, pos)
+    end
+    add!(:SpotExcitation, :tilt, "tilt 1", v -> ex(; tilt=(v, 0.5)); fin=true)
+    add!(:SpotExcitation, :tilt, "tilt 2", v -> ex(; tilt=(1.0, v)); fin=true)
+
+    # ---- EvanescentExcitation (Core type, shared with the diffusion path)
+    add!(:EvanescentExcitation, :depth, "depth", v -> snap(EvanescentExcitation(; depth=v, stray=0.1)); pos=true)
+    add!(:EvanescentExcitation, :stray, "stray", v -> snap(EvanescentExcitation(; depth=0.1, stray=v)); fin=true)
+
+    # ---- SimWorld keywords and step!'s times, listed explicitly (they are keywords, not fields)
+    wpop = Population(; pkw...)
+    function world_snap(; kw...)
+        w = SimWorld(StableRNG(3), cam32(), [wpop]; n_sub=2, kw...)
+        return (w.box, w.t, w.t_a, w.t_b, w.merge_radius, w.pops[1].n)
+    end
+    add!(:SimWorld, :margin, "margin", v -> world_snap(; margin=v); fin=true)
+    add!(:SimWorld, :t0, "t0", v -> world_snap(; t0=v); fin=true)
+    add!(:SimWorld, :merge_radius, "merge_radius", v -> world_snap(; merge_radius=v))
+    function step_snap(ta, tb)
+        w = SimWorld(StableRNG(3), cam32(), [wpop]; n_sub=2)
+        img = copy(SMLMSim.step!(w, ta, tb))
+        return (img, snap(collect(SMLMSim.frame_truth(w))), w.t, w.frame)
+    end
+    add!(:step!, :t_a, "t_a", v -> step_snap(v, 0.01); fin=true)
+    add!(:step!, :t_b, "t_b", v -> step_snap(0.0, v); fin=true)
+
+    # ---- coverage: the numeric fields of each struct, less the derived ones, are exactly the fields varied above
+    hasnum(ft) = ft === Float64 || ft isa TypeVar || (ft isa Union ? any(hasnum, Base.uniontypes(ft)) :
+                 ft <: Tuple ? any(hasnum, fieldtypes(ft)) : ft <: AbstractVector && hasnum(eltype(ft)))
+    numeric(T, derived) = Set(f for (f, ft) in zip(fieldnames(T), fieldtypes(T)) if hasnum(ft) && !(f in derived))
+    covered(T) = Set(c.field for c in cases if c.T === T && c.field !== nothing)
+    # derived: tan_cos and tan_sin follow from tilt. multiplicity is an Int (not converted), name, layer, binds, spots,
+    # fluor and psf are not Float64 inputs; fluor's and psf's numbers have their own cases above.
+    @test numeric(Population, ()) == covered(:Population)
+    @test numeric(DimerKinetics, ()) == covered(:DimerKinetics)
+    @test numeric(BackgroundModel{Float64}, ()) == covered(:BackgroundModel)
+    @test numeric(Spot, ()) == covered(:Spot)
+    @test numeric(SpotExcitation, (:tan_cos, :tan_sin)) == covered(:SpotExcitation)
+    @test numeric(EvanescentExcitation, ()) == covered(:EvanescentExcitation)
+    @test covered(:SimWorld) == Set([:margin, :t0, :merge_radius])
+    @test covered(:step!) == Set([:t_a, :t_b])
+    @test length(cases) == 54
+
+    outcome(r) = r[1] === :ok ? "constructs" : "$(r[1]) $(r[2])"
+    nboth = 0                           # inputs both routes construct with (the stored values then compared)
+    bad = String[]                      # the failing inputs, named, so the test's failure message lists them
+    for c in cases, v in bigs
+        a, b = attempt(() -> c.mk(v)), attempt(() -> c.mk(Float64(v)))
+        what = "$(c.T) $(c.label), v = $(Float64(v)): BigFloat $(outcome(a)), Float64 $(outcome(b))"
+        if a[1] !== b[1] || a[1] === :error
+            push!(bad, what)
+        elseif a[1] === :ok ? !isequal(a[2], b[2]) : a[2] !== b[2]
+            push!(bad, what * " with different stored values")
+        end
+        nboth += a[1] === b[1] === :ok
+    end
+    for c in cases
+        c.fin && attempt(() -> c.mk(big"1e400"))[1] !== :throw && push!(bad, "$(c.T) $(c.label) accepts 1e400")
+        c.pos && attempt(() -> c.mk(big"1e-400"))[1] !== :throw && push!(bad, "$(c.T) $(c.label) accepts 1e-400")
+    end
+    @test bad == String[]
+    @test nboth >= 30
+
+    # ---- Codex's round-3 inputs, by name
+    @test_throws ArgumentError Population(density=1.0, multiplicity=0, fluor=GenericFluor(; γ=big"1e400", q=zeros(1, 1)),
+                                          psf=GaussianPSF(0.13))
+    @test_throws ArgumentError Population(density=0.0, birth_rate=1.0, budget=1.0, lifetime=Inf,
+                                          fluor=GenericFluor(; γ=big"1e-400", q=zeros(1, 1)), psf=GaussianPSF(0.13))
+    M = BigFloat(floatmax(Float64))
+    qM = [-M M/3 M/3 M/3; 1 -1 0 0; 1 0 -1 0; 1 0 0 -1]
+    @test_throws ArgumentError Population(density=1.0, multiplicity=0, fluor=GenericFluor(; γ=1000.0, q=qM), psf=GaussianPSF(0.13))
+    @test_throws ArgumentError Population(density=0.0, fluor=GenericFluor(; γ=1000.0, q=zeros(1, 1)), psf=GaussianPSF(big"1e-400"))
+end
+
 @testset "stepper/ctmc_state_limit" begin
     function cyc(n)
         q = zeros(n, n)
