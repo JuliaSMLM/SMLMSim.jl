@@ -34,7 +34,7 @@ For each frame:
 
 # Example
 ```julia
-fluor = GenericFluor(; γ=10000.0, q=[-10.0 10.0; 1e-1 -1e-1])
+fluor = GenericFluor(10000.0, [-10.0 10.0; 1e-1 -1e-1])
 photons = intensity_trace(fluor, 1000, 10.0)
 
 # With 5 second burn-in (pre-illumination before recording)
@@ -121,10 +121,11 @@ For each unique position in the input SMLD:
 ```julia
 camera = IdealCamera(1:128, 1:128, 0.1)
 pattern = Nmer2D()
-smld_true, _, _ = simulate(pattern=pattern, camera=camera)
+_, info = simulate(StaticSMLMConfig(); pattern=pattern, camera=camera)
+smld_true = info.smld_true
 
 # Add blinking kinetics
-fluor = GenericFluor(; γ=10000.0, q=[-10.0 10.0; 1e-1 -1e-1])
+fluor = GenericFluor(10000.0, [-10.0 10.0; 1e-1 -1e-1])
 smld_model = kinetic_model(smld_true, fluor, 1000, 10.0)
 
 # With 5 second burn-in to simulate pre-illumination

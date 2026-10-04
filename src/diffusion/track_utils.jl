@@ -131,10 +131,10 @@ Filter emitters by their state (monomer or dimer).
 # Example
 ```julia
 # Get only monomers
-monomer_smld = filter_by_state(smld, :monomer)
+monomer_smld = SMLMSim.InteractionDiffusion.filter_by_state(smld, :monomer)
 
 # Get only dimers
-dimer_smld = filter_by_state(smld, :dimer)
+dimer_smld = SMLMSim.InteractionDiffusion.filter_by_state(smld, :dimer)
 ```
 """
 function filter_by_state(smld::BasicSMLD{T, E}, state::Symbol) where {T, E <: AbstractDiffusingEmitter}

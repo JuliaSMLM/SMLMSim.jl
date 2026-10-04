@@ -116,7 +116,7 @@ The `simulate()` function handles this automatically with the `density` paramete
 ```julia
 # Simulate with 2 patterns per square micron
 smld_noisy, info = simulate(
-    density=2.0,
+    StaticSMLMConfig(density=2.0);
     pattern=Nmer2D(n=6, d=0.2)
 )
 ```
@@ -163,6 +163,7 @@ nmer3d = Nmer3D(n=8, d=0.1)
 rotate!(nmer3d, π/4, π/6, π/3)  # α, β, γ angles in radians
 
 # Rotate a 3D pattern using a rotation matrix
+θ = π/6
 R = [cos(θ) -sin(θ) 0; sin(θ) cos(θ) 0; 0 0 1]  # Z-axis rotation
 rotate!(nmer3d, R)
 ```
@@ -180,6 +181,7 @@ Example:
 ```julia
 # Create a custom 2D grid pattern
 mutable struct Grid2D <: Pattern2D
+    n::Int   # total number of points (every pattern needs n, x and y)
     nx::Int  # number of columns
     ny::Int  # number of rows
     dx::Float64  # column spacing
@@ -200,11 +202,11 @@ function Grid2D(; nx=3, ny=3, dx=0.1, dy=0.1)
         idx += 1
     end
     
-    return Grid2D(nx, ny, dx, dy, x, y)
+    return Grid2D(n, nx, ny, dx, dy, x, y)
 end
 
 # Use your custom pattern
 grid = Grid2D(nx=4, ny=3, dx=0.1, dy=0.15)
-smld_noisy, info = simulate(pattern=grid)
+smld_noisy, info = simulate(StaticSMLMConfig(); pattern=grid)
 ```
 

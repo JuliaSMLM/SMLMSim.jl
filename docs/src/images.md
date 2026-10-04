@@ -68,7 +68,7 @@ frame_image, frame_info = gen_image(info.smld_model, psf, 10;
 
 The `gen_images` function has the following signature:
 
-```julia
+```text
 gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> (Array{T, 3}, info) where T<:Real
 ```
 
@@ -82,7 +82,7 @@ gen_images(smld::SMLD, psf::AbstractPSF; kwargs...) -> (Array{T, 3}, info) where
 ```julia
 # Complete example with all available options
 images, img_info = gen_images(info.smld_model, psf;
-    dataset::Int=1,                # Dataset number to use from SMLD
+    dataset=1,                     # Dataset number to use from SMLD
     frames=nothing,                # Specific frames to generate (default: all frames)
     support=Inf,                   # PSF support region size in μm (Inf, scalar, or tuple)
     sampling=2,                    # Supersampling factor for PSF integration
@@ -158,10 +158,9 @@ You can specify all calibration parameters explicitly:
 
 ```julia
 camera_scmos = SCMOSCamera(
-    128, 128, 0.1;
+    128, 128, 0.1, 1.6;   # 1.6 e⁻ RMS read noise (positional)
     offset=100.0,      # 100 ADU dark level
     gain=0.5,          # 0.5 e⁻/ADU conversion
-    readnoise=1.6,     # 1.6 e⁻ RMS read noise
     qe=0.95            # 95% quantum efficiency
 )
 ```

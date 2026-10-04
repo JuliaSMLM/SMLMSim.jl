@@ -16,6 +16,8 @@ visualizing particle dynamics.
 
 # Examples
 ```julia
+using MicroscopePSFs  # for GaussianPSF
+
 # Set up simulation parameters
 params = DiffusionSMLMConfig(
     density = 0.5,            # molecules per μm²
@@ -31,12 +33,12 @@ params = DiffusionSMLMConfig(
     camera_exposure = 0.04    # s
 )
 
-# Run simulation - returns a single SMLD with all emitters
-smld = simulate(params)
+# Run simulation - returns a single SMLD with all emitters, and a SimInfo
+smld, info = simulate(params)
 
 # Generate images for microscopy
 psf = GaussianPSF(0.15)  # 150nm PSF width
-images = gen_images(psf, smld)
+images, img_info = gen_images(smld, psf)
 
 # Analyze results
 dimer_smld = get_dimers(smld)
