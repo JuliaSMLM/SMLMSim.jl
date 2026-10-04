@@ -152,8 +152,11 @@ function _exit_to(rng::AbstractRNG, ps::PopState, s::Int)
     return UInt8(last)
 end
 
-# Advance emitter i over [t0 + τ0, t1): the event loop of one sub-step [t0, t1). An event at t1 belongs to the
-# next sub-step. Returns the photons emitted, whether the emitter is still present and whether it left by departure.
+# Advance emitter i over [t0 + τ0, t1): the event loop of one sub-step [t0, t1). An event belongs to the sub-step
+# exactly when its absolute time is < t1, so an event at t1 belongs to the next one; a bleach or exit is judged by
+# the time it will record, t0 + (τ + Δ). A pending event (budget or clock at or below 0, left by the sub-step end)
+# fires at the next sub-step's start whatever the excitation. Returns the photons emitted, whether the emitter is
+# still present and whether it left by departure.
 function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, τ0::Float64, excitation::E) where {E}
     rng = w.rng
     x, y, z = ps.x[i], ps.y[i], ps.z[i]
@@ -184,10 +187,10 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, 
         lit = s == 1 && m > 0
         tnow = t0 + τ
         λx = m == 0 ? 0.0 : (s == 1 ? ps.exitrate[1] * I : ps.exitrate[s])
-        tx = λx > 0 ? clock / λx : Inf
+        tx = m == 0 ? Inf : (clock <= 0 ? 0.0 : (λx > 0 ? clock / λx : Inf))
         ρe = lit ? m * γi * I : 0.0
         (ρe < Inf && λx < Inf) || _bad_rate(ps.p.name, ρe, λx)
-        tbl = ρe > 0 ? budget / ρe : Inf
+        tbl = lit && budget <= 0 ? 0.0 : (ρe > 0 ? budget / ρe : Inf)
         tdp = tdep - tnow
         trem = t1 - tnow
         tsw = ts - tnow
@@ -195,38 +198,33 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, 
         bnd = phase == 1
         Δ0 = min(tx, tbl, tdp, trem, tsw, tbk)
         Δ = max(Δ0, 0.0)
+        te = t0 + (τ + Δ)              # where a bleach or an exit at Δ is recorded
         if Δ0 == tdp && tdep < t1      # departure inside [t0, t1)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             alive = false
             departed = true
             break
-        elseif Δ0 == trem              # the sub-step end: an event at t1 belongs to the next sub-step
-            e += ρe * Δ
-            tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
-            budget -= ρe * Δ
-            clock -= λx * Δ
-            break
-        elseif Δ0 == tbl               # bleach
+        elseif Δ0 == tbl && te < t1    # bleach
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             τ += Δ
             clock -= λx * Δ
             m -= Int32(1)
             if m == 0
-                tbf = t0 + τ
+                tbf = te
                 (dimers && ps.p.binds) || (alive = false; break)   # with dimers a bleached binder stays, dark
             else
                 budget = bmean * randexp(rng)
             end
-        elseif Δ0 == tx                # CTMC exit
+        elseif Δ0 == tx && te < t1     # CTMC exit
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             τ += Δ
             budget -= ρe * Δ
             s = Int(_exit_to(rng, ps, s))
             clock = randexp(rng)
-        elseif Δ0 == tsw               # declared switch
+        elseif Δ0 == tsw && ts < t1    # declared switch
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
@@ -234,13 +232,20 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, 
             τ = ts - t0
             I = _excite(excitation, x, y, z, ts)
             ts = _next_switch(excitation, ts)
-        else                           # bound breakpoint (Δ0 == tbk)
+        elseif Δ0 == tbk && (phase == 0 ? tform : tbrk) < t1   # bound breakpoint
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
             clock -= λx * Δ
             τ += Δ
             phase += 1
+        else                           # the sub-step end: no event with an absolute time < t1 is left
+            Δe = max(trem, 0.0)
+            e += ρe * Δe
+            tp += Δe; sI += I * Δe; lit && (tl += Δe); bnd && (tb += Δe; lit && (tlb += Δe))
+            budget -= ρe * Δe
+            clock -= λx * Δe
+            break
         end
     end
     ps.m[i] = m

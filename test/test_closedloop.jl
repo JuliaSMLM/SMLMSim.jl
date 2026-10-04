@@ -1286,3 +1286,235 @@ end
     @test all(r -> isnan(r.t_form), rows)
     @test count(r -> r.t_depart == 0.005, rows) == 1
 end
+
+# ---- 0.8.0 fix (Codex r2 on lane A): an event belongs to the sub-step that contains its absolute time ----
+
+# relative intensity 1 before `ts`, `hi` from `ts` on, a declared switch
+struct JumpExc
+    ts::Float64
+    hi::Float64
+end
+(e::JumpExc)(x::Float64, y::Float64, z::Float64, t::Float64) = t < e.ts ? 1.0 : e.hi
+SMLMSim.next_switch(e::JumpExc, t::Float64) = t < e.ts ? e.ts : Inf
+
+# The pairs (b, time) of a monotone time function `f` on the floats around b0: when some b gives exactly `te`, the
+# smallest such b; otherwise the largest b below and the smallest above, each with the time it gives, the nearest
+# attainable on each side of an unattainable target.
+function attain(f, b0, te; increasing=true)
+    up(b) = increasing ? nextfloat(b) : prevfloat(b)
+    down(b) = increasing ? prevfloat(b) : nextfloat(b)
+    b = b0
+    while f(b) < te
+        b = up(b)
+    end
+    while f(b) >= te
+        b = down(b)
+    end
+    hi = up(b)
+    f(hi) == te && return [(hi, te)]
+    return [(b, f(b)), (hi, f(hi))]
+end
+
+# the rows of the exposure so far, including the emitters still present, leaving the truth buffer as it was
+function truth_snapshot(w)
+    n = w.n_truth
+    _finish_truth!(w)
+    rows = copy(frame_truth(w))
+    w.n_truth = n
+    return rows
+end
+
+# the times at which the rows record an event of `kind` (a pair's two rows record one event)
+boundary_events(kind, rows) =
+    kind === :departure ? [r.t_depart for r in rows if !isnan(r.t_depart)] :
+    kind === :birth ? [r.t_birth for r in rows if !isnan(r.t_birth)] :
+    kind === :bleach || kind === :pending_bleach ? [r.t_bleach for r in rows if !isnan(r.t_bleach)] :
+    kind === :break ? unique([r.t_break for r in rows if !isnan(r.t_break)]) :
+    kind === :formation ? unique([r.t_form for r in rows if !isnan(r.t_form)]) : Float64[]
+
+# Two consecutive windows A = [a0, a1) and B = [a1, b1) of one emitter world, as sub-steps driven by hand inside the
+# frame [0, 0.01) (:interior) or as the frames A and B of step! (:frame), after one warm-up window ending at a0
+# (none with warm = false). `setup!(w, ps)` places the event after the warm-up. Returns the events recorded in A
+# and over A and B, the state of the emitter after each window and the photons of each.
+function boundary_run(mkworld, setup!, exc, kind, mode, win; warm=true, run_b=true)
+    a0, a1, b1 = win
+    w, ps = mkworld()
+    if mode === :interior
+        w.t_a, w.t_b = 0.0, 0.01
+        _begin_truth!(w)
+        warm && _substep!(w, 0.0, a0, exc, true)
+    else
+        warm && SMLMSim.step!(w, a0 - 0.01, a0, exc)
+    end
+    setup!(w, ps)
+    advance(t0, t1) = if mode === :interior
+        _substep!(w, t0, t1, exc, true)
+        truth_snapshot(w)
+    else
+        SMLMSim.step!(w, t0, t1, exc)
+        copy(frame_truth(w))
+    end
+    ph0 = mode === :interior && ps.n > 0 ? ps.sph[1] : 0.0
+    rowsA = advance(a0, a1)
+    evA = boundary_events(kind, rowsA)
+    stA = ps.n > 0 ? Int(ps.state[1]) : 0
+    phA = ps.n > 0 ? ps.sph[1] - ph0 : NaN
+    mA = isempty(rowsA) ? -1 : Int(rowsA[1].m)
+    run_b || return (; evA, stA, phA, mA)
+    ph1 = mode === :interior && ps.n > 0 ? ps.sph[1] : 0.0
+    rowsB = advance(a1, b1)
+    evT = mode === :interior ? boundary_events(kind, rowsB) : vcat(evA, boundary_events(kind, rowsB))
+    stB = ps.n > 0 ? Int(ps.state[1]) : 0
+    phB = ps.n > 0 ? ps.sph[1] - ph1 : NaN
+    mB = isempty(rowsB) ? -1 : Int(rowsB[1].m)
+    return (; evA, evT, stA, stB, phA, phB, mA, mB, rowsB)
+end
+
+# the photons of the emitter of ev_world over [w0, w1) with intensity 1 before te and hi from te on
+switch_photons(te, hi, w0, w1) =
+    te <= w0 ? 1000.0 * hi * (w1 - w0) : (te >= w1 ? 1000.0 * (w1 - w0) : 1000.0 * (te - w0) + 1000.0 * hi * (w1 - te))
+
+@testset "closedloop/boundary_events_property" begin
+    uex = UniformExcitation()
+    wins = Dict(:interior => (0.004, 0.006, 0.008), :frame => (0.01, 0.02, 0.03))
+    fwins = Dict(:interior => (0.004, 0.006, 0.008), :frame => (0.0, 0.01, 0.02))   # formation: a fresh world
+    bdk = DimerKinetics(k_on=Inf, r_react=0.01, k_off=1.0, D_rot=0.0, d_dimer=0.005)
+    ζ = randexp(copy(pair_world([bpop()], DimerKinetics(k_on=50.0, r_react=0.01, k_off=0.0, D_rot=0.0, d_dimer=0.005);
+                                n_sub=1).rng))
+    # recorded event: it takes effect in A exactly when te < a1, once, at te, inside the window that recorded it
+    function check_recorded(kind, mode, win, te, r)
+        a0, a1, b1 = win
+        took = !isempty(r.evA)
+        @test took == (te < a1)
+        if took
+            @test r.evA == [te]
+            @test a0 <= te < a1
+        end
+        if hasproperty(r, :evT)
+            @test length(r.evT) == 1
+            rec = only(r.evT)
+            (took || kind !== :bleach) && @test rec == te   # a deferred bleach is recomputed in B from the leftover budget
+            @test (took ? a0 <= rec < a1 : a1 <= rec < b1)
+            @test 0.0 <= rec < (mode === :interior ? 0.01 : b1)
+        end
+    end
+    for mode in (:interior, :frame)
+        win = wins[mode]
+        a0, a1, b1 = win
+        targets = (prevfloat(a1), a1, nextfloat(a1))
+        for te in targets
+            @testset "departure $mode $te" begin
+                r = boundary_run(() -> ev_world(), (w, ps) -> (ps.t_depart[1] = te; nothing), uex, :departure, mode, win)
+                check_recorded(:departure, mode, win, te, r)
+            end
+            @testset "birth $mode $te" begin
+                mk() = ev_world(lifetime=1e3, birth_rate=1e-9)
+                r = boundary_run(mk, (w, ps) -> (ps.n = 0; ps.t_next_birth = te; nothing), uex, :birth, mode, win)
+                check_recorded(:birth, mode, win, te, r)
+            end
+            @testset "switch $mode $te" begin
+                exc = JumpExc(te, 1e18)
+                r = boundary_run(() -> ev_world(), (w, ps) -> nothing, exc, :switch, mode, win)
+                @test r.phA ≈ switch_photons(te, 1e18, a0, a1) rtol = 1e-9
+                @test r.phB ≈ switch_photons(te, 1e18, a1, b1) rtol = 1e-9
+                @test (r.phA > 100) == (te < a1)
+            end
+            @testset "break $mode $te" begin
+                mk() = (w = pair_world([bpop()], bdk; n_sub=1); (w, w.pops[1]))
+                function setup!(w, ps)
+                    @test ps.partner[1] == 2 && ps.partner[2] == 1
+                    ps.t_break_due[1] = te
+                    ps.t_break_due[2] = te
+                end
+                r = boundary_run(mk, setup!, uex, :break, mode, win)
+                check_recorded(:break, mode, win, te, r)
+            end
+            @testset "bleach $mode $te" begin
+                f(b) = a0 + (0.0 + b / 1000.0)
+                for (b, te′) in attain(f, 1000.0 * (te - a0), te)
+                    r = boundary_run(() -> ev_world(budget=1e6), (w, ps) -> (ps.budget[1] = b; nothing), uex, :bleach, mode, win)
+                    check_recorded(:bleach, mode, win, te′, r)
+                end
+            end
+            @testset "exit $mode $te" begin
+                f(c) = a0 + (0.0 + c / 1000.0)
+                for (c, te′) in attain(f, 1000.0 * (te - a0), te)
+                    mk() = ev_world(fluor=two_state(1000.0, 1000.0, 1e-9))
+                    r = boundary_run(mk, (w, ps) -> (ps.state[1] = 1; ps.clock[1] = c; nothing), uex, :exit, mode, win)
+                    @test r.stA == (te′ < a1 ? 2 : 1)
+                    @test r.stB == 2
+                end
+            end
+        end
+        # formation: a fresh world, whose first draw of the sub-step is E
+        fw = fwins[mode]
+        for te in (prevfloat(fw[2]), fw[2], nextfloat(fw[2]))
+            @testset "formation $mode $te" begin
+                f(k) = fw[1] + ζ / k
+                for (k, te′) in attain(f, ζ / (te - fw[1]), te; increasing=false)
+                    dk = DimerKinetics(k_on=k, r_react=0.01, k_off=0.0, D_rot=0.0, d_dimer=0.005)
+                    mk() = (w = pair_world([bpop()], dk; n_sub=1); (w, w.pops[1]))
+                    r = boundary_run(mk, (w, ps) -> nothing, uex, :formation, mode, fw; warm=false, run_b=false)
+                    took = !isempty(r.evA)
+                    @test took == (te′ < fw[2])
+                    took && @test r.evA == [te′]
+                end
+            end
+        end
+        # the bleach and the state-1 exit left pending by a sub-step that ends at a1 fire at a1 when the excitation
+        # is 0 from a1 on
+        @testset "pending at zero excitation $mode" begin
+            exc = JumpExc(a1, 0.0)
+            f(b) = a0 + (0.0 + b / 1000.0)
+            (b, te′), = attain(f, 1000.0 * (a1 - a0), a1)
+            @test te′ == a1
+            r = boundary_run(() -> ev_world(budget=1e6), (w, ps) -> (ps.budget[1] = b; nothing), exc, :pending_bleach, mode, win)
+            @test isempty(r.evA) && r.mA == 1
+            @test r.evT == [a1]
+            @test r.mB == 0
+            mk() = ev_world(fluor=two_state(1000.0, 1000.0, 1e-9))
+            r = boundary_run(mk, (w, ps) -> (ps.state[1] = 1; ps.clock[1] = b; nothing), exc, :exit, mode, win)
+            @test r.stA == 1
+            @test r.stB == 2
+        end
+    end
+    # Codex's three cases
+    @testset "three sub-steps, budget 10: the bleach at 0.01 is frame 2's" begin
+        w, ps = ev_world(n_sub=3, budget=1e6)
+        ps.budget[1] = 10.0
+        SMLMSim.step!(w, 0.0, 0.01)
+        r = only(frame_truth(w))
+        @test r.m == 1 && isnan(r.t_bleach)
+        SMLMSim.step!(w, 0.01, 0.02)
+        r = only(frame_truth(w))
+        @test r.m == 0
+        @test r.t_bleach == 0.01
+    end
+    @testset "eight sub-steps over [0.03, 0.04), the budget of exactly that exposure" begin
+        pop = Population(density=0.0, fluor=one_state(1000.0), psf=GaussianPSF(0.05), budget=1e6)
+        w = SimWorld(StableRNG(1), cam32(), [pop]; n_sub=8, margin=0.0, t0=0.03)
+        ps = w.pops[1]
+        _add_emitter!(w, ps, 0.03)
+        place!(ps, [1.6], [1.6])
+        ps.budget[1] = 1000 * (0.04 - 0.03)
+        SMLMSim.step!(w, 0.03, 0.04)
+        r = only(frame_truth(w))
+        @test r.m == 1 && isnan(r.t_bleach)
+        SMLMSim.step!(w, 0.04, 0.05)
+        r = only(frame_truth(w))
+        @test r.m == 0
+        @test 0.04 <= r.t_bleach < 0.05
+    end
+    @testset "a spot that switches off at 0.01 leaves the bleach pending" begin
+        spot = Spot(x=1.6, y=1.6, σ=0.5, gain=1.0, z_R=Inf, t_off=0.01)
+        sexc = SpotExcitation(base=0.0, spots=[spot])
+        w, ps = ev_world(n_sub=1, budget=1e6)
+        ps.budget[1] = 10.0
+        SMLMSim.step!(w, 0.0, 0.01, sexc)
+        @test only(frame_truth(w)).m == 1
+        SMLMSim.step!(w, 0.01, 0.02, sexc)
+        r = only(frame_truth(w))
+        @test r.m == 0
+        @test r.t_bleach == 0.01
+    end
+end

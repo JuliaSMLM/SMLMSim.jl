@@ -147,6 +147,9 @@ function _try_pair!(w::SimWorld, e1::Int, e2::Int, t0::Float64, t1::Float64)
     rng = w.rng
     E = dk.k_on == Inf ? 0.0 : randexp(rng) / dk.k_on
     tform = t0 + E
+    # Formation is a Poisson hazard while in contact, drawn fresh at each sub-step's contact test, not stored state:
+    # a draw at or after t1 is discarded, and the next sub-step tests contact at t1 and draws again, which is exact
+    # in law by memorylessness (and a draw exactly at t1 has probability 0).
     tform < t1 || return nothing
     (A.t_depart[ia] <= tform || B.t_depart[ib] <= tform) && return nothing
     _place_pair!(w, A, ia, B, ib, dk.d_dimer)
