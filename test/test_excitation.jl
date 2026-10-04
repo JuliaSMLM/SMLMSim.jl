@@ -234,9 +234,10 @@ end
     @test next_switch(SpotExcitation(; spots=[mk(t_off=0.7)]), 0.7) == Inf
     @test next_switch(SpotExcitation(; spots=[mk(t_off=0.7)]), 0.6) == 0.7
     @test next_switch(SpotExcitation(; spots=[mk(t_on=-Inf, t_off=Inf)]), -Inf) == Inf
-    # the allocation-free loop
-    next_switch(e, 0.0)
-    @test (@allocated next_switch(e, 0.1)) == 0
+    # the allocation-free loop (measured inside a function: at top level of a testset Julia 1.10 boxes the result)
+    ns_alloc(e, t) = @allocated next_switch(e, t)
+    ns_alloc(e, 0.1)
+    @test ns_alloc(e, 0.1) == 0
 end
 
 @testset "closedloop/spot_zero_alloc" begin
