@@ -85,9 +85,10 @@ A spot adds `gain (σ/s)² exp(-r²/(2s²))` with `s = σ √(1 + (z/z_R)²)`, s
 about 4 at `z = 0.75` μm. `z_R = Inf` is a z-independent column. A spot contributes only for
 `t_on <= t < t_off`, and [`next_switch`](@ref) returns the next such time, so a spot that switches inside an
 exposure acts from its exact time, not from the next sub-step. An emitter of one label (`multiplicity = 1`),
-one state, no bleach and `brightness_jitter = 0`, at the centre of a spot (in focus, or with `z_R = Inf`) that is on
-from `t_on` through `t_b`, emits `γ · gain · (t_b - t_on)` more photons in an exposure the spot turns on in; a
-blink or a bleach while the spot is on reduces it.
+one state, no bleach, `brightness_jitter = 0` and `brightness_sigma = 0` (or read `γ` as that emitter's own `γ_i`), at
+the centre of a spot (in focus, or with `z_R = Inf` and `f_evan = 0`) that is on from `t_on` through `t_b`, emits
+`γ · gain · (t_b - t_on)` more photons in an exposure the spot turns on in; a blink or a bleach while the spot is on
+reduces it.
 The baseline `base` is always on. A warning at construction names a spot whose `z_R` is more than 2x from
 `π (2σ)² n/λ`.
 
