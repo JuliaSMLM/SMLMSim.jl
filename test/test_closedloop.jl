@@ -952,11 +952,11 @@ end
 SMLMSim.next_switch(e::SwitchExc, t::Float64) = e.declared && t < e.ts ? e.ts : Inf
 
 # a world of one immobile one_state(1000.0) emitter at (1.6, 1.6); `kw` goes to the Population
-function ev_world(; n_sub=1, boundary=:reflecting, fluor=one_state(1000.0), kw...)
+function ev_world(; n_sub=1, boundary=:reflecting, fluor=one_state(1000.0), t0=0.0, kw...)
     pop = Population(density=0.0, fluor=fluor, psf=GaussianPSF(0.05); kw...)
-    w = SimWorld(StableRNG(1), cam32(), [pop]; n_sub, margin=0.0, boundary)
+    w = SimWorld(StableRNG(1), cam32(), [pop]; n_sub, margin=0.0, boundary, t0)
     ps = w.pops[1]
-    _add_emitter!(w, ps, 0.0)
+    _add_emitter!(w, ps, t0)
     place!(ps, [1.6], [1.6])
     return w, ps
 end
@@ -1321,6 +1321,22 @@ function attain(f, b0, te; increasing=true)
     return [(b, f(b)), (hi, f(hi))]
 end
 
+# Every pair (b, f(b)) with f(b) == te among the 8 floats either side of the smallest such b (the parameter values
+# that map to one target time leave residuals of both signs); the nearest pairs around te when none attains it.
+function attain_all(f, b0, te; increasing=true, ulps=8)
+    base = attain(f, b0, te; increasing)
+    cand = [base[1][1]]
+    lo = hi = cand[1]
+    for _ in 1:ulps
+        lo = prevfloat(lo)
+        hi = nextfloat(hi)
+        pushfirst!(cand, lo)
+        push!(cand, hi)
+    end
+    exact = [(b, f(b)) for b in cand if f(b) == te]
+    return isempty(exact) ? base : exact
+end
+
 # the rows of the exposure so far, including the emitters still present, leaving the truth buffer as it was
 function truth_snapshot(w)
     n = w.n_truth
@@ -1399,7 +1415,7 @@ switch_photons(te, hi, w0, w1) =
         if hasproperty(r, :evT)
             @test length(r.evT) == 1
             rec = only(r.evT)
-            (took || kind !== :bleach) && @test rec == te   # a deferred bleach is recomputed in B from the leftover budget
+            (took || kind !== :bleach || te == a1) && @test rec == te   # a later bleach is recomputed in B from the leftover budget
             @test (took ? a0 <= rec < a1 : a1 <= rec < b1)
             @test 0.0 <= rec < (mode === :interior ? 0.01 : b1)
         end
@@ -1437,14 +1453,14 @@ switch_photons(te, hi, w0, w1) =
             end
             @testset "bleach $mode $te" begin
                 f(b) = a0 + (0.0 + b / 1000.0)
-                for (b, te′) in attain(f, 1000.0 * (te - a0), te)
+                for (b, te′) in attain_all(f, 1000.0 * (te - a0), te)
                     r = boundary_run(() -> ev_world(budget=1e6), (w, ps) -> (ps.budget[1] = b; nothing), uex, :bleach, mode, win)
                     check_recorded(:bleach, mode, win, te′, r)
                 end
             end
             @testset "exit $mode $te" begin
                 f(c) = a0 + (0.0 + c / 1000.0)
-                for (c, te′) in attain(f, 1000.0 * (te - a0), te)
+                for (c, te′) in attain_all(f, 1000.0 * (te - a0), te)
                     mk() = ev_world(fluor=two_state(1000.0, 1000.0, 1e-9))
                     r = boundary_run(mk, (w, ps) -> (ps.state[1] = 1; ps.clock[1] = c; nothing), uex, :exit, mode, win)
                     @test r.stA == (te′ < a1 ? 2 : 1)
@@ -1467,21 +1483,79 @@ switch_photons(te, hi, w0, w1) =
                 end
             end
         end
-        # the bleach and the state-1 exit left pending by a sub-step that ends at a1 fire at a1 when the excitation
-        # is 0 from a1 on
+        # a bleach or state-1 exit due at a time <= a1 is never lost when the excitation is 0 from a1 on: before a1 it
+        # fires in A, at exactly a1 it is left pending (budget or clock exactly 0) and fires at a1, after a1 it has a
+        # positive residual and does not fire while dark
         @testset "pending at zero excitation $mode" begin
             exc = JumpExc(a1, 0.0)
             f(b) = a0 + (0.0 + b / 1000.0)
-            (b, te′), = attain(f, 1000.0 * (a1 - a0), a1)
-            @test te′ == a1
-            r = boundary_run(() -> ev_world(budget=1e6), (w, ps) -> (ps.budget[1] = b; nothing), exc, :pending_bleach, mode, win)
-            @test isempty(r.evA) && r.mA == 1
-            @test r.evT == [a1]
-            @test r.mB == 0
-            mk() = ev_world(fluor=two_state(1000.0, 1000.0, 1e-9))
-            r = boundary_run(mk, (w, ps) -> (ps.state[1] = 1; ps.clock[1] = b; nothing), exc, :exit, mode, win)
-            @test r.stA == 1
-            @test r.stB == 2
+            for te in targets, (b, te′) in attain_all(f, 1000.0 * (te - a0), te)
+                r = boundary_run(() -> ev_world(budget=1e6), (w, ps) -> (ps.budget[1] = b; nothing), exc, :pending_bleach, mode, win)
+                if te′ < a1
+                    @test r.evA == [te′] && r.evT == [te′]
+                elseif te′ == a1
+                    @test isempty(r.evA) && r.mA == 1
+                    @test r.evT == [a1]
+                    @test r.mB == 0
+                else
+                    @test isempty(r.evT) && r.mB == 1
+                end
+                mk() = ev_world(fluor=two_state(1000.0, 1000.0, 1e-9))
+                r = boundary_run(mk, (w, ps) -> (ps.state[1] = 1; ps.clock[1] = b; nothing), exc, :exit, mode, win)
+                @test r.stA == (te′ < a1 ? 2 : 1)
+                @test r.stB == (te′ <= a1 ? 2 : 1)
+            end
+        end
+        # a bleach after an earlier event of the same sub-step (a dark-to-lit exit, so τ > 0), beside a departure:
+        # the earliest absolute time below a1 fires (ties: the departure), and a bleach due at a1 is pending
+        @testset "bleach after an exit, beside a departure $mode" begin
+            c0 = 1000.0 * 0.5 * (a1 - a0)
+            f(b) = a0 + (c0 / 1000.0 + b / 1000.0)
+            mk() = ev_world(fluor=two_state(1000.0, 1e-9, 1000.0), budget=1e6)
+            for tt in targets, td in targets, (b, tb) in attain_all(f, 1000.0 * (tt - a0) - c0, tt)
+                setup!(w, ps) = (ps.state[1] = 2; ps.clock[1] = c0; ps.budget[1] = b; ps.t_depart[1] = td; nothing)
+                rd = boundary_run(mk, setup!, uex, :departure, mode, win)
+                rb = boundary_run(mk, setup!, uex, :bleach, mode, win)
+                ev = td <= tb ? (td < a1 ? :departure : :none) : (tb < a1 ? :bleach : :none)
+                if ev === :departure
+                    @test rd.evA == [td] && rd.evT == [td] && isempty(rb.evT)
+                    @test a0 <= td < a1
+                elseif ev === :bleach
+                    @test rb.evA == [tb] && rb.evT == [tb] && isempty(rd.evT)
+                    @test a0 <= tb < a1
+                else
+                    @test isempty(rd.evA) && isempty(rb.evA) && rd.stA == 1    # present, lit, at the end of A
+                    if tb == a1                                   # pending: the first of the two at a1
+                        td == a1 ? (@test rd.evT == [a1] && isempty(rb.evT)) : (@test rb.evT == [a1] && isempty(rd.evT))
+                    end
+                end
+            end
+        end
+        # a state-1 exit after a declared switch, beside a bleach: the earliest below a1 fires (ties: the bleach),
+        # and a pending one fires at a1
+        @testset "exit after a switch, beside a bleach $mode" begin
+            ts = a0 + 0.5 * (a1 - a0)
+            exc = JumpExc(ts, 1.0)
+            f(c) = a0 + ((ts - a0) + max((c - 1000.0 * (ts - a0)) / 1000.0, 0.0))
+            mk() = ev_world(fluor=two_state(1000.0, 1000.0, 1e-9), budget=1e6)
+            for tt in targets, tbt in targets, (c, tx) in attain_all(f, 1000.0 * (tt - a0), tt), (b, tb) in attain_all(f, 1000.0 * (tbt - a0), tbt)
+                setup!(w, ps) = (ps.state[1] = 1; ps.clock[1] = c; ps.budget[1] = b; nothing)
+                r = boundary_run(mk, setup!, exc, :bleach, mode, win)
+                ev = min(tb, tx) < a1 ? (tb <= tx ? :bleach : :exit) : :none
+                if ev === :bleach
+                    @test r.evA == [tb] && r.evT == [tb] && r.stA == 0
+                    @test a0 <= tb < a1
+                elseif ev === :exit
+                    @test isempty(r.evT) && r.stA == 2 && r.stB == 2    # dark after the exit: the bleach is lost
+                else
+                    @test isempty(r.evA) && r.stA == 1 && r.mA == 1
+                    if tb == a1
+                        @test r.evT == [a1]
+                    elseif tx == a1
+                        @test isempty(r.evT) && r.stB == 2
+                    end
+                end
+            end
         end
     end
     # Codex's three cases
@@ -1522,5 +1596,58 @@ switch_photons(te, hi, w0, w1) =
         r = only(frame_truth(w))
         @test r.m == 0
         @test r.t_bleach == 0.01
+    end
+    # Codex's round-3 fixtures, one immobile emitter at one ulp of t
+    ulpfl = GenericFluor(; γ=1.0, q=[-1e-9 1e-9; 1.0 -1.0])
+    inside(w, rows) = all(r -> all(t -> isnan(t) || w.t_a <= t < w.t_b, (r.t_birth, r.t_bleach, r.t_depart, r.t_form, r.t_break)), rows)
+    @testset "a rejected bleach at t1 does not mask a departure at prevfloat(t1)" begin
+        t0 = 0.003
+        t1 = t0 + 0.01
+        w, ps = ev_world(n_sub=1, budget=1e6, fluor=ulpfl, t0=t0)
+        ps.state[1] = 2
+        ps.clock[1] = 0.006999999999999999
+        ps.budget[1] = 0.0030000000000000005
+        ps.t_depart[1] = prevfloat(t1)
+        SMLMSim.step!(w, t0, t1)
+        r = only(frame_truth(w))
+        @test r.t_depart == prevfloat(t1)
+        @test ps.n == 0
+        @test inside(w, frame_truth(w))
+        SMLMSim.step!(w, t1, t1 + 0.01)
+        @test isempty(frame_truth(w))
+    end
+    @testset "a bleach at a time below t1 is not deferred for a relative delay above the remainder" begin
+        (t0, t1, c, b) = (0.09738069177455938, 0.10192574722038701, 0.0041244712588255, 0.0004205841870021238)
+        w, ps = ev_world(n_sub=1, budget=1e6, fluor=ulpfl, t0=t0)
+        ps.state[1] = 2
+        ps.clock[1] = c
+        ps.budget[1] = b
+        SMLMSim.step!(w, t0, t1)
+        r = only(frame_truth(w))
+        @test t0 + (c + b) < t1
+        @test r.t_bleach == t0 + (c + b)
+        @test r.m == 0
+        @test inside(w, frame_truth(w))
+    end
+    @testset "a bleach or exit due at t1 survives a switch-off at t1" begin
+        spot = Spot(x=1.6, y=1.6, σ=0.5, gain=1.0, z_R=Inf, t_off=0.03)
+        sexc = SpotExcitation(base=0.0, spots=[spot])
+        w, ps = ev_world(n_sub=1, budget=1e6, t0=0.02)         # one-state, budget 10 at 1000/s: due at 0.02 + 0.01
+        ps.budget[1] = 10.0
+        SMLMSim.step!(w, 0.02, 0.03, sexc)
+        @test only(frame_truth(w)).m == 1
+        SMLMSim.step!(w, 0.03, 0.04, sexc)
+        r = only(frame_truth(w))
+        @test r.m == 0
+        @test r.t_bleach == 0.03
+        @test inside(w, frame_truth(w))
+        w, ps = ev_world(n_sub=1, fluor=GenericFluor(; γ=1000.0, q=[-100.0 100.0; 1e-12 -1e-12]), t0=0.02)
+        ps.state[1] = 1
+        ps.clock[1] = 1.0
+        SMLMSim.step!(w, 0.02, 0.03, sexc)
+        @test only(frame_truth(w)).lit == 1 && ps.state[1] == 1
+        SMLMSim.step!(w, 0.03, 0.04, sexc)
+        @test ps.state[1] == 2
+        @test only(frame_truth(w)).lit == 0
     end
 end

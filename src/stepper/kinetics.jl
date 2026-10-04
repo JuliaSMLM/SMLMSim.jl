@@ -152,11 +152,16 @@ function _exit_to(rng::AbstractRNG, ps::PopState, s::Int)
     return UInt8(last)
 end
 
-# Advance emitter i over [t0 + τ0, t1): the event loop of one sub-step [t0, t1). An event belongs to the sub-step
-# exactly when its absolute time is < t1, so an event at t1 belongs to the next one; a bleach or exit is judged by
-# the time it will record, t0 + (τ + Δ). A pending event (budget or clock at or below 0, left by the sub-step end)
-# fires at the next sub-step's start whatever the excitation. Returns the photons emitted, whether the emitter is
-# still present and whether it left by departure.
+# Advance emitter i over [t0 + τ0, t1): the event loop of one sub-step [t0, t1). Every candidate has a relative delay
+# from the current time t0 + τ and an absolute time: the departure `tdep`, the declared switch, the bound breakpoint,
+# a bleach (when lit) at t0 + (τ + max(delay, 0)) and an exit (when m > 0) likewise, the times they will record. The
+# event with the smallest absolute time fires, ties in the order departure, bleach, exit, switch, breakpoint, when that
+# time is < t1 (an event at t1 belongs to the next sub-step), and then with its own delay, not the smallest delay:
+# relative delays and absolute times round differently, and the absolute time decides. Otherwise the sub-step ends. A
+# pending event is one whose absolute time is exactly t1: the end branch sets its budget (bleach) or clock (exit) to
+# exactly 0, never to a rounding residual, and a budget or clock at or below 0 fires at the next sub-step's start
+# whatever the excitation. An event with an absolute time above t1 keeps its positive residual. Returns the photons
+# emitted, whether the emitter is still present and whether it left by departure.
 function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, τ0::Float64, excitation::E) where {E}
     rng = w.rng
     x, y, z = ps.x[i], ps.y[i], ps.z[i]
@@ -196,35 +201,46 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, 
         tsw = ts - tnow
         tbk = phase == 0 ? tform - tnow : (phase == 1 ? tbrk - tnow : Inf)
         bnd = phase == 1
-        Δ0 = min(tx, tbl, tdp, trem, tsw, tbk)
-        Δ = max(Δ0, 0.0)
-        te = t0 + (τ + Δ)              # where a bleach or an exit at Δ is recorded
-        if Δ0 == tdp && tdep < t1      # departure inside [t0, t1)
+        abl = lit ? t0 + (τ + max(tbl, 0.0)) : Inf       # absolute times of the candidates
+        axt = m > 0 ? t0 + (τ + max(tx, 0.0)) : Inf
+        abk = phase == 0 ? tform : (phase == 1 ? tbrk : Inf)
+        ev = 0                                            # the earliest below t1; 0: the sub-step end
+        tev = t1
+        tdep < tev && (ev = 1; tev = tdep)
+        abl < tev && (ev = 2; tev = abl)
+        axt < tev && (ev = 3; tev = axt)
+        ts < tev && (ev = 4; tev = ts)
+        abk < tev && (ev = 5; tev = abk)
+        if ev == 1                     # departure inside [t0, t1)
+            Δ = max(tdp, 0.0)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             alive = false
             departed = true
             break
-        elseif Δ0 == tbl && te < t1    # bleach
+        elseif ev == 2                 # bleach
+            Δ = max(tbl, 0.0)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             τ += Δ
             clock -= λx * Δ
             m -= Int32(1)
             if m == 0
-                tbf = te
+                tbf = abl
                 (dimers && ps.p.binds) || (alive = false; break)   # with dimers a bleached binder stays, dark
             else
                 budget = bmean * randexp(rng)
             end
-        elseif Δ0 == tx && te < t1     # CTMC exit
+        elseif ev == 3                 # CTMC exit
+            Δ = max(tx, 0.0)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             τ += Δ
             budget -= ρe * Δ
             s = Int(_exit_to(rng, ps, s))
             clock = randexp(rng)
-        elseif Δ0 == tsw && ts < t1    # declared switch
+        elseif ev == 4                 # declared switch
+            Δ = max(tsw, 0.0)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
@@ -232,7 +248,8 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, 
             τ = ts - t0
             I = _excite(excitation, x, y, z, ts)
             ts = _next_switch(excitation, ts)
-        elseif Δ0 == tbk && (phase == 0 ? tform : tbrk) < t1   # bound breakpoint
+        elseif ev == 5                 # bound breakpoint
+            Δ = max(tbk, 0.0)
             e += ρe * Δ
             tp += Δ; sI += I * Δ; lit && (tl += Δ); bnd && (tb += Δ; lit && (tlb += Δ))
             budget -= ρe * Δ
@@ -245,6 +262,8 @@ function _advance!(w::SimWorld, ps::PopState, i::Int, t0::Float64, t1::Float64, 
             tp += Δe; sI += I * Δe; lit && (tl += Δe); bnd && (tb += Δe; lit && (tlb += Δe))
             budget -= ρe * Δe
             clock -= λx * Δe
+            abl == t1 && (budget = 0.0)    # an event due exactly at t1 is pending: residual exactly 0
+            axt == t1 && (clock = 0.0)
             break
         end
     end
