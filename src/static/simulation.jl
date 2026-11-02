@@ -88,8 +88,8 @@ smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 - The field is the camera's full extent, from its first to its last pixel edge in x and in y.
   The sample continues past it: pattern centers are placed uniformly, at `params.density`
   patterns per μm², over the field widened on every side by the pattern's radius r (the largest
-  distance of a binding site from the pattern's center), and only binding sites that land on
-  the camera are kept. The emitter density on the camera is therefore flat to its edges, and a
+  distance of a binding site, or a line endpoint, from the pattern's center), and only binding
+  sites that land on the camera are kept. The emitter density on the camera is therefore flat to its edges, and a
   pattern of zero extent (`Nmer2D(n=1, d=0.0)`, `Nmer3D(n=1, d=0.0)`) is placed over the field
   itself. `info.n_patterns` counts the patterns with a binding site on the camera, before
   labeling (a pattern whose sites all get zero fluorophores still counts), and their ids run
@@ -101,6 +101,12 @@ smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
 - For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 - If `starting_conditions` is provided, it will be used instead of generating patterns, and labeling is not applied.
+  Emitters are grouped by `track_id`, including zero, in sorted id order, with output ids
+  unchanged. Only the first record's position is simulated. Repeated ids at different
+  positions warn once: each molecule needs its own `track_id`. Through 0.7.3 those later
+  positions were dropped silently.
+- Each `Line2D` or `Line3D` copy draws independent Poisson site counts and uniform positions
+  from the endpoints. Through 0.7.3 copies reused the template's sampled sites.
 - Labeling and molecule are separate concepts: labeling controls how many fluorophores per binding site,
   molecule controls the photophysics (blinking) of each fluorophore.
 """
@@ -287,3 +293,5 @@ end
 _pattern_radius(p::Pattern2D) = isempty(p.x) ? 0.0 : Float64(maximum(hypot.(p.x, p.y)))
 _pattern_radius(p::Pattern3D) = isempty(p.x) ? 0.0 :
     Float64(maximum(sqrt.(p.x .^ 2 .+ p.y .^ 2 .+ p.z .^ 2)))
+_pattern_radius(p::Line2D) = maximum(hypot(x, y) for (x, y) in p.endpoints)
+_pattern_radius(p::Line3D) = maximum(sqrt(x^2 + y^2 + z^2) for (x, y, z) in p.endpoints)

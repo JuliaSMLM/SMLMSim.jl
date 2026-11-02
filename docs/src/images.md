@@ -52,6 +52,10 @@ images, img_info = gen_images(info.smld_model, psf;
 
 The resulting `images` is a 3D array with dimensions `[height, width, frames]` that can be used for visualization or algorithm development.
 
+`dataset=1` selects the first dataset; pass another dataset number to render it separately.
+`img_info.n_photons_total` counts only emitters in that dataset and the requested frames.
+Through 0.7.3 the dataset keyword was ignored and all datasets were rendered together.
+
 ### Creating a Single Frame
 
 To generate an image for a specific frame:
@@ -151,6 +155,10 @@ The sCMOS noise model applies these transformations in order:
 3. **Read Noise**: Gaussian noise per pixel (amplifier/ADC noise)
 4. **Gain**: Converts electrons to ADU (e.g., 0.5 e⁻/ADU)
 5. **Offset**: Adds dark level baseline (e.g., 100 ADU)
+
+When `camera_noise=true` on an `SCMOSCamera`, `poisson_noise=true` is skipped because the
+camera model already draws shot noise. Through 0.7.3 setting both flags applied shot noise
+twice. For an `IdealCamera`, `poisson_noise` still controls shot noise.
 
 #### Advanced sCMOS Configuration
 

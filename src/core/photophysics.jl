@@ -46,6 +46,8 @@ photons = intensity_trace(fluor, 1000, 10.0; burn_in=5.0)
 - Emission only occurs in state 1 with rate f.γ
 - Frame exposure is assumed to be 1/framerate (100% duty cycle)
 - burn_in is useful for models with photobleaching to simulate pre-illumination
+- Through 0.7.3 a bleached molecule could hang when the final frame end rounded past the
+  CTMC's end time. A state with no transition left now holds through the frame end.
 """
 function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1, burn_in::Real=0.0)
     # Input validation
@@ -76,6 +78,7 @@ function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=
             currentstate = get_state(ctmc, t)
             (_, nexttime) = get_next(ctmc, t)
             tend = min(frameend, nexttime)
+            tend <= t && (tend = frameend)   # no transition left: the state holds to the frame end
             if currentstate == 1  # the fluorescent state
                 photons[nn] += f.γ * (tend - t)
             end
@@ -111,7 +114,12 @@ Generate kinetic blinking model from existing localization data.
 - `BasicSMLD`: New SMLD with simulated blinking kinetics
 
 # Details
-For each unique position in the input SMLD:
+Each `track_id`, including zero, identifies one molecule, using its first record. Molecules
+run in sorted id order and output ids are unchanged. Repeated ids at different positions warn
+once: only the first record's position is simulated, and each molecule needs its own
+`track_id`. Through 0.7.3 those later positions were dropped silently.
+
+For each molecule in the input SMLD:
 1. Simulates fluorophore blinking using the kinetic model
 2. Creates emitters for frames where photon count exceeds threshold
 3. Preserves track_id for linking emitters from same position
@@ -168,6 +176,12 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         key = e.track_id
         if !haskey(grouped_emitters, key)
             grouped_emitters[key] = e
+        else
+            first_emitter = grouped_emitters[key]
+            if e.x != first_emitter.x || e.y != first_emitter.y ||
+               (hasproperty(e, :z) && e.z != first_emitter.z)
+                @warn "kinetic_model: repeated track_id $key has records at different positions; only the first record's position is simulated; each molecule needs its own track_id" maxlog=1
+            end
         end
     end
 

@@ -102,6 +102,9 @@ The `intensity_trace` function:
 2. Integrates photon emission (rate γ) during ON states
 3. Accumulates photons within each frame's exposure time
 
+An absorbing state holds through the frame end. Through 0.7.3 a bleached molecule could hang
+when rounding placed the final frame end just past the CTMC's end time.
+
 ## Common Photophysical Models
 
 ### Two-State Model
@@ -152,6 +155,11 @@ smld_noisy, info = simulate(params; molecule=fluor, camera=camera)
 ```
 
 Behind the scenes, this uses the `kinetic_model()` function to apply the photophysical model to each emitter position.
+
+`kinetic_model` groups all records by `track_id`, including zero, in sorted id order, with
+output ids unchanged. Repeated ids at different positions warn once: only the first record's
+position is simulated, and each molecule needs its own `track_id`. Through 0.7.3 those later
+positions were dropped silently.
 
 ## Photophysical Parameters and Duty Cycle
 

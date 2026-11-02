@@ -79,6 +79,14 @@ smld_noisy, info = simulate(
 )
 ```
 
+### Custom Starting Conditions
+
+Emitters in `starting_conditions` are grouped by `track_id`, including zero, and simulated in
+sorted id order, with output ids unchanged. Only the first record's position is simulated.
+Repeated ids at different positions warn once: each molecule needs its own `track_id`.
+Through 0.7.3 those later positions were dropped silently. Labeling is not applied to
+starting conditions.
+
 ## Understanding Simulation Results
 
 The `simulate()` function returns a tuple `(smld_noisy, info::SimInfo)`:

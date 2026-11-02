@@ -100,7 +100,13 @@ end
 """
     analyze_dimer_fraction(smld::BasicSMLD)
 
-Calculate the fraction of dimers per frame.
+Calculate the exposure-averaged fraction of molecules bound in dimers per frame, in [0, 1].
+For each (frame, track_id), count the fraction of records with `state == :dimer`, then
+average those fractions over the tracks in each frame. Record order does not affect the
+result; only `frame`, `track_id`, and `state` are needed from each emitter.
+Through 0.7.3 the numerator counted sub-step records and divided by two, so the reported
+value depended on the number of sub-steps and could exceed 1; with one record per molecule
+it reported half the fraction of molecules bound.
 
 # Arguments
 - `smld::BasicSMLD`: SMLD containing all emitters
@@ -116,29 +122,24 @@ frames, fractions = analyze_dimer_fraction(smld)
 ```
 """
 function analyze_dimer_fraction(smld::BasicSMLD)
-    # Get all unique frame numbers
-    frames = sort(unique([e.frame for e in smld.emitters]))
-    
-    # Calculate dimer fraction for each frame
+    # Count bound and total records independently for every track in every frame.
+    by_frame = Dict{Int,Dict{Int,Tuple{Int,Int}}}()
+    for e in smld.emitters
+        tracks = get!(by_frame, e.frame) do
+            Dict{Int,Tuple{Int,Int}}()
+        end
+        n_bound, n_records = get(tracks, e.track_id, (0, 0))
+        tracks[e.track_id] = (n_bound + (e.state == :dimer), n_records + 1)
+    end
+
+    frames = sort!(collect(keys(by_frame)))
     fractions = Float64[]
     for frame in frames
-        # Get emitters in this frame
-        frame_emitters = filter(e -> e.frame == frame, smld.emitters)
-        
-        # Get unique molecule IDs (since dimers have two emitters)
-        unique_ids = unique([e.track_id for e in frame_emitters])
-        n_molecules = length(unique_ids)
-        
-        # Count dimers
-        dimer_emitters = filter(e -> e.state == :dimer, frame_emitters)
-        # Each dimer appears twice, so divide by 2
-        n_dimers = length(dimer_emitters) ÷ 2
-        
-        # Calculate fraction
-        fraction = n_molecules > 0 ? n_dimers / n_molecules : 0.0
-        push!(fractions, fraction)
+        tracks = by_frame[frame]
+        # Fix the summation order as well, so shuffled records give identical fractions.
+        ids = sort!(collect(keys(tracks)))
+        push!(fractions, mean(tracks[id][1] / tracks[id][2] for id in ids))
     end
-    
     return frames, fractions
 end
 

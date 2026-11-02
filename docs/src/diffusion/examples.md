@@ -197,7 +197,7 @@ params_unstable = DiffusionSMLMConfig(
 smld_stable, info_stable = simulate(params_stable)
 smld_unstable, info_unstable = simulate(params_unstable)
 
-# Analyze dimer formation
+# Analyze exposure-averaged fraction of molecules bound, in [0, 1]
 frames_stable, frac_stable = analyze_dimer_fraction(smld_stable)
 frames_unstable, frac_unstable = analyze_dimer_fraction(smld_unstable)
 

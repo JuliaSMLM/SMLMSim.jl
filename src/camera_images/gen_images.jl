@@ -10,7 +10,8 @@ Generate camera images from SMLD data using the specified PSF model.
 - `psf::AbstractPSF`: Point spread function model
 
 # Keyword arguments
-- `dataset::Int=1`: Dataset number to use from SMLD
+- `dataset::Int=1`: Dataset number to render; photon totals include only this dataset and the selected frames.
+  Through 0.7.3 this keyword was ignored and every dataset was rendered together.
 - `frames=nothing`: Specific frames to generate (default: all frames in smld.n_frames)
 - `support::Union{Real,Tuple{<:Real,<:Real,<:Real,<:Real}}=Inf`: PSF support region size:
   - `Inf` (default): Calculate PSF over the entire image (most accurate but slowest)
@@ -19,7 +20,9 @@ Generate camera images from SMLD data using the specified PSF model.
 - `sampling::Int=2`: Supersampling factor for PSF integration
 - `threaded::Bool=true`: Enable multithreading for faster computation
 - `bg::Float64=0.0`: Background signal level (photons per pixel)
-- `poisson_noise::Bool=false`: Apply Poisson noise only (for simple shot noise)
+- `poisson_noise::Bool=false`: Apply Poisson noise only (for simple shot noise).
+  Skipped when `camera_noise=true` on an SCMOSCamera, whose model already draws shot noise.
+  Through 0.7.3 setting both flags on an SCMOSCamera applied shot noise twice.
 - `camera_noise::Bool=false`: Apply full camera noise model (requires SCMOSCamera)
   - For SCMOSCamera: applies QE, Poisson, read noise, gain, and offset
   - For IdealCamera: ignored (use poisson_noise instead)
@@ -47,7 +50,7 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
     start_time = time_ns()
 
     # Filter for the specified dataset
-    dataset_smld = @filter(smld, dataset == dataset)
+    dataset_emitters = filter(e -> e.dataset == dataset, smld.emitters)
 
     # Determine frames to process
     if frames === nothing
@@ -61,10 +64,10 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
     height = length(camera.pixel_edges_y) - 1
 
     # Determine the element type from emitters (if any)
-    if isempty(dataset_smld.emitters)
+    if isempty(dataset_emitters)
         T = Float64 # default if no emitters
     else
-        T = typeof(dataset_smld.emitters[1].photons)
+        T = typeof(dataset_emitters[1].photons)
     end
 
     # Pre-allocate output array
@@ -76,7 +79,7 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
     # Process each frame individually
     for (i, frame_num) in enumerate(frames)
         # Filter emitters for this frame
-        frame_emitters = filter(e -> e.frame == frame_num, dataset_smld.emitters)
+        frame_emitters = filter(e -> e.frame == frame_num, dataset_emitters)
 
         # Add background to all images
         images[:,:,i] .+= bg
@@ -104,7 +107,7 @@ function gen_images(smld::SMLD, psf::AbstractPSF;
     end
 
     # Apply Poisson noise if requested
-    if poisson_noise
+    if poisson_noise && !(camera_noise && camera isa SCMOSCamera)
         # Loop through each pixel and apply Poisson noise
         for i in eachindex(images)
             # Apply Poisson noise directly

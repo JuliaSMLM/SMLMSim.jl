@@ -50,7 +50,7 @@ using SMLMSim
 
 # Set simulation parameters
 params = DiffusionSMLMConfig(
-    density = 0.5,        # molecules per μm²
+    density = 0.5,        # molecules per um² in 2D, per um³ in 3D
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s
@@ -66,6 +66,10 @@ smld, info = simulate(params)
 ```
 
 The `smld` output is a `BasicSMLD` structure containing all emitters across all time points, with each emitter having frame information corresponding to the camera settings. The `info` struct contains additional simulation metadata such as `info.elapsed_s`.
+
+`density` is molecules per um² in 2D or per um³ in 3D. The initial molecule count is
+`round(Int, density * box_size^ndims)`: density 1.0 in a box of side 5 um gives 25 molecules
+in 2D and 125 in 3D.
 
 ## Simulation Parameters
 
@@ -194,6 +198,13 @@ dimer_smld = get_dimers(smld)
 ### Analyzing Dimer Formation
 
 To quantify the formation of dimers over time:
+
+`analyze_dimer_fraction` returns the exposure-averaged fraction of molecules bound, in [0, 1].
+For each (frame, track_id), it counts the fraction of records with `state == :dimer`, then
+averages over tracks. Only `frame`, `track_id`, and `state` are needed, and record order does
+not affect the result. Through 0.7.3 it counted sub-step records divided by two, making the
+result depend on the number of sub-steps and allowing values above 1; with one record per
+molecule it returned half the bound fraction.
 
 ```julia
 # Calculate fraction of molecules in dimer state

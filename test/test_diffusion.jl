@@ -150,18 +150,9 @@ using SMLMSim, Test, Distributions, LinearAlgebra, Statistics, MicroscopePSFs, R
             @test length(frames) == length(fractions)
             @test length(frames) == 2  # Should have 2 frames
             
-            # Calculate expected fractions based on actual implementation behavior
-            # Looking at the actual values returned by the function:
-            # Frame 1: Value returned is 0.25
-            # Frame 2: Value returned is 0.33333...
-            
-            # After examining the code, we can see the calculation is:
-            # - Count molecules in dimers (4 for frame 1, 2 for frame 2)
-            # - Count total molecules (8 for frame 1, 6 for frame 2)
-            # - Calculate fraction: frame 1 = 2/8 = 0.25, frame 2 = 2/6 = 0.33333...
-            
-            @test isapprox(fractions[1], 0.25, atol=0.05)  # Match actual implementation
-            @test isapprox(fractions[2], 0.33333, atol=0.05)  # Match actual implementation
+            # Exposure-averaged fraction of molecules bound: 2 of 4, then 2 of 3.
+            @test fractions[1] == 0.5
+            @test fractions[2] ≈ 2 / 3
         end
         
         # Test analyze_dimer_lifetime function

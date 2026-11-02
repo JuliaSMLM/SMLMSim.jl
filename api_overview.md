@@ -76,7 +76,7 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 ```julia
 Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
-    density::Float64 = 1.0          # number density (molecules/μm²)
+    density::Float64 = 1.0          # molecules per um² in 2D, per um³ in 3D
     box_size::Float64 = 10.0        # simulation box size (μm)
     diff_monomer::Float64 = 0.1     # monomer diffusion coefficient (μm²/s)
     diff_dimer::Float64 = 0.05      # dimer diffusion coefficient (μm²/s)
@@ -114,6 +114,11 @@ end
 #### Line2D
 
 Points with uniform random distribution between two endpoints.
+
+Each copy placed by `uniform2D` or `simulate` draws an independent Poisson(λ × length)
+site count and uniform site positions from its endpoints. `Line3D` follows the same rule in
+3D. The stored coordinates are one sample for inspection. Through 0.7.3 copies reused that
+sample, rotated.
 
 ```julia
 mutable struct Line2D <: Pattern2D
@@ -405,6 +410,11 @@ println("Simulation took $(info.elapsed_s) seconds")
 
 Generate kinetic blinking model from existing localization data.
 
+Each `track_id`, including zero, uses its first record, in sorted id order, with output ids
+unchanged. Repeated ids at different positions warn once: only the first record's position is
+simulated, and each molecule needs its own `track_id`. Through 0.7.3 those later positions
+were dropped silently. Static `simulate` uses these same rules.
+
 ```julia
 # Example of how to call kinetic_model
 # First create or obtain the required inputs
@@ -449,6 +459,11 @@ smld_noisy_3d = apply_noise(smld_model_3d, [0.13, 0.13, 0.39])  # [x, y, z] widt
 
 Generate camera images from SMLD data using the specified PSF model.
 Returns a tuple: `(images, ImageInfo)`.
+
+Only the selected `dataset` and frames contribute to images and `info.n_photons_total`.
+Through 0.7.3 the dataset keyword was ignored and all datasets were rendered together.
+For an `SCMOSCamera` with `camera_noise=true`, the camera model already draws shot noise, so
+`poisson_noise=true` is skipped. Through 0.7.3 setting both flags applied shot noise twice.
 
 ```julia
 images, info = gen_images(
@@ -521,6 +536,12 @@ single_frame, info = gen_image(
 ### Analysis Functions
 
 #### Diffusion Analysis
+
+`analyze_dimer_fraction` is the exposure-averaged fraction of molecules bound in each frame,
+in [0, 1]. It counts the fraction of bound records for each (frame, track_id), then averages
+over tracks. It needs only `frame`, `track_id`, and `state` and is independent of record order.
+Through 0.7.3 it counted sub-step records divided by two, so its value depended on the number
+of sub-steps and could exceed 1; with one record per molecule it returned half the bound fraction.
 
 ```julia
 # Example usage of diffusion analysis functions

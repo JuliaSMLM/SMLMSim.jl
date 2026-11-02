@@ -22,7 +22,7 @@ using Distributions
 # Import directly from Core module instead of main package
 import ..Core: Pattern, Pattern2D, Pattern3D, uniform2D, uniform3D
 import ..Core: Molecule, GenericFluor, kinetic_model
-import ..Core: Nmer2D, Nmer3D
+import ..Core: Nmer2D, Nmer3D, Line2D, Line3D
 import ..Core: SMLMSimParams
 import ..Core: AbstractLabeling, FixedLabeling, PoissonLabeling, BinomialLabeling
 import ..Core: n_fluorophores, apply_labeling

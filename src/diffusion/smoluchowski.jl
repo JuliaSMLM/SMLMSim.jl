@@ -4,7 +4,7 @@
 Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 # Fields
-- `density::Float64`: number density (molecules/μm²)
+- `density::Float64`: number density (molecules/um² in 2D, molecules/um³ in 3D)
 - `box_size::Float64`: simulation box size (μm)
 - `diff_monomer::Float64`: monomer diffusion coefficient (μm²/s)
 - `diff_dimer::Float64`: dimer diffusion coefficient (μm²/s)
@@ -84,8 +84,8 @@ params = DiffusionSMLMConfig()
 
 # Custom parameters
 params = DiffusionSMLMConfig(
-    density = 1.0,           # 1 molecule per μm²
-    box_size = 20.0,         # 20μm × 20μm box
+    density = 1.0,           # 1 molecule per um³ in this 3D example (per um² in 2D)
+    box_size = 20.0,         # 20um × 20um × 20um box
     diff_monomer = 0.2,      # 0.2 μm²/s
     diff_dimer = 0.1,        # 0.1 μm²/s
     diff_dimer_rot = 0.8,    # 0.8 rad²/s
