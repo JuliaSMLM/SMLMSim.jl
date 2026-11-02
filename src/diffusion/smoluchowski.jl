@@ -604,7 +604,9 @@ with emitters that have both frame number and timestamp information.
   `γ` throws `ArgumentError`.
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 - `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model (default: IdealCamera with 100nm pixels)
-  - If `nothing`, creates IdealCamera with dimensions matching box_size
+  - If `nothing`, creates an IdealCamera of 100 nm pixels, the fewest that cover the box (a box
+    within a relative 1e-6 of a whole number of pixels, as Float64 or Float32 rounding leaves
+    it, gets exactly that many)
   - Can specify SCMOSCamera for realistic noise modeling
 - Any additional parameters are ignored (allows unified interface with other simulate methods)
 
@@ -673,10 +675,14 @@ function simulate(params::DiffusionSMLMConfig;
         n_frames = 1
     end
 
-    # Create camera if not provided
+    # Create camera if not provided: the fewest 100 nm pixels that cover the box. A box within a
+    # relative 1e-6 of a whole number of pixels, as rounding leaves it (box_size = 24 * 0.1 is
+    # 24.000000000000004 pixels; 16 * 0.1f0 is 16.00000024 pixels), gets exactly that many;
+    # through 0.7.2 it got one more, which no molecule could reach.
     if camera === nothing
         pixel_size = 0.1  # 100nm pixels
-        n_pixels = ceil(Int, params.box_size / pixel_size)
+        r = params.box_size / pixel_size
+        n_pixels = isapprox(r, round(r); rtol=1e-6) ? round(Int, r) : ceil(Int, r)
         camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
     end
 

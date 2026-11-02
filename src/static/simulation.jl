@@ -85,6 +85,13 @@ custom_emitters = [
 smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 ```
 # Note
+- Pattern centers are placed uniformly over the camera's full extent, from its first to its
+  last pixel edge in x and in y, at `params.density` patterns per μm² of that area. Through
+  0.7.2 the field was the span of the pixel centers, starting at 0: one pixel short in x and in
+  y, so the last pixel row and column held no pattern center. Seeded runs differ from 0.7.2.
+- The binding sites of a pattern centered near an edge can fall outside the camera, so for a
+  pattern of radius r the emitter density on the camera is lower within r of each edge (a point
+  pattern, `Nmer2D(n=1, d=0.0)`, has none of this).
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
 - For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 - If `starting_conditions` is provided, it will be used instead of generating patterns, and labeling is not applied.
@@ -140,13 +147,16 @@ function simulate(params::StaticSMLMConfig;
             pattern = params.ndims == 3 ? Nmer3D() : Nmer2D()
         end
 
-        # Get field size in microns from camera
-        centers_x, centers_y = get_pixel_centers(camera)
-        field_x = maximum(centers_x) - minimum(centers_x)
-        field_y = maximum(centers_y) - minimum(centers_y)
+        # The field is the camera's full extent, from its first to its last pixel edge
+        # (SMLMData's pixel-edge convention), so every pixel, the last row and column
+        # included, can hold a pattern center.
+        x_origin = Float64(first(camera.pixel_edges_x))
+        y_origin = Float64(first(camera.pixel_edges_y))
+        field_x = Float64(last(camera.pixel_edges_x)) - x_origin
+        field_y = Float64(last(camera.pixel_edges_y)) - y_origin
 
-        # Generate binding site coordinates based on pattern type
-        # uniform2D/uniform3D now return pattern_ids as well
+        # Generate binding site coordinates based on pattern type, with pattern centers in
+        # [0, field], then shift them to the camera's origin
         coords_with_ids = if pattern isa Pattern2D
             x, y, pattern_ids = uniform2D(params.density, pattern, field_x, field_y)
             ((x, y), pattern_ids)
@@ -155,6 +165,8 @@ function simulate(params::StaticSMLMConfig;
             ((x, y, z), pattern_ids)
         end
         coords, pattern_ids = coords_with_ids
+        coords[1] .+= x_origin
+        coords[2] .+= y_origin
 
         # Count patterns before labeling expands them
         n_patterns = length(unique(pattern_ids))
