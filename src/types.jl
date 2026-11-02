@@ -17,7 +17,8 @@ Metadata and intermediate results from simulation functions.
 - `seed::Union{UInt64, Nothing}`: RNG seed for reproducibility (if applicable)
 - `smld_true::Union{BasicSMLD, Nothing}`: Ground truth positions (static simulation only)
 - `smld_model::Union{BasicSMLD, Nothing}`: After kinetic model (static simulation only)
-- `n_patterns::Int`: Number of spatial patterns generated
+- `n_patterns::Int`: Number of spatial patterns: for the static simulation, those with a binding
+  site on the camera, counted before labeling
 - `n_emitters::Int`: Total emitters simulated
 - `n_localizations::Int`: Total localizations generated
 - `n_frames::Int`: Number of frames in simulation

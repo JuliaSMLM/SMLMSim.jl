@@ -604,8 +604,13 @@ with emitters that have both frame number and timestamp information.
   `γ` throws `ArgumentError`.
 - `override_count::Union{Nothing, Int}=nothing`: Optional override for the number of molecules
 - `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model (default: IdealCamera with 100nm pixels)
-  - If `nothing`, creates IdealCamera with dimensions matching box_size
+  - If `nothing`, creates an IdealCamera of 100 nm pixels, the fewest that cover the box (a box
+    within a relative 1e-6 of a whole number of pixels, as Float64 or Float32 rounding leaves
+    it, gets exactly that many)
   - Can specify SCMOSCamera for realistic noise modeling
+  - The box [0, box_size] in each dimension is the sample, and a camera is a view into it: a
+    camera smaller than the box sees molecules diffuse in and out of view, and pixels of a camera
+    that lie outside the box can never hold a molecule (`simulate` warns once, naming them)
 - Any additional parameters are ignored (allows unified interface with other simulate methods)
 
 # Warnings
@@ -613,7 +618,8 @@ Each warns once and then runs with the stated rule: `camera_exposure` or the fra
 integer multiple of `dt` (rounded to the nearest step count), `camera_exposure` longer than the
 frame period (capped at the frame period), `t_max` under one frame period (one frame is
 simulated), Vector `starting_conditions` with repeated track_id (latest record per track),
-and dimers without a matching partner (converted to monomers).
+dimers without a matching partner (converted to monomers), and a passed camera that reaches
+outside the box (its pixels outside the box stay empty).
 
 # Returns
 - `Tuple{BasicSMLD, SimInfo}`: (smld, info)
@@ -673,11 +679,17 @@ function simulate(params::DiffusionSMLMConfig;
         n_frames = 1
     end
 
-    # Create camera if not provided
+    # Create camera if not provided: the fewest 100 nm pixels that cover the box. A box within a
+    # relative 1e-6 of a whole number of pixels, as rounding leaves it (box_size = 24 * 0.1 is
+    # 24.000000000000004 pixels; 16 * 0.1f0 is 16.00000024 pixels), gets exactly that many;
+    # through 0.7.2 it got one more, which no molecule could reach.
     if camera === nothing
         pixel_size = 0.1  # 100nm pixels
-        n_pixels = ceil(Int, params.box_size / pixel_size)
+        r = params.box_size / pixel_size
+        n_pixels = isapprox(r, round(r); rtol=1e-6) ? round(Int, r) : ceil(Int, r)
         camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
+    else
+        _warn_camera_outside_box(camera, params.box_size)
     end
 
     # Initialize emitters
@@ -1032,4 +1044,41 @@ end
 function extract_final_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingEmitter}
     Base.depwarn("extract_final_state is deprecated and will be removed in 0.8.0; use extract_end_state(smld), which returns the exact end state as an SMLD and carries each track's D", :extract_final_state; force=true)
     return _last_frame_latest(smld.emitters)
+end
+
+# Contiguous runs of sorted indices as text: [1, 2, 3, 7] -> "1-3, 7". Internal.
+function _index_runs(v::Vector{Int})
+    runs = String[]
+    i = 1
+    while i <= length(v)
+        j = i
+        while j < length(v) && v[j+1] == v[j] + 1
+            j += 1
+        end
+        push!(runs, i == j ? string(v[i]) : "$(v[i])-$(v[j])")
+        i = j + 1
+    end
+    return join(runs, ", ")
+end
+
+# A passed camera is a view into the box [0, box] (the sample). Warn once when part of it lies
+# outside the box, naming the pixel columns and rows wholly outside (they can never hold a
+# molecule) and those partly outside. Edges within a relative 1e-6 of the box count as on it,
+# the tolerance the default camera is built with. Internal.
+function _warn_camera_outside_box(camera::AbstractCamera, box::Real)
+    tol = 1e-6 * box
+    lo, hi = -tol, box + tol
+    ex, ey = camera.pixel_edges_x, camera.pixel_edges_y
+    first(ex) >= lo && last(ex) <= hi && first(ey) >= lo && last(ey) <= hi && return nothing
+    outside(e) = [i for i in 1:length(e)-1 if e[i+1] <= tol || e[i] >= box - tol]
+    partly(e) = [i for i in 1:length(e)-1 if !(e[i+1] <= tol || e[i] >= box - tol) && (e[i] < lo || e[i+1] > hi)]
+    describe(kind, v) = isempty(v) ? nothing : "$kind $(_index_runs(v))"
+    whole = filter(!isnothing, [describe("columns", outside(ex)), describe("rows", outside(ey))])
+    part = filter(!isnothing, [describe("columns", partly(ex)), describe("rows", partly(ey))])
+    msg = "the camera spans x $(first(ex)) to $(last(ex)) μm and y $(first(ey)) to $(last(ey)) μm, " *
+          "but molecules live only in the box, 0 to $box μm"
+    isempty(whole) || (msg *= "; pixel " * join(whole, " and ") * " lie wholly outside it and can never hold a molecule")
+    isempty(part) || (msg *= "; pixel " * join(part, " and ") * " lie partly outside it")
+    @warn msg maxlog=1
+    return nothing
 end

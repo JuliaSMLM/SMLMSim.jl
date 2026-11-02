@@ -85,6 +85,19 @@ custom_emitters = [
 smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 ```
 # Note
+- The field is the camera's full extent, from its first to its last pixel edge in x and in y.
+  The sample continues past it: pattern centers are placed uniformly, at `params.density`
+  patterns per μm², over the field widened on every side by the pattern's radius r (the largest
+  distance of a binding site from the pattern's center), and only binding sites that land on
+  the camera are kept. The emitter density on the camera is therefore flat to its edges, and a
+  pattern of zero extent (`Nmer2D(n=1, d=0.0)`, `Nmer3D(n=1, d=0.0)`) is placed over the field
+  itself. `info.n_patterns` counts the patterns with a binding site on the camera, before
+  labeling (a pattern whose sites all get zero fluorophores still counts), and their ids run
+  1, 2, ....
+- Through 0.7.2 the field was the span of the pixel centers, starting at 0: one pixel short in
+  x and in y, so the last pixel row and column held no pattern center; and binding sites of a
+  pattern centered near an edge were kept off the camera, with none coming in from outside it,
+  so the density was lower within r of each edge. Seeded runs differ from 0.7.2.
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
 - For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 - If `starting_conditions` is provided, it will be used instead of generating patterns, and labeling is not applied.
@@ -140,13 +153,23 @@ function simulate(params::StaticSMLMConfig;
             pattern = params.ndims == 3 ? Nmer3D() : Nmer2D()
         end
 
-        # Get field size in microns from camera
-        centers_x, centers_y = get_pixel_centers(camera)
-        field_x = maximum(centers_x) - minimum(centers_x)
-        field_y = maximum(centers_y) - minimum(centers_y)
+        # The camera's full extent, from its first to its last pixel edge (SMLMData's
+        # pixel-edge convention)
+        x_lo, x_hi = Float64(first(camera.pixel_edges_x)), Float64(last(camera.pixel_edges_x))
+        y_lo, y_hi = Float64(first(camera.pixel_edges_y)), Float64(last(camera.pixel_edges_y))
 
-        # Generate binding site coordinates based on pattern type
-        # uniform2D/uniform3D now return pattern_ids as well
+        # The sample continues past the camera: pattern centers are drawn over the extent
+        # widened on every side by the pattern's radius r, so every center that can put a
+        # binding site on the camera is drawn, and only sites that land on the camera are kept.
+        # The emitter density is then flat to the edge. A pattern of zero extent (r = 0) is
+        # drawn over the extent itself and keeps every site.
+        r = _pattern_radius(pattern)
+        x_origin, y_origin = x_lo - r, y_lo - r
+        field_x = (x_hi - x_lo) + 2r
+        field_y = (y_hi - y_lo) + 2r
+
+        # Generate binding site coordinates based on pattern type, with pattern centers in
+        # [0, field], then shift them to the widened field's origin
         coords_with_ids = if pattern isa Pattern2D
             x, y, pattern_ids = uniform2D(params.density, pattern, field_x, field_y)
             ((x, y), pattern_ids)
@@ -155,8 +178,19 @@ function simulate(params::StaticSMLMConfig;
             ((x, y, z), pattern_ids)
         end
         coords, pattern_ids = coords_with_ids
+        coords[1] .+= x_origin
+        coords[2] .+= y_origin
 
-        # Count patterns before labeling expands them
+        if r > 0
+            # Keep the binding sites on the camera, and number the patterns that kept one 1, 2, ...
+            keep = [x_lo <= coords[1][i] <= x_hi && y_lo <= coords[2][i] <= y_hi
+                    for i in eachindex(pattern_ids)]
+            coords = map(c -> c[keep], coords)
+            renumber = Dict{Int,Int}()
+            pattern_ids = [get!(renumber, id, length(renumber) + 1) for id in pattern_ids[keep]]
+        end
+
+        # Count patterns (those with a binding site on the camera) before labeling expands them
         n_patterns = length(unique(pattern_ids))
 
         # Apply labeling to expand binding sites to fluorophore positions
@@ -246,3 +280,10 @@ function simulate(params::StaticSMLMConfig;
 
     return smld_noisy, info
 end
+
+# The largest distance of a pattern's binding sites from its center, the point uniform2D and
+# uniform3D place it at and rotate it about (0 for a point pattern). A 3D pattern is rotated in
+# 3D, so its full 3D distance bounds how far a site can reach sideways. Internal.
+_pattern_radius(p::Pattern2D) = isempty(p.x) ? 0.0 : Float64(maximum(hypot.(p.x, p.y)))
+_pattern_radius(p::Pattern3D) = isempty(p.x) ? 0.0 :
+    Float64(maximum(sqrt.(p.x .^ 2 .+ p.y .^ 2 .+ p.z .^ 2)))

@@ -131,10 +131,7 @@ params = DiffusionSMLMConfig(
 # Run simulation
 smld, info = simulate(params)
 
-# Setup camera and PSF
-pixelsize = 0.1  # 100nm pixels
-pixels = Int64(round(params.box_size/pixelsize))
-camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
+# The camera is the simulation's own (smld.camera): the fewest 100nm pixels that cover the box
 
 # Create PSF model
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
@@ -255,10 +252,7 @@ params = DiffusionSMLMConfig(
 # Run simulation
 smld, info = simulate(params)
 
-# Set up camera and PSF
-pixelsize = 0.1  # 100nm pixels
-pixels = Int64(round(params.box_size/pixelsize))
-camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
+# The camera is the simulation's own (smld.camera): the fewest 100nm pixels that cover the box
 
 # Set up PSF (Gaussian with 150nm width)
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
