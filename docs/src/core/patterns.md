@@ -121,14 +121,23 @@ smld_noisy, info = simulate(
 )
 ```
 
-Behind the scenes, this uses the `uniform2D()` or `uniform3D()` functions, which:
+Behind the scenes, `simulate()` treats the sample as continuing past the camera. It takes the
+camera's full extent (first to last pixel edge), widens it on every side by the pattern's radius
+(the largest distance of a binding site from the pattern's center), and calls `uniform2D()` or
+`uniform3D()` over that widened field, which:
 
 1. Generate a random number of patterns based on the density and field size
-2. Place patterns randomly within the field of view
+2. Place pattern centers randomly within the field
 3. Apply random rotations to each pattern
 4. Return the complete set of molecular coordinates
 
-For advanced usage, you can access these functions directly:
+`simulate()` then keeps only the binding sites that land on the camera, so the emitter density is
+flat to the camera's edges, and numbers the patterns that kept a site 1, 2, .... A pattern of zero
+extent, such as `Nmer2D(n=1, d=0.0)`, is placed over the camera's extent itself.
+
+For advanced usage, you can access these functions directly. They place pattern centers in
+`[0, field_x] × [0, field_y]` and keep every site, including sites of patterns near the edge that
+fall outside the field:
 
 ```julia
 # Create custom distribution of 2D patterns
@@ -145,7 +154,7 @@ pattern3d = Nmer3D(n=6, d=0.2)
 x, y, z, pattern_ids = uniform3D(density, pattern3d, field_x, field_y, zrange=[-2.0, 2.0])
 ```
 
-The `pattern_ids` array tracks which pattern instance each point belongs to. This is useful for analysis, visualization (coloring by pattern), or grouping emitters by their originating structure. The `id` field on emitters in the simulation output contains this pattern ID.
+The `pattern_ids` array tracks which pattern instance each point belongs to. This is useful for analysis, visualization (coloring by pattern), or grouping emitters by their originating structure. The `id` field on emitters in the simulation output contains the pattern ID (`simulate()` numbers the patterns with a binding site on the camera).
 
 ## Pattern Manipulation
 

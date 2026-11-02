@@ -163,17 +163,15 @@ The diffusion simulation can be converted into realistic microscope images using
 ### Creating Images from Simulation Data
 
 ```julia
-# Set up camera and PSF
-pixelsize = 0.1  # 100nm pixels
-pixels = Int64(round(params.box_size/pixelsize))
-camera = IdealCamera(1:pixels, 1:pixels, pixelsize)
+# simulate builds the camera, the fewest 100nm pixels that cover the box
+# (pass camera=... to use your own; smld.camera is the one used)
 
 # Set up PSF (Gaussian with 150nm width)
 using MicroscopePSFs
 psf = MicroscopePSFs.GaussianPSF(0.15)  # 150nm PSF width
 
 # Photons come from the simulation, not gen_images: γ (photons/s) = 1000/dt gives 1000 photons per record
-smld, info = simulate(params; camera=camera, γ=1000.0/params.dt)
+smld, info = simulate(params; γ=1000.0/params.dt)
 
 # Generate images
 image_stack, img_info = gen_images(smld, psf;
