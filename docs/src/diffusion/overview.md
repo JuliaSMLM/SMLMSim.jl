@@ -71,6 +71,15 @@ The `smld` output is a `BasicSMLD` structure containing all emitters across all 
 `round(Int, density * box_size^ndims)`: density 1.0 in a box of side 5 um gives 25 molecules
 in 2D and 125 in 3D.
 
+Additional keywords to `simulate` are deprecated: they are ignored with one warning naming
+them, and will throw in 0.8.0. Through 0.7.3 they were ignored silently. Use `γ` for the emission
+rate; `gamma` is an ignored keyword.
+
+The per-step dissociation probability is `k_off * dt`. If it exceeds 1, `simulate` warns once,
+naming both parameters: every bound pair dissociates at the next step, so its mean lifetime
+is `dt` seconds rather than `1/k_off`. The simulation output is unchanged. Through 0.7.3 this
+saturation was silent. Choose a smaller `dt` to resolve the dissociation rate.
+
 ## Simulation Parameters
 
 The `DiffusionSMLMConfig` structure allows you to customize various aspects of the simulation:
@@ -220,6 +229,17 @@ ax = Axis(fig[1, 1],
 )
 lines!(ax, frames, dimer_fractions)
 fig
+```
+
+### Analyzing Dimer Lifetimes
+
+`analyze_dimer_lifetime(smld)` averages bound intervals whose break is observed, at frame
+resolution, and returns seconds. Intervals still bound at the end of a track are excluded;
+if none completes, the result is `0.0`. Through 0.7.3 an unfinished interval contributed a zero
+lifetime and biased the average downward.
+
+```julia
+lifetime = analyze_dimer_lifetime(smld)
 ```
 
 ## Emitter Types

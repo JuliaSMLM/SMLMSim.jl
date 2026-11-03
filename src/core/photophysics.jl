@@ -48,6 +48,9 @@ photons = intensity_trace(fluor, 1000, 10.0; burn_in=5.0)
 - burn_in is useful for models with photobleaching to simulate pre-illumination
 - Through 0.7.3 a bleached molecule could hang when the final frame end rounded past the
   CTMC's end time. A state with no transition left now holds through the frame end.
+- The rate matrix and simulation time are promoted to a common floating point type when
+  building the chain. Through 0.7.3 a Float32 rate matrix with a Float64 time failed with a
+  method error. Float64 simulations keep the same random draws and photon counts.
 """
 function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1, burn_in::Real=0.0)
     # Input validation
@@ -66,7 +69,9 @@ function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=
     simulation_time = burn_in + recording_time
 
     # generate CTMC for full duration (burn_in + recording)
-    ctmc = CTMC(f.q, simulation_time, state1)
+    T = promote_type(eltype(f.q), typeof(simulation_time))
+    q = eltype(f.q) === T ? f.q : T.(f.q)
+    ctmc = CTMC(q, T(simulation_time), state1)
 
     # generate integrated photons (recording starts after burn_in)
     exptime = 1 / framerate
@@ -75,8 +80,8 @@ function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=
         t = burn_in + (nn - 1) * exptime  # offset by burn_in
         frameend = burn_in + nn * exptime
         while t < frameend
-            currentstate = get_state(ctmc, t)
-            (_, nexttime) = get_next(ctmc, t)
+            currentstate = get_state(ctmc, T(t))
+            (_, nexttime) = get_next(ctmc, T(t))
             tend = min(frameend, nexttime)
             tend <= t && (tend = frameend)   # no transition left: the state holds to the frame end
             if currentstate == 1  # the fluorescent state
@@ -114,15 +119,17 @@ Generate kinetic blinking model from existing localization data.
 - `BasicSMLD`: New SMLD with simulated blinking kinetics
 
 # Details
-Each `track_id`, including zero, identifies one molecule, using its first record. Molecules
-run in sorted id order and output ids are unchanged. Repeated ids at different positions warn
-once: only the first record's position is simulated, and each molecule needs its own
-`track_id`. Through 0.7.3 those later positions were dropped silently.
+Each non-zero `track_id` identifies one molecule, using its first record. Repeated non-zero
+ids at different positions warn once because later positions are dropped. Each emitter with
+`track_id == 0` is an independent, unlinked molecule; its output id is the next free integer
+above the largest non-zero id, in input order. Molecules run in sorted non-zero id order,
+followed by unlinked emitters in input order. Through 0.7.3 all unlinked emitters were grouped
+as one molecule, and conflicting positions for a linked id were dropped silently.
 
 For each molecule in the input SMLD:
 1. Simulates fluorophore blinking using the kinetic model
 2. Creates emitters for frames where photon count exceeds threshold
-3. Preserves track_id for linking emitters from same position
+3. Preserves non-zero track_id and assigns ids to unlinked emitters
 4. Maintains camera and extends metadata from input SMLD
 
 # Example
@@ -172,21 +179,27 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
 
     # Get true positions from input SMLD
     grouped_emitters = Dict()
+    unlinked_emitters = Vector{emitter_type}()
     for e in smld.emitters
         key = e.track_id
-        if !haskey(grouped_emitters, key)
+        if key == 0
+            push!(unlinked_emitters, e)
+        elseif !haskey(grouped_emitters, key)
             grouped_emitters[key] = e
         else
             first_emitter = grouped_emitters[key]
             if e.x != first_emitter.x || e.y != first_emitter.y ||
                (hasproperty(e, :z) && e.z != first_emitter.z)
-                @warn "kinetic_model: repeated track_id $key has records at different positions; only the first record's position is simulated; each molecule needs its own track_id" maxlog=1
+                @warn "kinetic_model: repeated non-zero track_id $key has records at different positions; using its first record and dropping later positions" maxlog=1
             end
         end
     end
 
-    # Sort by track_id to maintain order
+    # Keep the linked molecule order and append independent, unlinked molecules.
     true_positions = sort(collect(values(grouped_emitters)), by=e -> e.track_id)
+    n_linked = length(true_positions)
+    largest_id = maximum(keys(grouped_emitters); init=0)
+    append!(true_positions, unlinked_emitters)
 
     # Precompute equilibrium distribution if needed (do once, not per emitter)
     initial_state_dist = if state1 == :equilibrium
@@ -211,7 +224,8 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         nothing  # Not needed for explicit state
     end
 
-    for dd = 1:ndatasets, pos in true_positions
+    for dd = 1:ndatasets, (i, pos) in enumerate(true_positions)
+        track_id = pos.track_id == 0 ? largest_id + i - n_linked : pos.track_id
         # Determine initial state based on the option provided
         initial_state = if state1 == :equilibrium
             # Use pre-computed distribution for sampling
@@ -236,7 +250,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     σ_xy=0.0,            # x-y covariance (0 for symmetric PSF)
                     frame=frame,
                     dataset=dd,
-                    track_id=pos.track_id,
+                    track_id=track_id,
                     id=pos.id
                 )
             elseif emitter_type <: Emitter3DFit
@@ -249,7 +263,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     σ_xy=0.0,             # x-y covariance (0 for symmetric PSF)
                     frame=frame,
                     dataset=dd,
-                    track_id=pos.track_id,
+                    track_id=track_id,
                     id=pos.id
                 )
             else

@@ -94,55 +94,39 @@ end
     @test analyze_dimer_fraction(BasicSMLD(StateRecord[], camera, 3, 1)) == (Int[], Float64[])
 end
 
-@testset "Must 4: conflicting track positions warn without changing output" begin
+@testset "Must 4: unlinked static emitters are independent molecules" begin
     Random.seed!(3)
     camera = IdealCamera(1:64, 1:64, 0.1)
     params = StaticSMLMConfig(nframes=200, framerate=50.0, ndatasets=1)
     emitters = [fit2(x, 3.0) for x in range(0.5, 5.5; length=10)]
-    actual, info = @test_logs (:warn, r"repeated track_id 0.*only the first record's position is simulated.*each molecule needs its own track_id") simulate(
-        params; starting_conditions=emitters, camera=camera, molecule=BLINKING)
-    next_draw = rand()
+    _, info = simulate(params; starting_conditions=emitters, camera=camera, molecule=BLINKING)
     @test info.n_emitters == 10
-    @test unique(e.x for e in info.smld_model.emitters) == [first(emitters).x]
-    @test unique(e.track_id for e in info.smld_model.emitters) == [0]
+    @test length(unique(e.x for e in info.smld_model.emitters)) == 10
+    @test sort(unique(e.track_id for e in info.smld_model.emitters)) == collect(1:10)
     @test all(e -> e.track_id == 0, emitters)  # no mutation of starting conditions
 
-    # The original grouping simulates just the first of these zero-id records, bitwise.
-    Random.seed!(3)
-    expected, expected_info = @test_logs simulate(params; starting_conditions=emitters[1:1], camera=camera, molecule=BLINKING)
-    fields(smld) = [Tuple(getfield(e, f) for f in fieldnames(typeof(e))) for e in smld.emitters]
-    @test isequal(fields(actual), fields(expected))
-    @test isequal(fields(info.smld_model), fields(expected_info.smld_model))
-    @test rand() === next_draw
-
+    # Linked ids remain sorted and keep their first record, followed by unlinked inputs.
     for dimension in (2, 3)
         makefit(x, id) = dimension == 2 ? fit2(x, 1.0; track_id=id) : fit3(x, 1.0, x; track_id=id)
-        inputs = [makefit(1.0, 7), makefit(0.5, 0), makefit(1.5, 2)]
+        unique_source = BasicSMLD([makefit(1.0, 7), makefit(1.5, 2)], camera, 1, 1)
+        @test_logs kinetic_model(unique_source, BLINKING, 40, 50.0)
+        inputs = [makefit(0.5, 0), makefit(1.0, 7), makefit(1.5, 2), makefit(2.0, 0), makefit(1.0, 7)]
         source = BasicSMLD(inputs, camera, 1, 1)
         Random.seed!(74)
         model = @test_logs kinetic_model(source, BLINKING, 40, 50.0; ndatasets=2)
-        @test unique(e.track_id for e in model.emitters) == [0, 2, 7]
-        @test unique((e.track_id, e.x) for e in model.emitters) == [(0, 0.5), (2, 1.5), (7, 1.0)]
-        @test all(d -> Set(e.track_id for e in model.emitters if e.dataset == d) == Set([0, 2, 7]), 1:2)
-
-        for id in (0, 7)
-            fixed = BasicSMLD([makefit(0.5, id), makefit(0.5, id)], camera, 1, 1)
-            @test_logs kinetic_model(fixed, BLINKING, 40, 50.0)
-        end
-
-        repeated = BasicSMLD(vcat(inputs, [makefit(0.5, 0), makefit(1.0, 7)]), camera, 1, 1)
-        Random.seed!(74)
-        same = @test_logs kinetic_model(repeated, BLINKING, 40, 50.0; ndatasets=2)
-        @test isequal(fields(same), fields(model))
+        @test unique(e.track_id for e in model.emitters) == [2, 7, 8, 9]
+        @test unique((e.track_id, e.x) for e in model.emitters) == [(2, 1.5), (7, 1.0), (8, 0.5), (9, 2.0)]
+        @test all(d -> Set(e.track_id for e in model.emitters if e.dataset == d) == Set([2, 7, 8, 9]), 1:2)
 
         conflict = dimension == 2 ? makefit(2.5, 7) : fit3(1.0, 1.0, 2.5; track_id=7)
         conflicted = BasicSMLD(vcat(inputs, [conflict, conflict]), camera, 1, 1)
         # Both repeated inputs and repeated calls at this logger emit only one warning.
         Random.seed!(74)
-        models = @test_logs (:warn, r"repeated track_id 7.*only the first record's position is simulated.*each molecule needs its own track_id") respect_maxlog=true begin
+        models = @test_logs (:warn, r"repeated non-zero track_id 7.*different positions.*first record") respect_maxlog=true begin
             [kinetic_model(conflicted, BLINKING, 40, 50.0; ndatasets=2) for _ in 1:2]
         end
-        @test isequal(fields(models[1]), fields(model))
+        @test [e.x for e in models[1].emitters] == [e.x for e in model.emitters]
+        @test [e.photons for e in models[1].emitters] == [e.photons for e in model.emitters]
     end
 end
 
@@ -227,6 +211,153 @@ end
     @test rand() === next_draw
 end
 
+@testset "Should 2: diffusion warns once about ignored keywords" begin
+    params = DiffusionSMLMConfig(density=0.5, box_size=2.0, t_max=0.2)
+    Random.seed!(7)
+    baseline, _ = @test_logs simulate(params)
+    next_draw = rand()
+    Random.seed!(7)
+    results = @test_logs (:warn, r"ignored keywords: gamma, Gamma, photon, camera_exposure.*deprecated.*0.8.0") respect_maxlog=true begin
+        first = simulate(params; gamma=2e4, Gamma=2e4, photon=10.0, camera_exposure=0.05)[1]
+        next = rand()
+        simulate(params; gamma=2e4)
+        (first, next)
+    end
+    @test all(e -> e.photons == 1000.0, results[1].emitters)
+    @test [(e.x, e.y, e.photons) for e in results[1].emitters] == [(e.x, e.y, e.photons) for e in baseline.emitters]
+    @test results[2] === next_draw
+    bright, _ = @test_logs simulate(params; γ=2e4)
+    @test all(e -> e.photons == 200.0, bright.emitters)
+    @test_logs (:warn, r"ignored keywords: gamma;.*0.8.0") simulate(params; gamma=2e4)
+end
+
+@testset "Should 3: static starting SMLD supplies its camera" begin
+    Random.seed!(6)
+    camera = SCMOSCamera(64, 64, 0.1, 1.6; offset=100.0, gain=0.5, qe=0.8)
+    emitters = [fit2(1.0 + 0.1i, 3.0; track_id=i) for i in 1:5]
+    source = BasicSMLD(emitters, camera, 1, 1)
+    params = StaticSMLMConfig(nframes=50, ndatasets=1)
+    for kw in ((;), (; camera=nothing))
+        smld, info = simulate(params; starting_conditions=source, molecule=BLINKING, kw...)
+        @test smld.camera === camera
+        @test info.smld_true.camera === camera
+        @test info.smld_model.camera === camera
+    end
+    override = IdealCamera(1:32, 1:32, 0.1)
+    smld, info = simulate(params; starting_conditions=source, molecule=BLINKING, camera=override)
+    @test smld.camera === override
+    @test info.smld_true.camera === override
+    smld, _ = simulate(params; starting_conditions=emitters, molecule=BLINKING)
+    @test smld.camera isa IdealCamera
+    @test length(smld.camera.pixel_edges_x) - 1 == 128
+
+    # No starting conditions: implicit and explicit default cameras consume the same draws.
+    Random.seed!(7403)
+    implicit, _ = simulate(params; molecule=BLINKING)
+    @test length(implicit.camera.pixel_edges_x) - 1 == 128
+    @test length(implicit.camera.pixel_edges_y) - 1 == 128
+    next_draw = rand()
+    Random.seed!(7403)
+    explicit, _ = simulate(params; molecule=BLINKING, camera=IdealCamera(1:128, 1:128, 0.1))
+    @test [(e.x, e.y, e.photons, e.track_id) for e in implicit.emitters] ==
+          [(e.x, e.y, e.photons, e.track_id) for e in explicit.emitters]
+    @test rand() === next_draw
+end
+
+@testset "Lesser 1: Float32 rate matrices simulate with Float64 time" begin
+    Random.seed!(7401)
+    fluor = GenericFluor(1f4, Float32[-50 50; 1f-2 -1f-2])
+    smld, _ = simulate(StaticSMLMConfig(density=2.0, nframes=20, ndatasets=1, minphotons=0);
+                       molecule=fluor, state1=1, camera=IdealCamera(16, 16, 0.1))
+    @test !isempty(smld.emitters)
+    @test all(e -> isfinite(e.photons) && e.photons > 0, smld.emitters)
+
+    # Promotion gives the same trace and random stream as an explicit Float64 matrix.
+    Random.seed!(7401)
+    trace = intensity_trace(fluor, 20, 50.0; state1=1)
+    next_draw = rand()
+    Random.seed!(7401)
+    reference = GenericFluor(Float64(fluor.γ), Float64.(fluor.q))
+    @test isequal(trace, intensity_trace(reference, 20, 50.0; state1=1))
+    @test rand() === next_draw
+
+    # Other floating point matrix types also work with the usual Float64 time arguments.
+    for T in (Float16, BigFloat)
+        Random.seed!(7401)
+        trace = intensity_trace(GenericFluor(T(1e4), T[-50 50; 0.01 -0.01]), 20, 50.0; state1=1)
+        @test length(trace) == 20
+        @test all(isfinite, trace)
+        @test sum(trace) > 0
+    end
+end
+
+@testset "Lesser 2: GenericFluor accepts integer keyword values" begin
+    integer = GenericFluor(; photons=10000, k_off=50, k_on=1)
+    reference = GenericFluor(; photons=10000.0, k_off=50.0, k_on=1.0)
+    @test integer.γ === reference.γ
+    @test isequal(integer.q, reference.q)
+    @test eltype(integer.q) === Float64
+    for fluor in (GenericFluor(; photons=10000), GenericFluor(; k_off=50), GenericFluor(; k_on=1))
+        @test fluor.γ isa Float64
+        @test eltype(fluor.q) === Float64
+    end
+    rational = GenericFluor(; photons=10000//1, k_off=100//2, k_on=1//1)
+    @test rational.γ === reference.γ
+    @test isequal(rational.q, reference.q)
+    Random.seed!(7402)
+    trace = intensity_trace(integer, 20, 50.0; state1=1)
+    Random.seed!(7402)
+    @test isequal(trace, intensity_trace(reference, 20, 50.0; state1=1))
+end
+
+@testset "Lesser 3: saturated dissociation probability warns once" begin
+    params = DiffusionSMLMConfig(density=0.5, box_size=2.0, t_max=0.2, k_off=200.0, dt=0.01)
+    Random.seed!(7403)
+    @test_logs (:warn, r"k_off=200.0.*dt=0.01.*> 1.*mean lifetime is dt=0.01.*1/k_off=0.005") respect_maxlog=true begin
+        simulate(params)
+        simulate(params)
+    end
+    @test_logs simulate(DiffusionSMLMConfig(density=0.5, box_size=2.0, t_max=0.2))
+    @test_logs simulate(DiffusionSMLMConfig(density=0.5, box_size=2.0, t_max=0.2, k_off=100.0, dt=0.01))
+end
+
+@testset "Lesser 4: lifetime averages only intervals with an observed break" begin
+    Random.seed!(7408)
+    params = DiffusionSMLMConfig(density=5.0, box_size=5.0, r_react=0.3, k_off=0.5,
+                               dt=0.01, t_max=0.6, camera_framerate=100.0, camera_exposure=0.01)
+    smld, _ = simulate(params)
+    # One recorded step per frame: independently count observed bound-to-unbound intervals.
+    completed = Float64[]
+    unfinished = 0
+    for id in unique(e.track_id for e in smld.emitters)
+        records = sort(filter(e -> e.track_id == id, smld.emitters), by=e -> e.frame)
+        first_bound = nothing
+        for e in records
+            if e.state == :dimer
+                first_bound === nothing && (first_bound = e.frame)
+            elseif first_bound !== nothing
+                push!(completed, (e.frame - 1) / params.camera_framerate - (first_bound - 1) / params.camera_framerate)
+                first_bound = nothing
+            end
+        end
+        unfinished += first_bound !== nothing
+    end
+    @test !isempty(completed)
+    @test unfinished > length(completed)
+    lifetime = analyze_dimer_lifetime(smld)
+    @test lifetime ≈ mean(completed)
+    @test lifetime > sum(completed) / (length(completed) + unfinished)
+
+    # Real simulator output with bound dimers but no breaks, and with no dimers at all.
+    Random.seed!(7408)
+    bound, _ = simulate(DiffusionSMLMConfig(density=5.0, box_size=5.0, r_react=0.3, k_off=0.0,
+                                           dt=0.01, t_max=0.2, camera_framerate=100.0, camera_exposure=0.01))
+    @test any(e -> e.state == :dimer, bound.emitters)
+    @test analyze_dimer_lifetime(bound) == 0.0
+    monomer, _ = simulate(DiffusionSMLMConfig(box_size=2.0, t_max=0.1); override_count=1)
+    @test analyze_dimer_lifetime(monomer) == 0.0
+end
+
 @testset "Should 4: diffusion density documents area and volume units" begin
     # This item changes documentation only: the probe's counts already obey these units.
     @test occursin(r"density.*molecules/um² in 2D.*molecules/um³ in 3D", string(@doc DiffusionSMLMConfig))
@@ -234,5 +365,41 @@ end
         Random.seed!(12)
         _, info = simulate(DiffusionSMLMConfig(density=1.0, box_size=5.0, ndims=dimension, t_max=0.1))
         @test info.n_emitters == expected
+    end
+end
+
+@testset "Should 5: plain static emitters fail on entry with a useful error" begin
+    Random.seed!(3)
+    camera = IdealCamera(1:64, 1:64, 0.1)
+    params = StaticSMLMConfig(nframes=200, ndatasets=1)
+    # Abstractly typed containers of valid fits are accepted, as through 0.7.3:
+    # deepcopy.(starting_conditions) narrows them to the concrete emitter type.
+    concrete = [fit2(1.0, 3.0), fit2(2.0, 3.0)]
+    abstractly_typed = AbstractEmitter[concrete...]
+    Random.seed!(7405)
+    expected, expected_info = simulate(params; starting_conditions=concrete, camera=camera, molecule=BLINKING)
+    next_draw = rand()
+    Random.seed!(7405)
+    actual, actual_info = simulate(params; starting_conditions=abstractly_typed, camera=camera, molecule=BLINKING)
+    fields(smld) = [Tuple(getfield(e, f) for f in fieldnames(typeof(e))) for e in smld.emitters]
+    @test actual_info.n_emitters == expected_info.n_emitters == 2
+    @test isequal(fields(actual), fields(expected))
+    @test isequal(fields(actual_info.smld_true), fields(expected_info.smld_true))
+    @test isequal(fields(actual_info.smld_model), fields(expected_info.smld_model))
+    @test rand() === next_draw
+
+    for emitters in ([Emitter2D{Float64}(1.0, 3.0, 1.0)], [Emitter3D{Float64}(1.0, 3.0, 0.5, 1.0)])
+        mixed = AbstractEmitter[fit2(1.0, 3.0), only(emitters)]
+        for source in (emitters, BasicSMLD(emitters, camera, 1, 1), mixed, BasicSMLD(mixed, camera, 1, 1))
+            err = try
+                simulate(params; starting_conditions=source, camera=camera, molecule=BLINKING)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin(string(eltype(emitters)), sprint(showerror, err))
+            @test occursin("Emitter2DFit or Emitter3DFit is needed", sprint(showerror, err))
+        end
     end
 end

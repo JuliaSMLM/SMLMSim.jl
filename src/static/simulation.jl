@@ -8,7 +8,7 @@
              pattern::Pattern=nothing,
              labeling::AbstractLabeling=FixedLabeling(),
              molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
-             camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1),
+             camera::Union{Nothing, AbstractCamera}=nothing,
              state1::Union{Int, Symbol}=:equilibrium,
              burn_in::Real=0.0)
 
@@ -17,11 +17,15 @@ and localization uncertainty.
 
 # Arguments
 - `params::StaticSMLMConfig`: Simulation parameters
-- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}`: Optional starting conditions instead of generating patterns
+- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}`: Optional starting conditions instead of generating patterns.
+  Emitters must be `Emitter2DFit` or `Emitter3DFit`; plain emitters throw `ArgumentError` on entry
+  (through 0.7.3 they failed later with a field error).
 - `pattern::Pattern`: Pattern to use (default depends on params.ndims)
 - `labeling::AbstractLabeling`: Labeling strategy for fluorophore attachment (default: FixedLabeling() = 1 per site)
 - `molecule::Molecule`: Fluorophore model for blinking simulation
-- `camera::AbstractCamera`: Camera model for detection simulation
+- `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model for detection simulation.
+  Defaults to `starting_conditions.camera` for an SMLD, otherwise `IdealCamera(1:128, 1:128, 0.1)`.
+  An explicit camera wins. Through 0.7.3 the default replaced an SMLD's camera.
 - `state1::Union{Int, Symbol}=:equilibrium`: Initial fluorophore state:
   - `::Int`: Specific state (1=on, 2=off typically)
   - `:equilibrium`: Sample from equilibrium distribution (default)
@@ -101,10 +105,10 @@ smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
 - For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 - If `starting_conditions` is provided, it will be used instead of generating patterns, and labeling is not applied.
-  Emitters are grouped by `track_id`, including zero, in sorted id order, with output ids
-  unchanged. Only the first record's position is simulated. Repeated ids at different
-  positions warn once: each molecule needs its own `track_id`. Through 0.7.3 those later
-  positions were dropped silently.
+  Each zero `track_id` is an independent molecule, assigned an output id above the largest
+  non-zero id in input order. Non-zero ids use their first record, in sorted id order, before
+  unlinked molecules; conflicting positions for a non-zero id warn once. Through 0.7.3 zero
+  ids were collapsed into one molecule and conflicting positions were dropped silently.
 - Each `Line2D` or `Line3D` copy draws independent Poisson site counts and uniform positions
   from the endpoints. Through 0.7.3 copies reused the template's sampled sites.
 - Labeling and molecule are separate concepts: labeling controls how many fluorophores per binding site,
@@ -115,12 +119,25 @@ function simulate(params::StaticSMLMConfig;
                  pattern::Union{Pattern,Nothing}=nothing,
                  labeling::AbstractLabeling=FixedLabeling(),
                  molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
-                 camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1),
+                 camera::Union{Nothing, AbstractCamera}=nothing,
                  state1::Union{Int, Symbol}=:equilibrium,
                  burn_in::Real=0.0)
 
     start_time = time_ns()
     n_patterns = 0
+
+    if starting_conditions !== nothing
+        source_emitters = starting_conditions isa SMLD ? starting_conditions.emitters : starting_conditions
+        invalid_index = findfirst(e -> !(e isa Union{Emitter2DFit, Emitter3DFit}), source_emitters)
+        if invalid_index !== nothing
+            emitter_type = typeof(source_emitters[invalid_index])
+            throw(ArgumentError("Static starting_conditions has emitter type $emitter_type; Emitter2DFit or Emitter3DFit is needed"))
+        end
+    end
+
+    if camera === nothing
+        camera = starting_conditions isa SMLD ? starting_conditions.camera : IdealCamera(1:128, 1:128, 0.1)
+    end
 
     # Initialize metadata
     metadata = Dict{String,Any}(
@@ -136,12 +153,6 @@ function simulate(params::StaticSMLMConfig;
         else
             # Already a vector of emitters
             deepcopy.(starting_conditions)
-        end
-
-        # Validate that emitters have appropriate type
-        emitter_type = eltype(emitters)
-        if !(emitter_type <: AbstractEmitter)
-            error("Starting conditions must contain valid emitters")
         end
 
         # Set up metadata for ground truth with starting conditions

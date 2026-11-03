@@ -186,6 +186,15 @@ end
 
 Defines a fluorophore with photophysical properties.
 
+The keyword constructor accepts real numbers, including integers, for `photons`, `k_off`,
+and `k_on`, converting them to Float64. Through 0.7.3 these keywords required `AbstractFloat`
+values, so `GenericFluor(; photons=10000, k_off=50, k_on=1)` threw a type error.
+
+Positional construction preserves the supplied floating point types. `intensity_trace`
+promotes the rate matrix and simulation time to a common floating point type when building
+the chain. Through 0.7.3 a Float32 matrix with a Float64 time failed with a method error.
+The Float64 path keeps the same random draws and photon counts.
+
 ```julia
 struct GenericFluor <: Molecule
     γ::AbstractFloat     # Photon emission rate in Hz
@@ -363,6 +372,19 @@ camera_scmos = SCMOSCamera(
 The main simulation function with multiple methods for different simulation types.
 All `simulate()` methods return a tuple: `(primary_output, info)`.
 
+Static `starting_conditions` must contain `Emitter2DFit` or `Emitter3DFit`; plain emitters
+throw `ArgumentError` on entry (through 0.7.3 they failed later with a field error). A default
+`camera=nothing` uses an SMLD's camera, otherwise `IdealCamera(1:128, 1:128, 0.1)`; an explicit
+camera wins. Through 0.7.3 the default replaced an SMLD's camera.
+
+Extra keywords to diffusion `simulate` are ignored with one warning naming them. They are
+deprecated and will throw in 0.8.0; through 0.7.3 they were ignored silently. The emission
+rate keyword is `γ`, not `gamma`.
+
+If `k_off * dt > 1`, diffusion `simulate` warns once, naming both values: every bound pair
+dissociates at the next step, so the mean lifetime is `dt` seconds rather than `1/k_off`.
+The simulation output is unchanged. Through 0.7.3 this probability saturation was silent.
+
 ```julia
 # Static SMLM simulation
 # First create simulation parameters
@@ -410,10 +432,11 @@ println("Simulation took $(info.elapsed_s) seconds")
 
 Generate kinetic blinking model from existing localization data.
 
-Each `track_id`, including zero, uses its first record, in sorted id order, with output ids
-unchanged. Repeated ids at different positions warn once: only the first record's position is
-simulated, and each molecule needs its own `track_id`. Through 0.7.3 those later positions
-were dropped silently. Static `simulate` uses these same rules.
+Each non-zero `track_id` uses its first record, in sorted id order. Repeated records with
+different positions warn once because later positions are dropped. Each zero id is an
+independent molecule, processed afterward in input order and assigned an output id above
+the largest non-zero input id. Through 0.7.3 zero ids were collapsed into one molecule and
+conflicting linked positions were dropped silently. Static `simulate` uses these same rules.
 
 ```julia
 # Example of how to call kinetic_model
@@ -542,6 +565,11 @@ in [0, 1]. It counts the fraction of bound records for each (frame, track_id), t
 over tracks. It needs only `frame`, `track_id`, and `state` and is independent of record order.
 Through 0.7.3 it counted sub-step records divided by two, so its value depended on the number
 of sub-steps and could exceed 1; with one record per molecule it returned half the bound fraction.
+
+`analyze_dimer_lifetime` averages only bound intervals with an observed break, at frame
+resolution, in seconds. It excludes intervals still bound at the end of a track, and returns
+`0.0` when no interval completes. Through 0.7.3 unfinished intervals contributed zero
+lifetimes, biasing the average downward.
 
 ```julia
 # Example usage of diffusion analysis functions

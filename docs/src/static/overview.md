@@ -81,11 +81,20 @@ smld_noisy, info = simulate(
 
 ### Custom Starting Conditions
 
-Emitters in `starting_conditions` are grouped by `track_id`, including zero, and simulated in
-sorted id order, with output ids unchanged. Only the first record's position is simulated.
-Repeated ids at different positions warn once: each molecule needs its own `track_id`.
-Through 0.7.3 those later positions were dropped silently. Labeling is not applied to
+Pass `starting_conditions` as a vector of `Emitter2DFit` or `Emitter3DFit`, or an SMLD containing
+those types. Plain `Emitter2D` and `Emitter3D` inputs throw `ArgumentError` on entry, naming the
+type required; through 0.7.3 they failed later with a field error. Labeling is not applied to
 starting conditions.
+
+Each emitter with `track_id == 0` is an independent molecule. Its output gets the next free id
+above the largest non-zero input id, in input order. Each non-zero id keeps its first record;
+repeated records at different positions warn once because later positions are dropped.
+Molecules run in sorted non-zero id order, then unlinked input order. Through 0.7.3 all zero
+ids were collapsed into one molecule and conflicting linked positions were dropped silently.
+
+With `camera=nothing` (the default), an SMLD supplies its camera; otherwise the camera defaults
+to `IdealCamera(1:128, 1:128, 0.1)`. An explicitly passed camera wins. Through 0.7.3 an SMLD's
+camera was replaced by the default unless passed explicitly.
 
 ## Understanding Simulation Results
 

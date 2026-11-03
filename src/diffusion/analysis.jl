@@ -202,7 +202,9 @@ end
 """
     analyze_dimer_lifetime(smld::BasicSMLD)
 
-Calculate the average lifetime of dimers.
+Calculate the average lifetime of bound intervals whose break is observed, at frame resolution.
+Intervals still bound at the end of a track are excluded. Return 0.0 when no interval completes.
+Through 0.7.3 a still-bound interval contributed a zero lifetime, biasing the average downward.
 
 # Arguments
 - `smld::BasicSMLD`: SMLD containing all emitters
@@ -231,7 +233,7 @@ function analyze_dimer_lifetime(smld::BasicSMLD)
             end
             
             # End of dimer period
-            if dimer_start !== nothing && (state != :dimer || i == length(history))
+            if dimer_start !== nothing && state != :dimer
                 dimer_end = frame
                 
                 # Convert frames to time
