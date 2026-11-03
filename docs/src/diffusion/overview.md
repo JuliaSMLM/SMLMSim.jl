@@ -238,6 +238,11 @@ resolution, and returns seconds. Intervals still bound at the end of a track are
 if none completes, the result is `0.0`. Through 0.7.3 an unfinished interval contributed a zero
 lifetime and biased the average downward.
 
+For simulation output, the result does not depend on record order: each track is sorted
+stably by `(frame, timestamp)`. Records without timestamps are sorted by frame only, and
+equal sort keys retain their input order. Through 0.7.3 sub-step records within a frame kept
+their input order, so reversing or shuffling simulation output could change the lifetime.
+
 ```julia
 lifetime = analyze_dimer_lifetime(smld)
 ```

@@ -143,10 +143,17 @@ function analyze_dimer_fraction(smld::BasicSMLD)
     return frames, fractions
 end
 
+# Frame-only records remain supported; equal temporal keys keep their input order.
+_record_time_key(e) = hasproperty(e, :timestamp) ? (e.frame, e.timestamp) : (e.frame,)
+
 """
     track_state_changes(smld::BasicSMLD)
 
 Track state changes of molecules over time.
+For simulation output, the result does not depend on record order: each track is sorted
+stably by `(frame, timestamp)`. Records without timestamps are sorted by frame only;
+equal sort keys retain their input order. Through 0.7.3 sub-step records within a frame
+kept their input order, so reversing or shuffling simulation output could change the history.
 
 # Arguments
 - `smld::BasicSMLD`: SMLD containing all emitters
@@ -167,17 +174,17 @@ states = [h[2] for h in history]
 ```
 """
 function track_state_changes(smld::BasicSMLD)
-    # Get all unique molecule IDs
-    molecule_ids = unique([e.track_id for e in smld.emitters])
+    # Fix insertion order too, so callers aggregate histories in the same order.
+    molecule_ids = sort!(unique([e.track_id for e in smld.emitters]))
     
     # Initialize state history
     state_history = Dict{Int, Vector{Tuple{Int, Symbol}}}()
     
     # For each molecule, track state changes
     for id in molecule_ids
-        # Get all emitters for this molecule, ordered by frame
+        # Get all emitters for this molecule, ordered by frame and sub-step time.
         mol_emitters = filter(e -> e.track_id == id, smld.emitters)
-        sort!(mol_emitters, by = e -> e.frame)
+        sort!(mol_emitters, by=_record_time_key, alg=MergeSort)
         
         # Extract frame and state
         history = [(e.frame, e.state) for e in mol_emitters]
@@ -205,6 +212,10 @@ end
 Calculate the average lifetime of bound intervals whose break is observed, at frame resolution.
 Intervals still bound at the end of a track are excluded. Return 0.0 when no interval completes.
 Through 0.7.3 a still-bound interval contributed a zero lifetime, biasing the average downward.
+For simulation output, the result does not depend on record order: tracks are sorted
+stably by `(frame, timestamp)`, or by frame alone for records without timestamps. Equal
+sort keys retain their input order. Through 0.7.3 sub-step records within a frame kept their
+input order, so reversing or shuffling simulation output could change the lifetime.
 
 # Arguments
 - `smld::BasicSMLD`: SMLD containing all emitters
@@ -276,6 +287,8 @@ one row per (frame, track_id) present, sorted by (frame, track_id).
 
 This is sub-step resolution. With exposure shorter than the frame period, a change that
 happens during the gap between exposures shows at the next frame's first record.
+The result does not depend on simulation record order: tracks are sorted stably by
+`(frame, timestamp)`, with equal sort keys retaining their input order.
 """
 function frame_dimer_truth(smld::BasicSMLD)
     by_track = Dict{Int,Vector{Int}}()
@@ -300,9 +313,9 @@ function frame_dimer_truth(smld::BasicSMLD)
     rows = NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break, :mixed),
                       Tuple{Int,Int,Int,Float64,Float64,Float64,Bool}}[]
     for (id, idx) in by_track
-        sort!(idx, by = i -> smld.emitters[i].timestamp)
+        sort!(idx, by=i -> _record_time_key(smld.emitters[i]), alg=MergeSort)
         recs = smld.emitters[idx]
-        # Records are time sorted, so each frame is one contiguous run
+        # Records are frame/time sorted, so each frame is one contiguous run.
         n = 0
         n_bound = 0
         partner = 0

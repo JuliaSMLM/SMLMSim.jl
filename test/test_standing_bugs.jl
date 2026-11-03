@@ -553,3 +553,47 @@ end
     @test length(smld.camera.pixel_edges_x) - 1 == 128
     @test length(smld.camera.pixel_edges_y) - 1 == 128
 end
+
+@testset "Round 8: diffusion analysis ignores record order" begin
+    Random.seed!(7408)
+    params = DiffusionSMLMConfig(density=5.0, box_size=5.0, r_react=0.3, k_off=0.5,
+                               dt=0.01, t_max=0.6, camera_framerate=10.0, camera_exposure=0.1)
+    smld, _ = simulate(params)
+    track_changes = SMLMSim.InteractionDiffusion.track_state_changes
+    history = track_changes(smld)
+    lifetime = analyze_dimer_lifetime(smld)
+    fractions = analyze_dimer_fraction(smld)
+    truth = frame_dimer_truth(smld)
+    @test lifetime ≈ 0.23636363636363636
+
+    Random.seed!(7808)
+    for records in (reverse(smld.emitters), shuffle(smld.emitters), shuffle(smld.emitters))
+        reordered = BasicSMLD(records, smld.camera, smld.n_frames, smld.n_datasets, copy(smld.metadata))
+        original_order = copy(records)
+        @test isequal(track_changes(reordered), history)
+        @test isequal(analyze_dimer_lifetime(reordered), lifetime)
+        @test isequal(analyze_dimer_fraction(reordered), fractions)
+        @test isequal(frame_dimer_truth(reordered), truth)
+        @test records == original_order
+    end
+
+    # Records without timestamps retain frame-only support.
+    minimal = [StateRecord(1, 1, :monomer), StateRecord(2, 1, :dimer), StateRecord(4, 1, :monomer)]
+    source = BasicSMLD(minimal, smld.camera, 4, 1, copy(smld.metadata))
+    expected = Dict(1 => [(1, :monomer), (2, :dimer), (4, :monomer)])
+    expected_lifetime = analyze_dimer_lifetime(source)
+    @test expected_lifetime ≈ 0.2
+    for records in (minimal, reverse(minimal), shuffle(minimal))
+        reordered = BasicSMLD(records, source.camera, 4, 1, copy(source.metadata))
+        @test track_changes(reordered) == expected
+        @test isequal(analyze_dimer_lifetime(reordered), expected_lifetime)
+    end
+
+    # Stable sorting retains the existing sequence when temporal keys tie.
+    tied = [DiffusingEmitter2D{Float64}(1.0, 1.0, 100.0, 0.01, 1, 1, 1, state, partner)
+            for (state, partner) in ((:monomer, nothing), (:dimer, 2), (:monomer, nothing))]
+    tied_source = BasicSMLD(tied, smld.camera, 1, 1, copy(smld.metadata))
+    @test track_changes(tied_source)[1] == [(1, :monomer), (1, :dimer), (1, :monomer)]
+    tied_minimal = BasicSMLD([StateRecord(e.frame, e.track_id, e.state) for e in tied], smld.camera, 1, 1)
+    @test track_changes(tied_minimal)[1] == [(1, :monomer), (1, :dimer), (1, :monomer)]
+end

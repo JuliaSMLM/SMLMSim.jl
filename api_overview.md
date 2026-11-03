@@ -578,6 +578,11 @@ resolution, in seconds. It excludes intervals still bound at the end of a track,
 `0.0` when no interval completes. Through 0.7.3 unfinished intervals contributed zero
 lifetimes, biasing the average downward.
 
+For simulation output, the lifetime does not depend on record order. Tracks are sorted
+stably by `(frame, timestamp)`, or by frame alone for records without timestamps; equal keys
+retain their input order. Through 0.7.3 sub-step records within a frame kept their input
+order, so reversing or shuffling simulation output could change the lifetime.
+
 ```julia
 # Example usage of diffusion analysis functions
 
