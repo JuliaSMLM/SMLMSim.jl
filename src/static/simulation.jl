@@ -106,6 +106,8 @@ smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
 - For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 - If `starting_conditions` is provided, it will be used instead of generating patterns, and labeling is not applied.
+  Empty inputs return empty results, using the declared fit dimensionality when available,
+  otherwise `params.ndims`.
   Each zero `track_id` is an independent molecule, assigned an output id above the largest
   non-zero id in input order. Non-zero ids use their first record, in sorted id order, before
   unlinked molecules; conflicting positions for a non-zero id warn once. Through 0.7.3 zero
@@ -149,14 +151,8 @@ function simulate(params::StaticSMLMConfig;
 
     # Process starting conditions if provided
     if starting_conditions !== nothing
-        # Extract emitters from starting_conditions
-        emitters = if starting_conditions isa SMLD
-            # Deep copy the emitters from the SMLD
-            deepcopy.(starting_conditions.emitters)
-        else
-            # Already a vector of emitters
-            deepcopy.(starting_conditions)
-        end
+        # Broadcasting over an empty input can lose its declared element type.
+        emitters = isempty(source_emitters) ? copy(source_emitters) : deepcopy.(source_emitters)
 
         # Set up metadata for ground truth with starting conditions
         metadata["simulation_type"] = "ground_truth_from_starting_conditions"
@@ -273,6 +269,12 @@ function simulate(params::StaticSMLMConfig;
 
     # Determine PSF scaling based on emitter dimensionality
     emitter_type = eltype(smld_model.emitters)
+    if isempty(smld_model.emitters) && !(emitter_type <: Emitter2DFit || emitter_type <: Emitter3DFit)
+        # Without records or a declared fit dimension, use the configured dimension.
+        emitter_type = params.ndims == 2 ? Emitter2DFit{Float64} : Emitter3DFit{Float64}
+        smld_model = BasicSMLD(emitter_type[], smld_model.camera, smld_model.n_frames,
+                              smld_model.n_datasets, smld_model.metadata)
+    end
     σ_scaled = if emitter_type <: Emitter2DFit
         params.σ_psf  # already in microns
     else

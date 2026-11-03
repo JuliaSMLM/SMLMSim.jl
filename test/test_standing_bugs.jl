@@ -508,3 +508,48 @@ end
     model = kinetic_model(linked_only, BLINKING, 1, 50.0; state1=1, minphotons=0.0)
     @test only(model.emitters).track_id == largest_id
 end
+
+@testset "Round 7: empty starting conditions are valid" begin
+    camera = IdealCamera(32, 24, 0.1)
+    inputs = ((AbstractEmitter[], nothing), (Emitter2DFit[], 2), (Emitter3DFit[], 3),
+              (Emitter2DFit{Float64}[], 2), (Emitter3DFit{Float64}[], 3))
+    for (emitters, declared_dimension) in inputs
+        source = BasicSMLD(emitters, camera, 1, 1)
+        model = kinetic_model(source, BLINKING, 5, 50.0; ndatasets=2)
+        @test isempty(model.emitters)
+        @test eltype(model.emitters) === eltype(emitters)
+        @test model.emitters !== emitters
+        @test model.camera === camera
+        @test model.n_frames == 5
+        @test model.n_datasets == 2
+
+        for dimension in (2, 3)
+            params = StaticSMLMConfig(nframes=5, ndatasets=2, ndims=dimension)
+            expected_dimension = something(declared_dimension, dimension)
+            expected_family = expected_dimension == 2 ? Emitter2DFit : Emitter3DFit
+            for (starting_conditions, kwargs) in ((emitters, (; camera=camera)), (source, (;)))
+                smld, info = simulate(params; starting_conditions=starting_conditions, kwargs...)
+                @test isempty(smld.emitters)
+                @test isempty(info.smld_true.emitters)
+                @test isempty(info.smld_model.emitters)
+                @test info.n_emitters == info.n_localizations == info.n_patterns == 0
+                @test smld.camera === info.smld_true.camera === info.smld_model.camera === camera
+                @test smld.n_frames == info.smld_model.n_frames == params.nframes
+                @test smld.n_datasets == info.smld_model.n_datasets == params.ndatasets
+                @test eltype(info.smld_true.emitters) === eltype(emitters)
+                @test info.smld_true.emitters !== emitters
+                @test eltype(smld.emitters) <: expected_family
+                @test eltype(info.smld_model.emitters) <: expected_family
+                expected_psf = expected_dimension == 2 ? params.σ_psf :
+                               [params.σ_psf, params.σ_psf, 3 * params.σ_psf]
+                @test smld.metadata["psf_width"] == expected_psf
+            end
+        end
+    end
+
+    smld, info = simulate(StaticSMLMConfig(nframes=5, ndatasets=2); starting_conditions=AbstractEmitter[])
+    @test isempty(smld.emitters)
+    @test smld.camera === info.smld_true.camera === info.smld_model.camera
+    @test length(smld.camera.pixel_edges_x) - 1 == 128
+    @test length(smld.camera.pixel_edges_y) - 1 == 128
+end
