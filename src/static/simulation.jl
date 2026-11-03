@@ -24,7 +24,7 @@ and localization uncertainty.
 - `labeling::AbstractLabeling`: Labeling strategy for fluorophore attachment (default: FixedLabeling() = 1 per site)
 - `molecule::Molecule`: Fluorophore model for blinking simulation
 - `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model for detection simulation.
-  Defaults to `starting_conditions.camera` for an SMLD with a camera field, otherwise
+  Defaults to an SMLD's camera, when it has one, otherwise
   `IdealCamera(1:128, 1:128, 0.1)`.
   An explicit camera wins. Through 0.7.3 the default replaced an SMLD's camera.
 - `state1::Union{Int, Symbol}=:equilibrium`: Initial fluorophore state:
@@ -137,7 +137,8 @@ function simulate(params::StaticSMLMConfig;
     end
 
     if camera === nothing
-        camera = starting_conditions isa SMLD && hasproperty(starting_conditions, :camera) ?
+        camera = starting_conditions isa SMLD && hasproperty(starting_conditions, :camera) &&
+                 starting_conditions.camera isa AbstractCamera ?
                  starting_conditions.camera : IdealCamera(1:128, 1:128, 0.1)
     end
 

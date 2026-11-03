@@ -376,7 +376,7 @@ All `simulate()` methods return a tuple: `(primary_output, info)`.
 
 Static `starting_conditions` must contain `Emitter2DFit` or `Emitter3DFit`; plain emitters
 throw `ArgumentError` on entry (through 0.7.3 they failed later with a field error). A default
-`camera=nothing` uses an SMLD's camera when it has a camera field, otherwise
+`camera=nothing` uses an SMLD's camera, when it has one, otherwise
 `IdealCamera(1:128, 1:128, 0.1)`; an explicit camera wins. Through 0.7.3 the default replaced
 an SMLD's camera.
 

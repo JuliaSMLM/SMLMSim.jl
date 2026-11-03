@@ -122,7 +122,8 @@ Generate kinetic blinking model from existing localization data.
 Each non-zero `track_id` identifies one molecule, using its first record. Repeated non-zero
 ids at different positions warn once because later positions are dropped. Each emitter with
 `track_id == 0` is an independent, unlinked molecule; its output id is the next free integer
-above the largest non-zero id, in input order. Molecules run in sorted non-zero id order,
+above the largest non-zero id, in input order. If these ids would overflow `Int`, an
+`ArgumentError` names the largest non-zero id. Molecules run in sorted non-zero id order,
 followed by unlinked emitters in input order. Through 0.7.3 all unlinked emitters were grouped
 as one molecule, and conflicting positions for a linked id were dropped silently.
 
@@ -209,6 +210,13 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
     true_positions = sort(collect(values(grouped_emitters)), by=e -> e.track_id)
     n_linked = length(true_positions)
     largest_id = maximum(keys(grouped_emitters); init=0)
+    # Reject exhausted ids before sampling any molecule's initial state or blinking trace.
+    try
+        Base.Checked.checked_add(largest_id, length(unlinked_emitters))
+    catch err
+        err isa OverflowError || rethrow()
+        throw(ArgumentError("Unlinked track_ids would overflow Int above the largest non-zero id $largest_id"))
+    end
     append!(true_positions, unlinked_emitters)
 
     # Precompute equilibrium distribution if needed (do once, not per emitter)
@@ -235,7 +243,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
     end
 
     for dd = 1:ndatasets, (i, pos) in enumerate(true_positions)
-        track_id = pos.track_id == 0 ? largest_id + i - n_linked : pos.track_id
+        track_id = pos.track_id == 0 ? Base.Checked.checked_add(largest_id, i - n_linked) : pos.track_id
         # Determine initial state based on the option provided
         initial_state = if state1 == :equilibrium
             # Use pre-computed distribution for sampling

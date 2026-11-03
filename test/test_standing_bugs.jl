@@ -15,6 +15,11 @@ struct CameraFreeSMLD{E<:AbstractEmitter} <: SMLMSim.SMLD
     emitters::Vector{E}
 end
 
+struct OptionalCameraSMLD{E<:AbstractEmitter} <: SMLMSim.SMLD
+    emitters::Vector{E}
+    camera::Union{Nothing,AbstractCamera}
+end
+
 @testset "Must 1: absorbing states finish the final frame" begin
     # p02: 3 * (1/10) rounds past 3/10; 4 frames is the terminating control.
     fluor = GenericFluor(1e4, [-60.0 10.0 50.0; 1.0 -1.0 0.0; 0.0 0.0 0.0])
@@ -410,20 +415,21 @@ end
 
 @testset "Round 5: camera-free SMLD uses the default camera" begin
     emitters = [fit2(1.0, 2.0; track_id=1), fit2(2.0, 3.0; track_id=2)]
-    source = CameraFreeSMLD(emitters)
     params = StaticSMLMConfig(nframes=20, ndatasets=1, minphotons=0)
-    Random.seed!(7501)
-    smld, info = simulate(params; starting_conditions=source, molecule=BLINKING, state1=1)
-    @test smld.camera isa IdealCamera
-    @test length(smld.camera.pixel_edges_x) - 1 == 128
-    @test length(smld.camera.pixel_edges_y) - 1 == 128
-    @test info.n_emitters == 2
-    @test smld.camera === info.smld_true.camera === info.smld_model.camera
-    @test Set(e.track_id for e in info.smld_model.emitters) == Set([1, 2])
-    override = IdealCamera(16, 32, 0.1)
-    smld, info = simulate(params; starting_conditions=source, camera=override, molecule=BLINKING, state1=1)
-    @test smld.camera === override
-    @test info.smld_true.camera === override
+    for source in (CameraFreeSMLD(emitters), OptionalCameraSMLD(emitters, nothing))
+        Random.seed!(7501)
+        smld, info = simulate(params; starting_conditions=source, molecule=BLINKING, state1=1)
+        @test smld.camera isa IdealCamera
+        @test length(smld.camera.pixel_edges_x) - 1 == 128
+        @test length(smld.camera.pixel_edges_y) - 1 == 128
+        @test info.n_emitters == 2
+        @test smld.camera === info.smld_true.camera === info.smld_model.camera
+        @test Set(e.track_id for e in info.smld_model.emitters) == Set([1, 2])
+        override = IdealCamera(16, 32, 0.1)
+        smld, info = simulate(params; starting_conditions=source, camera=override, molecule=BLINKING, state1=1)
+        @test smld.camera === override
+        @test info.smld_true.camera === override
+    end
 end
 
 @testset "Round 5: floating point keywords retain their precision" begin
@@ -475,4 +481,30 @@ end
     end
     mixed_dimensions = BasicSMLD(AbstractEmitter[fit2(1.0, 2.0), fit3(1.0, 2.0, 0.0)], camera, 1, 1)
     @test_throws ArgumentError kinetic_model(mixed_dimensions, BLINKING, 20, 50.0; state1=1)
+end
+
+@testset "Round 6: unlinked id allocation rejects overflow" begin
+    camera = IdealCamera(32, 32, 0.1)
+    largest_id = typemax(Int)
+    source = BasicSMLD([fit2(0.5, 1.0; track_id=largest_id), fit2(1.5, 2.0)], camera, 1, 1)
+    Random.seed!(7602)
+    expected_next = rand()
+    Random.seed!(7602)
+    err = try
+        kinetic_model(source, BLINKING, 1, 50.0)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("largest non-zero id $largest_id", sprint(showerror, err))
+    @test rand() == expected_next
+
+    # The final available id is valid; only the addition of the unlinked offset counts.
+    source = BasicSMLD([fit2(0.5, 1.0; track_id=largest_id - 1), fit2(1.5, 2.0)], camera, 1, 1)
+    model = kinetic_model(source, BLINKING, 1, 50.0; state1=1, minphotons=0.0)
+    @test [e.track_id for e in model.emitters] == [largest_id - 1, largest_id]
+    linked_only = BasicSMLD([fit2(0.5, 1.0; track_id=largest_id)], camera, 1, 1)
+    model = kinetic_model(linked_only, BLINKING, 1, 50.0; state1=1, minphotons=0.0)
+    @test only(model.emitters).track_id == largest_id
 end
