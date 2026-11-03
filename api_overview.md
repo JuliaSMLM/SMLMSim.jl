@@ -573,10 +573,20 @@ over tracks. It needs only `frame`, `track_id`, and `state` and is independent o
 Through 0.7.3 it counted sub-step records divided by two, so its value depended on the number
 of sub-steps and could exceed 1; with one record per molecule it returned half the bound fraction.
 
-`analyze_dimer_lifetime` averages only bound intervals with an observed break, at frame
-resolution, in seconds. It excludes intervals still bound at the end of a track, and returns
-`0.0` when no interval completes. Through 0.7.3 unfinished intervals contributed zero
-lifetimes, biasing the average downward.
+`analyze_dimer_lifetime` returns the censored maximum-likelihood mean lifetime in seconds:
+`τ̂ = total bound time (unfinished intervals included) / number of observed breaks`.
+It assumes constant per-step dissociation with probability `k_off * dt`: geometric step
+counts approaching exponential lifetimes, with mean `1/k_off`.
+
+Each interval starts at its first `:dimer` record and ends at the first following `:monomer`
+record (one break), or at the track's last record if unfinished (no break). Durations use
+timestamp differences when available, otherwise frame differences divided by
+`camera_framerate`. Return `0.0` for no bound time and `Inf` for positive bound time with no
+observed break, where the estimate diverges. If exposure is shorter than the frame period,
+a break during the gap appears at the next frame's first record.
+
+Through 0.7.3 a dimer still bound at the end counted as lifetime 0; the first 0.7.4 work
+averaged only completed intervals, which is still biased low.
 
 For simulation output, the lifetime does not depend on record order. Tracks are sorted
 stably by `(frame, timestamp)`, or by frame alone for records without timestamps; equal keys

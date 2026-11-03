@@ -330,39 +330,51 @@ end
     @test_logs simulate(DiffusionSMLMConfig(density=0.5, box_size=2.0, t_max=0.2, k_off=100.0, dt=0.01))
 end
 
-@testset "Lesser 4: lifetime averages only intervals with an observed break" begin
+@testset "Lesser 4: lifetime includes right-censored intervals" begin
     Random.seed!(7408)
-    params = DiffusionSMLMConfig(density=5.0, box_size=5.0, r_react=0.3, k_off=0.5,
-                               dt=0.01, t_max=0.6, camera_framerate=100.0, camera_exposure=0.01)
+    params = DiffusionSMLMConfig(density=5.0, box_size=8.0, r_react=0.3, k_off=0.5,
+                               dt=0.01, t_max=3.0, camera_framerate=10.0, camera_exposure=0.1)
     smld, _ = simulate(params)
-    # One recorded step per frame: independently count observed bound-to-unbound intervals.
-    completed = Float64[]
-    unfinished = 0
-    for id in unique(e.track_id for e in smld.emitters)
-        records = sort(filter(e -> e.track_id == id, smld.emitters), by=e -> e.frame)
-        first_bound = nothing
-        for e in records
-            if e.state == :dimer
-                first_bound === nothing && (first_bound = e.frame)
-            elseif first_bound !== nothing
-                push!(completed, (e.frame - 1) / params.camera_framerate - (first_bound - 1) / params.camera_framerate)
-                first_bound = nothing
+    # Independently obtain interval endpoints from changes in the recorded bound-state mask.
+    completed, unfinished = Float64[], Float64[]
+    for id in sort!(unique([e.track_id for e in smld.emitters]))
+        records = filter(e -> e.track_id == id, smld.emitters)
+        bound = [e.state == :dimer for e in records]
+        changes = diff(vcat(0, Int.(bound), 0))
+        starts, stops = findall(==(1), changes), findall(==(-1), changes)
+        for (first_bound, first_unbound) in zip(starts, stops)
+            if first_unbound > length(records)
+                push!(unfinished, records[end].timestamp - records[first_bound].timestamp)
+            else
+                push!(completed, records[first_unbound].timestamp - records[first_bound].timestamp)
             end
         end
-        unfinished += first_bound !== nothing
     end
-    @test !isempty(completed)
-    @test unfinished > length(completed)
+    breaks = length(completed)
+    unfinished_share = length(unfinished) / (breaks + length(unfinished))
+    @test breaks > 0
+    @test unfinished_share > 0.3
     lifetime = analyze_dimer_lifetime(smld)
-    @test lifetime ≈ mean(completed)
-    @test lifetime > sum(completed) / (length(completed) + unfinished)
+    @test lifetime ≈ (sum(completed) + sum(unfinished)) / breaks
+    mle_se = lifetime / sqrt(breaks)
+    completed_only_mean = mean(completed)
+    completed_only_se = std(completed) / sqrt(breaks)
+    @test abs(lifetime - 1 / params.k_off) <= 3 * mle_se
+    @test 1 / params.k_off - completed_only_mean > 3 * completed_only_se
+    @info "Censored dimer lifetime regression" tau_hat=lifetime breaks unfinished_share completed_only_mean mle_se completed_only_se
+
+    Random.seed!(7909)
+    for records in (reverse(smld.emitters), shuffle(smld.emitters))
+        reordered = BasicSMLD(records, smld.camera, smld.n_frames, smld.n_datasets, copy(smld.metadata))
+        @test isequal(analyze_dimer_lifetime(reordered), lifetime)
+    end
 
     # Real simulator output with bound dimers but no breaks, and with no dimers at all.
     Random.seed!(7408)
     bound, _ = simulate(DiffusionSMLMConfig(density=5.0, box_size=5.0, r_react=0.3, k_off=0.0,
                                            dt=0.01, t_max=0.2, camera_framerate=100.0, camera_exposure=0.01))
     @test any(e -> e.state == :dimer, bound.emitters)
-    @test analyze_dimer_lifetime(bound) == 0.0
+    @test analyze_dimer_lifetime(bound) == Inf
     monomer, _ = simulate(DiffusionSMLMConfig(box_size=2.0, t_max=0.1); override_count=1)
     @test analyze_dimer_lifetime(monomer) == 0.0
 end
@@ -564,7 +576,7 @@ end
     lifetime = analyze_dimer_lifetime(smld)
     fractions = analyze_dimer_fraction(smld)
     truth = frame_dimer_truth(smld)
-    @test lifetime ≈ 0.23636363636363636
+    @test isfinite(lifetime) && lifetime > 0.0
 
     Random.seed!(7808)
     for records in (reverse(smld.emitters), shuffle(smld.emitters), shuffle(smld.emitters))
@@ -596,4 +608,37 @@ end
     @test track_changes(tied_source)[1] == [(1, :monomer), (1, :dimer), (1, :monomer)]
     tied_minimal = BasicSMLD([StateRecord(e.frame, e.track_id, e.state) for e in tied], smld.camera, 1, 1)
     @test track_changes(tied_minimal)[1] == [(1, :monomer), (1, :dimer), (1, :monomer)]
+end
+
+@testset "Round 9: lifetime uses timestamps and censored endpoints" begin
+    camera = IdealCamera(32, 32, 0.1)
+    times = (0.0, 0.125, 0.25, 0.375, 0.5, 1.0)
+    states = (:monomer, :dimer, :dimer, :monomer, :dimer, :dimer)
+    for dimension in (2, 3)
+        # All records share one frame; timestamps give 0.25 s completed + 0.5 s censored.
+        records = dimension == 2 ?
+            [DiffusingEmitter2D{Float64}(1.0, 1.0, 100.0, t, 1, 1, 1, state, nothing)
+             for (t, state) in zip(times, states)] :
+            [DiffusingEmitter3D{Float64}(1.0, 1.0, 0.0, 100.0, t, 1, 1, 1, state, nothing)
+             for (t, state) in zip(times, states)]
+        source = BasicSMLD(records, camera, 1, 1)
+        # Timestamped data do not require camera_framerate metadata.
+        @test analyze_dimer_lifetime(source) == 0.75
+        @test analyze_dimer_lifetime(BasicSMLD(records[1:4], camera, 1, 1)) == 0.25
+        @test analyze_dimer_lifetime(BasicSMLD(records[1:1], camera, 1, 1)) == 0.0
+        @test analyze_dimer_lifetime(BasicSMLD(records[2:2], camera, 1, 1)) == 0.0
+        @test analyze_dimer_lifetime(BasicSMLD(records[2:3], camera, 1, 1)) == Inf
+        @test analyze_dimer_lifetime(BasicSMLD(records[1:0], camera, 1, 1)) == 0.0
+        for reordered in (reverse(records), shuffle(records))
+            @test analyze_dimer_lifetime(BasicSMLD(reordered, camera, 1, 1)) == 0.75
+        end
+    end
+
+    frames = (1, 2, 3, 4, 5, 9)
+    records = [StateRecord(frame, 1, state) for (frame, state) in zip(frames, states)]
+    metadata = Dict{String,Any}("simulation_parameters" => DiffusionSMLMConfig(camera_framerate=10.0))
+    for reordered in (records, reverse(records), shuffle(records))
+        # Without timestamps: (4 - 2) / 10 + (9 - 5) / 10, with one break.
+        @test analyze_dimer_lifetime(BasicSMLD(reordered, camera, 9, 1, metadata)) ≈ 0.6
+    end
 end

@@ -209,9 +209,21 @@ end
 """
     analyze_dimer_lifetime(smld::BasicSMLD)
 
-Calculate the average lifetime of bound intervals whose break is observed, at frame resolution.
-Intervals still bound at the end of a track are excluded. Return 0.0 when no interval completes.
-Through 0.7.3 a still-bound interval contributed a zero lifetime, biasing the average downward.
+Estimate the mean dimer lifetime in seconds by censored maximum likelihood:
+`τ̂ = total bound time (unfinished intervals included) / number of observed breaks`.
+The model assumes constant per-step dissociation with probability `k_off * dt`: geometric
+step counts approaching exponential lifetimes, with mean `1/k_off`.
+
+A bound interval starts at its first `:dimer` record. A completed interval ends at the first
+following `:monomer` record and counts one break; an unfinished interval ends at the track's
+last record and counts no break. Durations are timestamp differences when available,
+otherwise frame differences divided by `camera_framerate` from the simulation metadata.
+Return `0.0` when there is no bound time, and `Inf` when there is positive bound time but no
+observed break: the estimate diverges. When camera exposure is shorter than the frame period,
+a break during the gap appears at the next frame's first record.
+
+Through 0.7.3 a dimer still bound at the end counted as lifetime 0; the first 0.7.4 work
+averaged only completed intervals, which is still biased low.
 For simulation output, the result does not depend on record order: tracks are sorted
 stably by `(frame, timestamp)`, or by frame alone for records without timestamps. Equal
 sort keys retain their input order. Through 0.7.3 sub-step records within a frame kept their
@@ -221,48 +233,45 @@ input order, so reversing or shuffling simulation output could change the lifeti
 - `smld::BasicSMLD`: SMLD containing all emitters
 
 # Returns
-- `Float64`: Average dimer lifetime in seconds
+- `Float64`: Censored maximum-likelihood mean lifetime in seconds, `0.0`, or `Inf`
 
 """
 function analyze_dimer_lifetime(smld::BasicSMLD)
-    # Track state changes
-    state_history = track_state_changes(smld)
-    
-    # Calculate dimer lifetimes
-    lifetimes = Float64[]
-    
-    for (id, history) in state_history
-        # Find all dimer periods
+    by_track = Dict{Int,Vector{Int}}()
+    for (i, e) in enumerate(smld.emitters)
+        push!(get!(by_track, e.track_id, Int[]), i)
+    end
+
+    interval_duration(start, stop) = if hasproperty(start, :timestamp) && hasproperty(stop, :timestamp)
+        Float64(stop.timestamp - start.timestamp)
+    else
+        params = smld.metadata["simulation_parameters"]
+        (stop.frame - start.frame) / params.camera_framerate
+    end
+
+    total_bound_time = 0.0
+    breaks = 0
+    # Fix the aggregation order as well as the chronology within each track.
+    for id in sort!(collect(keys(by_track)))
+        idx = by_track[id]
+        sort!(idx, by=i -> _record_time_key(smld.emitters[i]), alg=MergeSort)
         dimer_start = nothing
-        
-        for i in 1:length(history)
-            frame, state = history[i]
-            
-            # Start of dimer period
-            if state == :dimer && (i == 1 || history[i-1][2] != :dimer)
-                dimer_start = frame
-            end
-            
-            # End of dimer period
-            if dimer_start !== nothing && state != :dimer
-                dimer_end = frame
-                
-                # Convert frames to time
-                params = smld.metadata["simulation_parameters"]
-                t_start = (dimer_start - 1) / params.camera_framerate
-                t_end = (dimer_end - 1) / params.camera_framerate
-                
-                # Calculate lifetime
-                lifetime = t_end - t_start
-                push!(lifetimes, lifetime)
-                
+        for i in idx
+            e = smld.emitters[i]
+            if e.state == :dimer
+                dimer_start === nothing && (dimer_start = e)
+            elseif e.state == :monomer && dimer_start !== nothing
+                total_bound_time += interval_duration(dimer_start, e)
+                breaks += 1
                 dimer_start = nothing
             end
         end
+        if dimer_start !== nothing
+            total_bound_time += interval_duration(dimer_start, smld.emitters[last(idx)])
+        end
     end
-    
-    # Calculate average lifetime
-    return isempty(lifetimes) ? 0.0 : mean(lifetimes)
+
+    return total_bound_time == 0.0 ? 0.0 : breaks == 0 ? Inf : total_bound_time / breaks
 end
 
 """

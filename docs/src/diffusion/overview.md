@@ -233,10 +233,20 @@ fig
 
 ### Analyzing Dimer Lifetimes
 
-`analyze_dimer_lifetime(smld)` averages bound intervals whose break is observed, at frame
-resolution, and returns seconds. Intervals still bound at the end of a track are excluded;
-if none completes, the result is `0.0`. Through 0.7.3 an unfinished interval contributed a zero
-lifetime and biased the average downward.
+`analyze_dimer_lifetime(smld)` returns the censored maximum-likelihood mean lifetime in seconds:
+`τ̂ = total bound time (unfinished intervals included) / number of observed breaks`.
+It assumes constant per-step dissociation with probability `k_off * dt`: geometric step
+counts approaching exponential lifetimes, with mean `1/k_off`.
+
+A bound interval starts at its first `:dimer` record. It ends at the first following
+`:monomer` record, counting one break, or at the track's last record if unfinished,
+counting no break. Durations use timestamp differences when available; otherwise they use
+frame differences divided by `camera_framerate`. No bound time returns `0.0`; positive bound
+time with no observed break returns `Inf`, because the estimate diverges. When exposure is
+shorter than the frame period, a break during the gap appears at the next frame's first record.
+
+Through 0.7.3 a dimer still bound at the end counted as lifetime 0; the first 0.7.4 work
+averaged only completed intervals, which is still biased low.
 
 For simulation output, the result does not depend on record order: each track is sorted
 stably by `(frame, timestamp)`. Records without timestamps are sorted by frame only, and
