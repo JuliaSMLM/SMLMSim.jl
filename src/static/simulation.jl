@@ -24,7 +24,8 @@ and localization uncertainty.
 - `labeling::AbstractLabeling`: Labeling strategy for fluorophore attachment (default: FixedLabeling() = 1 per site)
 - `molecule::Molecule`: Fluorophore model for blinking simulation
 - `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model for detection simulation.
-  Defaults to `starting_conditions.camera` for an SMLD, otherwise `IdealCamera(1:128, 1:128, 0.1)`.
+  Defaults to `starting_conditions.camera` for an SMLD with a camera field, otherwise
+  `IdealCamera(1:128, 1:128, 0.1)`.
   An explicit camera wins. Through 0.7.3 the default replaced an SMLD's camera.
 - `state1::Union{Int, Symbol}=:equilibrium`: Initial fluorophore state:
   - `::Int`: Specific state (1=on, 2=off typically)
@@ -136,7 +137,8 @@ function simulate(params::StaticSMLMConfig;
     end
 
     if camera === nothing
-        camera = starting_conditions isa SMLD ? starting_conditions.camera : IdealCamera(1:128, 1:128, 0.1)
+        camera = starting_conditions isa SMLD && hasproperty(starting_conditions, :camera) ?
+                 starting_conditions.camera : IdealCamera(1:128, 1:128, 0.1)
     end
 
     # Initialize metadata
@@ -269,7 +271,7 @@ function simulate(params::StaticSMLMConfig;
                              state1=state1, burn_in=burn_in)
 
     # Determine PSF scaling based on emitter dimensionality
-    emitter_type = eltype(smld_true.emitters)
+    emitter_type = eltype(smld_model.emitters)
     σ_scaled = if emitter_type <: Emitter2DFit
         params.σ_psf  # already in microns
     else

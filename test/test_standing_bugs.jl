@@ -11,6 +11,10 @@ struct StateRecord <: AbstractEmitter
     state::Symbol
 end
 
+struct CameraFreeSMLD{E<:AbstractEmitter} <: SMLMSim.SMLD
+    emitters::Vector{E}
+end
+
 @testset "Must 1: absorbing states finish the final frame" begin
     # p02: 3 * (1/10) rounds past 3/10; 4 frames is the terminating control.
     fluor = GenericFluor(1e4, [-60.0 10.0 50.0; 1.0 -1.0 0.0; 0.0 0.0 0.0])
@@ -402,4 +406,73 @@ end
             @test occursin("Emitter2DFit or Emitter3DFit is needed", sprint(showerror, err))
         end
     end
+end
+
+@testset "Round 5: camera-free SMLD uses the default camera" begin
+    emitters = [fit2(1.0, 2.0; track_id=1), fit2(2.0, 3.0; track_id=2)]
+    source = CameraFreeSMLD(emitters)
+    params = StaticSMLMConfig(nframes=20, ndatasets=1, minphotons=0)
+    Random.seed!(7501)
+    smld, info = simulate(params; starting_conditions=source, molecule=BLINKING, state1=1)
+    @test smld.camera isa IdealCamera
+    @test length(smld.camera.pixel_edges_x) - 1 == 128
+    @test length(smld.camera.pixel_edges_y) - 1 == 128
+    @test info.n_emitters == 2
+    @test smld.camera === info.smld_true.camera === info.smld_model.camera
+    @test Set(e.track_id for e in info.smld_model.emitters) == Set([1, 2])
+    override = IdealCamera(16, 32, 0.1)
+    smld, info = simulate(params; starting_conditions=source, camera=override, molecule=BLINKING, state1=1)
+    @test smld.camera === override
+    @test info.smld_true.camera === override
+end
+
+@testset "Round 5: floating point keywords retain their precision" begin
+    precise = big"10000.0000000000007"
+    fluor = GenericFluor(; photons=precise, k_off=0.0, k_on=1.0)
+    @test fluor.γ === precise
+    @test isequal(intensity_trace(fluor, 1, 10), [1000.0000000000001])
+    for T in (Float16, Float32, Float64, BigFloat)
+        photons, k_off, k_on = T(10000), T(50), T(1)
+        fluor = GenericFluor(; photons=photons, k_off=k_off, k_on=k_on)
+        @test fluor.γ === photons
+        @test eltype(fluor.q) === T
+        @test isequal(fluor.q, [-k_off k_off; k_on -k_on])
+    end
+    integer = GenericFluor(; photons=10000, k_off=50, k_on=1)
+    reference = GenericFluor(; photons=10000.0, k_off=50.0, k_on=1.0)
+    @test integer.γ === reference.γ
+    @test isequal(integer.q, reference.q)
+end
+
+@testset "Round 5: unlinked molecules accept abstract and mixed precision containers" begin
+    camera = IdealCamera(32, 32, 0.1)
+    params = StaticSMLMConfig(nframes=20, ndatasets=2, minphotons=0)
+    for dimension in (2, 3)
+        concrete = dimension == 2 ? [fit2(0.5, 1.0), fit2(1.5, 2.0)] :
+                                    [fit3(0.5, 1.0, 0.0), fit3(1.5, 2.0, 0.25)]
+        abstractly_typed = AbstractEmitter[concrete...]
+        Random.seed!(7503)
+        model = kinetic_model(BasicSMLD(abstractly_typed, camera, 1, 1), BLINKING, 20, 50.0;
+                              ndatasets=2, minphotons=0.0, state1=1)
+        @test unique(e.track_id for e in model.emitters) == [1, 2]
+        @test unique((e.x, e.y) for e in model.emitters) == [(0.5, 1.0), (1.5, 2.0)]
+        @test eltype(model.emitters) === (dimension == 2 ? Emitter2DFit{Float64} : Emitter3DFit{Float64})
+
+        single = dimension == 2 ?
+            Emitter2DFit{Float32}(1.5f0, 2f0, 1f0, 0f0, 0f0, 0f0, 0f0, 0f0) :
+            Emitter3DFit{Float32}(1.5f0, 2f0, 0.25f0, 1f0, 0f0, 0f0, 0f0, 0f0, 0f0, 0f0)
+        family = dimension == 2 ? Emitter2DFit : Emitter3DFit
+        mixed = family[concrete[1], single]
+        for inputs in (mixed, reverse(mixed), AbstractEmitter[mixed...])
+            Random.seed!(7503)
+            smld, info = simulate(params; starting_conditions=inputs, camera=camera, molecule=BLINKING, state1=1)
+            @test info.n_emitters == 2
+            @test unique(e.track_id for e in info.smld_model.emitters) == [1, 2]
+            @test unique((e.x, e.y) for e in info.smld_model.emitters) == [(Float64(e.x), Float64(e.y)) for e in inputs]
+            @test eltype(smld.emitters) === (dimension == 2 ? Emitter2DFit{Float64} : Emitter3DFit{Float64})
+            @test all(d -> Set(e.track_id for e in info.smld_model.emitters if e.dataset == d) == Set([1, 2]), 1:2)
+        end
+    end
+    mixed_dimensions = BasicSMLD(AbstractEmitter[fit2(1.0, 2.0), fit3(1.0, 2.0, 0.0)], camera, 1, 1)
+    @test_throws ArgumentError kinetic_model(mixed_dimensions, BLINKING, 20, 50.0; state1=1)
 end

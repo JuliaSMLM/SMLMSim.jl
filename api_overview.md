@@ -187,8 +187,10 @@ end
 Defines a fluorophore with photophysical properties.
 
 The keyword constructor accepts real numbers, including integers, for `photons`, `k_off`,
-and `k_on`, converting them to Float64. Through 0.7.3 these keywords required `AbstractFloat`
-values, so `GenericFluor(; photons=10000, k_off=50, k_on=1)` threw a type error.
+and `k_on`. Floating point values keep their types and precision; only
+non-float reals such as integers and rationals are converted to Float64. Through 0.7.3 these
+keywords required `AbstractFloat` values, so `GenericFluor(; photons=10000, k_off=50, k_on=1)`
+threw a type error.
 
 Positional construction preserves the supplied floating point types. `intensity_trace`
 promotes the rate matrix and simulation time to a common floating point type when building
@@ -374,8 +376,9 @@ All `simulate()` methods return a tuple: `(primary_output, info)`.
 
 Static `starting_conditions` must contain `Emitter2DFit` or `Emitter3DFit`; plain emitters
 throw `ArgumentError` on entry (through 0.7.3 they failed later with a field error). A default
-`camera=nothing` uses an SMLD's camera, otherwise `IdealCamera(1:128, 1:128, 0.1)`; an explicit
-camera wins. Through 0.7.3 the default replaced an SMLD's camera.
+`camera=nothing` uses an SMLD's camera when it has a camera field, otherwise
+`IdealCamera(1:128, 1:128, 0.1)`; an explicit camera wins. Through 0.7.3 the default replaced
+an SMLD's camera.
 
 Extra keywords to diffusion `simulate` are ignored with one warning naming them. They are
 deprecated and will throw in 0.8.0; through 0.7.3 they were ignored silently. The emission
@@ -437,6 +440,10 @@ different positions warn once because later positions are dropped. Each zero id 
 independent molecule, processed afterward in input order and assigned an output id above
 the largest non-zero input id. Through 0.7.3 zero ids were collapsed into one molecule and
 conflicting linked positions were dropped silently. Static `simulate` uses these same rules.
+
+Abstract container element types and mixed numeric precisions within one dimension are
+supported. The output dimension is chosen from the individual input fits and its coordinates
+are Float64. Mixed 2D and 3D inputs throw `ArgumentError`.
 
 ```julia
 # Example of how to call kinetic_model

@@ -39,7 +39,8 @@ Parameters:
 By convention, state 1 is the fluorescent (ON) state, and other states are non-fluorescent (OFF).
 
 The keyword constructor accepts real numbers, including integers, for `photons`, `k_off`,
-and `k_on`, and stores all three as Float64:
+and `k_on`. Floating point values retain their types and precision;
+only non-float reals such as integers and rationals are converted to Float64:
 
 ```julia
 fluor = GenericFluor(; photons=10000, k_off=50, k_on=1)
@@ -177,6 +178,10 @@ warns once if later records for that id have different positions. Each zero id i
 unlinked molecule, processed afterward in input order and assigned an output id above the
 largest non-zero input id. Through 0.7.3 all zero ids were grouped as one molecule, and
 conflicting linked positions were dropped silently.
+
+Input containers may have an abstract element type or mix numeric precisions within one
+dimension. The 2D or 3D output type is chosen from the individual fits and its coordinates
+are Float64. Mixing 2D and 3D inputs throws `ArgumentError`.
 
 ## Photophysical Parameters and Duty Cycle
 

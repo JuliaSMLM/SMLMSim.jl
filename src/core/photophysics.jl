@@ -148,7 +148,9 @@ smld_model = kinetic_model(smld_true, fluor, 1000, 10.0; burn_in=5.0)
 ```
 
 # Note
-The emitter type (2D/3D) is automatically determined from the input SMLD.
+The emitter type (2D/3D fit) is determined from the individual input emitters. Abstract
+container element types and mixed numeric precisions within one dimension are supported;
+output fits use Float64 coordinates. Mixed 2D and 3D inputs throw `ArgumentError`.
 Position uncertainties are initialized to 0 and can be set using the
 apply_noise() function. For models with photobleaching (absorbing states),
 use `state1=1` instead of `:equilibrium` since absorbing states have no
@@ -174,12 +176,20 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         throw(ArgumentError("burn_in must be non-negative"))
     end
 
-    emitter_type = eltype(smld.emitters)
-    emitters = Vector{emitter_type}()
+    # Choose concrete Float64 output storage from the input values, not the container type.
+    emitters = if isempty(smld.emitters)
+        similar(smld.emitters, 0)
+    elseif all(e -> e isa Emitter2DFit, smld.emitters)
+        Emitter2DFit{Float64}[]
+    elseif all(e -> e isa Emitter3DFit, smld.emitters)
+        Emitter3DFit{Float64}[]
+    else
+        throw(ArgumentError("kinetic_model requires only Emitter2DFit or only Emitter3DFit emitters; mixed 2D and 3D inputs are not supported"))
+    end
 
     # Get true positions from input SMLD
     grouped_emitters = Dict()
-    unlinked_emitters = Vector{emitter_type}()
+    unlinked_emitters = AbstractEmitter[]
     for e in smld.emitters
         key = e.track_id
         if key == 0
@@ -240,9 +250,9 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
 
         # Create emitter for each frame where photons > threshold
         for frame in framenum
-            if emitter_type <: Emitter2DFit
+            if pos isa Emitter2DFit
                 emitter = Emitter2DFit{Float64}(
-                    pos.x, pos.y,        # positions
+                    Float64(pos.x), Float64(pos.y),  # positions
                     photons[frame],      # photons
                     0.0,                 # background
                     0.0, 0.0,            # σ_x, σ_y
@@ -253,9 +263,9 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     track_id=track_id,
                     id=pos.id
                 )
-            elseif emitter_type <: Emitter3DFit
+            elseif pos isa Emitter3DFit
                 emitter = Emitter3DFit{Float64}(
-                    pos.x, pos.y, pos.z,  # positions
+                    Float64(pos.x), Float64(pos.y), Float64(pos.z),  # positions
                     photons[frame],       # photons
                     0.0,                  # background
                     0.0, 0.0, 0.0,        # σ_x, σ_y, σ_z
@@ -267,7 +277,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     id=pos.id
                 )
             else
-                error("Unsupported emitter type: $emitter_type")
+                error("Unsupported emitter type: $(typeof(pos))")
             end
             push!(emitters, emitter)
         end
