@@ -50,7 +50,7 @@ using SMLMSim
 
 # Set simulation parameters
 params = DiffusionSMLMConfig(
-    density = 0.5,        # molecules per μm²
+    density = 0.5,        # molecules per um² in 2D, per um³ in 3D
     box_size = 10.0,      # μm
     diff_monomer = 0.1,   # μm²/s
     diff_dimer = 0.05,    # μm²/s
@@ -66,6 +66,19 @@ smld, info = simulate(params)
 ```
 
 The `smld` output is a `BasicSMLD` structure containing all emitters across all time points, with each emitter having frame information corresponding to the camera settings. The `info` struct contains additional simulation metadata such as `info.elapsed_s`.
+
+`density` is molecules per um² in 2D or per um³ in 3D. The initial molecule count is
+`round(Int, density * box_size^ndims)`: density 1.0 in a box of side 5 um gives 25 molecules
+in 2D and 125 in 3D.
+
+Additional keywords to `simulate` are deprecated: they are ignored with one warning naming
+them, and will throw in 0.8.0. Through 0.7.3 they were ignored silently. Use `γ` for the emission
+rate; `gamma` is an ignored keyword.
+
+The per-step dissociation probability is `k_off * dt`. If it exceeds 1, `simulate` warns once,
+naming both parameters: every bound pair dissociates at the next step, so its mean lifetime
+is `dt` seconds rather than `1/k_off`. The simulation output is unchanged. Through 0.7.3 this
+saturation was silent. Choose a smaller `dt` to resolve the dissociation rate.
 
 ## Simulation Parameters
 
@@ -195,6 +208,13 @@ dimer_smld = get_dimers(smld)
 
 To quantify the formation of dimers over time:
 
+`analyze_dimer_fraction` returns the exposure-averaged fraction of molecules bound, in [0, 1].
+For each (frame, track_id), it counts the fraction of records with `state == :dimer`, then
+averages over tracks. Only `frame`, `track_id`, and `state` are needed, and record order does
+not affect the result. Through 0.7.3 it counted sub-step records divided by two, making the
+result depend on the number of sub-steps and allowing values above 1; with one record per
+molecule it returned half the bound fraction.
+
 ```julia
 # Calculate fraction of molecules in dimer state
 frames, dimer_fractions = analyze_dimer_fraction(smld)
@@ -209,6 +229,32 @@ ax = Axis(fig[1, 1],
 )
 lines!(ax, frames, dimer_fractions)
 fig
+```
+
+### Analyzing Dimer Lifetimes
+
+`analyze_dimer_lifetime(smld)` returns the censored maximum-likelihood mean lifetime in seconds:
+`τ̂ = total bound time (unfinished intervals included) / number of observed breaks`.
+It assumes constant per-step dissociation with probability `k_off * dt`: geometric step
+counts approaching exponential lifetimes, with mean `1/k_off`.
+
+A bound interval starts at its first `:dimer` record. It ends at the first following
+`:monomer` record, counting one break, or at the track's last record if unfinished,
+counting no break. Durations use timestamp differences when available; otherwise they use
+frame differences divided by `camera_framerate`. No bound time returns `0.0`; positive bound
+time with no observed break returns `Inf`, because the estimate diverges. When exposure is
+shorter than the frame period, a break during the gap appears at the next frame's first record.
+
+Through 0.7.3 a dimer still bound at the end counted as lifetime 0; the first 0.7.4 work
+averaged only completed intervals, which is still biased low.
+
+For simulation output, the result does not depend on record order: each track is sorted
+stably by `(frame, timestamp)`. Records without timestamps are sorted by frame only, and
+equal sort keys retain their input order. Through 0.7.3 sub-step records within a frame kept
+their input order, so reversing or shuffling simulation output could change the lifetime.
+
+```julia
+lifetime = analyze_dimer_lifetime(smld)
 ```
 
 ## Emitter Types

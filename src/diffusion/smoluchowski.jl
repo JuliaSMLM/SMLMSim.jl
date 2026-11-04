@@ -4,7 +4,7 @@
 Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 # Fields
-- `density::Float64`: number density (molecules/μm²)
+- `density::Float64`: number density (molecules/um² in 2D, molecules/um³ in 3D)
 - `box_size::Float64`: simulation box size (μm)
 - `diff_monomer::Float64`: monomer diffusion coefficient (μm²/s)
 - `diff_dimer::Float64`: dimer diffusion coefficient (μm²/s)
@@ -84,8 +84,8 @@ params = DiffusionSMLMConfig()
 
 # Custom parameters
 params = DiffusionSMLMConfig(
-    density = 1.0,           # 1 molecule per μm²
-    box_size = 20.0,         # 20μm × 20μm box
+    density = 1.0,           # 1 molecule per um³ in this 3D example (per um² in 2D)
+    box_size = 20.0,         # 20um × 20um × 20um box
     diff_monomer = 0.2,      # 0.2 μm²/s
     diff_dimer = 0.1,        # 0.1 μm²/s
     diff_dimer_rot = 0.8,    # 0.8 rad²/s
@@ -611,7 +611,11 @@ with emitters that have both frame number and timestamp information.
   - The box [0, box_size] in each dimension is the sample, and a camera is a view into it: a
     camera smaller than the box sees molecules diffuse in and out of view, and pixels of a camera
     that lie outside the box can never hold a molecule (`simulate` warns once, naming them)
-- Any additional parameters are ignored (allows unified interface with other simulate methods)
+- Additional keywords are ignored with a warning naming them (once). This use is deprecated
+  and will throw in 0.8.0. Through 0.7.3 additional keywords were ignored silently.
+- Dissociation uses the per-step probability `k_off * dt`. If it exceeds 1, `simulate` warns
+  once: every bound pair dissociates at the next step, giving a mean lifetime of `dt` seconds
+  rather than `1/k_off`. The output is unchanged. Through 0.7.3 this saturation was silent.
 
 # Warnings
 Each warns once and then runs with the stated rule: `camera_exposure` or the frame period not an
@@ -655,6 +659,14 @@ function simulate(params::DiffusionSMLMConfig;
                  kwargs...)
 
     start_time = time_ns()
+
+    if !isempty(kwargs)
+        @warn "simulate(::DiffusionSMLMConfig): ignored keywords: $(join(keys(kwargs), ", ")); extra keywords are deprecated and will throw in 0.8.0" maxlog=1
+    end
+
+    if params.k_off * params.dt > 1
+        @warn "k_off=$(params.k_off) s⁻¹ and dt=$(params.dt) s give k_off * dt=$(params.k_off * params.dt) > 1; every bound pair dissociates at the next step, so the mean lifetime is dt=$(params.dt) s rather than 1/k_off=$(1 / params.k_off) s" maxlog=1
+    end
 
     photons !== nothing && γ !== nothing &&
         throw(ArgumentError("pass γ or the deprecated photons, not both"))

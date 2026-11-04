@@ -38,6 +38,18 @@ Parameters:
 
 By convention, state 1 is the fluorescent (ON) state, and other states are non-fluorescent (OFF).
 
+The keyword constructor accepts real numbers, including integers, for `photons`, `k_off`,
+and `k_on`. Floating point values retain their types and precision;
+only non-float reals such as integers and rationals are converted to Float64:
+
+```julia
+fluor = GenericFluor(; photons=10000, k_off=50, k_on=1)
+```
+
+Through 0.7.3 the keyword values had to be `AbstractFloat`, so these integer values threw a
+type error. The positional constructor preserves the types of the supplied rate matrix
+and emission rate.
+
 ## Kinetic Models
 
 ### Continuous Time Markov Chain
@@ -102,6 +114,14 @@ The `intensity_trace` function:
 2. Integrates photon emission (rate γ) during ON states
 3. Accumulates photons within each frame's exposure time
 
+When building the chain, the rate matrix and simulation time are promoted to a common
+floating point type. For example, `GenericFluor(1f4, Float32[-50 50; 1f-2 -1f-2])` works
+with the usual Float64 time arguments. Through 0.7.3 this combination failed with a method
+error. Float64 simulations keep their existing random draws and photon counts.
+
+An absorbing state holds through the frame end. Through 0.7.3 a bleached molecule could hang
+when rounding placed the final frame end just past the CTMC's end time.
+
 ## Common Photophysical Models
 
 ### Two-State Model
@@ -152,6 +172,16 @@ smld_noisy, info = simulate(params; molecule=fluor, camera=camera)
 ```
 
 Behind the scenes, this uses the `kinetic_model()` function to apply the photophysical model to each emitter position.
+
+`kinetic_model` uses the first record for each non-zero `track_id`, in sorted id order, and
+warns once if later records for that id have different positions. Each zero id is a separate
+unlinked molecule, processed afterward in input order and assigned an output id above the
+largest non-zero input id. Through 0.7.3 all zero ids were grouped as one molecule, and
+conflicting linked positions were dropped silently.
+
+Input containers may have an abstract element type or mix numeric precisions within one
+dimension. The 2D or 3D output type is chosen from the individual fits and its coordinates
+are Float64. Mixing 2D and 3D inputs throws `ArgumentError`.
 
 ## Photophysical Parameters and Duty Cycle
 

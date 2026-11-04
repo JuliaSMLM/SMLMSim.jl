@@ -13,6 +13,10 @@ abstract type Molecule end
 
 Defines a fluorophore with photophysical properties.
 
+Positional construction preserves the floating point types. `intensity_trace` promotes the
+rate matrix and simulation time to a common floating point type when building the chain.
+Through 0.7.3 a Float32 rate matrix with a Float64 time failed with a method error.
+
 # Fields
 - `γ::AbstractFloat`: Photon emission rate in Hz. Default: 1e5
 - `q::Array{<:AbstractFloat}`: Rate matrix where q[i,j] for i≠j is the transition rate from state i to j,
@@ -38,29 +42,36 @@ end
 
 
 """
-    GenericFluor(; photons::AbstractFloat=1e5, k_off::AbstractFloat=50.0, k_on::AbstractFloat=1e-2)
+    GenericFluor(; photons::Real=1e5, k_off::Real=50.0, k_on::Real=1e-2)
 
 Create a simple two-state (on/off) fluorophore with specified parameters.
 
 # Arguments
-- `photons::AbstractFloat`: Photon emission rate in Hz
-- `k_off::AbstractFloat`: Off-switching rate (on→off) in Hz
-- `k_on::AbstractFloat`: On-switching rate (off→on) in Hz
+- `photons::Real`: Photon emission rate in photons/s
+- `k_off::Real`: Off-switching rate (on→off) in s⁻¹
+- `k_on::Real`: On-switching rate (off→on) in s⁻¹
 
 # Details
 Creates a fluorophore with a 2-state model and the specified rates.
 State 1 is the on (bright) state, and state 2 is the off (dark) state.
 The rate matrix is constructed as: q = [-k_off k_off; k_on -k_on]
+`AbstractFloat` keyword values retain their types and precision. Only
+non-float reals (such as integers and rationals) are converted to Float64; the rate matrix
+uses normal numeric promotion. Through 0.7.3 these keywords required `AbstractFloat`
+values, so valid integer values such as `photons=10000` threw a type error.
 
 Note: k_on and k_off are transition rates (1/s), not duty cycle fractions.
 The duty cycle (fraction of time in ON state) is k_on/(k_on + k_off).
 For typical dSTORM, k_on << k_off gives low duty cycle (mostly dark, brief blinks).
 """
-function GenericFluor(; 
-    photons::AbstractFloat=1e5, 
-    k_off::AbstractFloat=50.0, 
-    k_on::AbstractFloat=1e-2
+function GenericFluor(;
+    photons::Real=1e5,
+    k_off::Real=50.0,
+    k_on::Real=1e-2
 )
+    photons = photons isa AbstractFloat ? photons : Float64(photons)
+    k_off = k_off isa AbstractFloat ? k_off : Float64(k_off)
+    k_on = k_on isa AbstractFloat ? k_on : Float64(k_on)
     # Create rate matrix for 2-state system
     q = [-k_off k_off; k_on -k_on]
     

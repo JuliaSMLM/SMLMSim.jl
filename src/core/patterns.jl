@@ -150,6 +150,10 @@ end
 
 Points with uniform random distribution between two endpoints.
 
+Each copy placed by `uniform2D` or `simulate` independently draws a Poisson(λ × length)
+site count and uniform site positions from these endpoints. The stored coordinates are one
+sample for inspection. Through 0.7.3 every placed copy reused that one sample, rotated.
+
 # Fields
 - `λ::Float64`: Linear molecule density (molecules per micron)
 - `endpoints::Vector{Tuple{Float64,Float64}}`: Vector of endpoint coordinates
@@ -227,6 +231,10 @@ end
     Line3D <: Pattern3D
 
 Points with uniform random distribution between two 3D endpoints.
+
+Each copy placed by `uniform3D` or `simulate` independently draws a Poisson(λ × length)
+site count and uniform site positions from these endpoints. The stored coordinates are one
+sample for inspection. Through 0.7.3 every placed copy reused that one sample, rotated.
 
 # Fields
 - `λ::Float64`: Linear molecule density (molecules per micron)
@@ -447,10 +455,18 @@ end
 Pattern Generation Functions
 ==========================================================================#
 
+# Deterministic patterns reuse their sites; lines draw independent sites for each copy.
+_instance(p) = p
+_instance(p::Line2D) = Line2D(; λ=p.λ, endpoints=p.endpoints)
+_instance(p::Line3D) = Line3D(; λ=p.λ, endpoints=p.endpoints)
+
 """
     uniform2D(ρ::Float64, p::Pattern2D, field_x::Float64, field_y::Float64)
 
 Create coordinate arrays for randomly placed and rotated 2D patterns.
+
+Each `Line2D` copy draws its own Poisson site count and uniform positions; through 0.7.3
+copies reused the template's sampled sites. Other patterns reuse their stored sites.
 
 # Arguments
 - `ρ::Float64`: Pattern density (patterns per square micron)
@@ -480,25 +496,23 @@ end
 function _uniform2D_impl(ρ::T, p::Pattern2D, field_x::T, field_y::T) where T <: AbstractFloat
     # Generate random number of patterns
     npatterns = rand(Poisson(field_x * field_y * ρ))
-    ntotal = npatterns * p.n
 
     # Initialize coordinate arrays
-    x = Vector{T}(undef, ntotal)
-    y = Vector{T}(undef, ntotal)
-    pattern_ids = Vector{Int}(undef, ntotal)
+    x = T[]
+    y = T[]
+    pattern_ids = Int[]
 
-    idx = 1
     for nn = 1:npatterns
+        p_k = _instance(p)
         θ = 2 * pi * rand()
         x0 = rand() * field_x
         y0 = rand() * field_y
 
-        for mm = 1:p.n
+        for mm = 1:p_k.n
             # Rotate and translate pattern points
-            x[idx] = p.x[mm] * cos(θ) - p.y[mm] * sin(θ) + x0
-            y[idx] = p.x[mm] * sin(θ) + p.y[mm] * cos(θ) + y0
-            pattern_ids[idx] = nn
-            idx += 1
+            push!(x, p_k.x[mm] * cos(θ) - p_k.y[mm] * sin(θ) + x0)
+            push!(y, p_k.x[mm] * sin(θ) + p_k.y[mm] * cos(θ) + y0)
+            push!(pattern_ids, nn)
         end
     end
 
@@ -510,6 +524,9 @@ end
              zrange::Vector{Float64}=[-1.0, 1.0])
 
 Create coordinate arrays for randomly placed and rotated 3D patterns.
+
+Each `Line3D` copy draws its own Poisson site count and uniform positions; through 0.7.3
+copies reused the template's sampled sites. Other patterns reuse their stored sites.
 
 # Arguments
 - `ρ::Float64`: Pattern density (patterns per square micron)
@@ -548,16 +565,15 @@ function _uniform3D_impl(ρ::T, p::Pattern3D, field_x::T, field_y::T;
 
     # Generate random number of patterns (note: ρ is 2D density)
     npatterns = rand(Poisson(field_x * field_y * ρ))
-    ntotal = npatterns * p.n
 
     # Initialize coordinate arrays
-    x = Vector{T}(undef, ntotal)
-    y = Vector{T}(undef, ntotal)
-    z = Vector{T}(undef, ntotal)
-    pattern_ids = Vector{Int}(undef, ntotal)
+    x = T[]
+    y = T[]
+    z = T[]
+    pattern_ids = Int[]
 
-    idx = 1
     for nn = 1:npatterns
+        p_k = _instance(p)
         # Random position
         x0 = rand() * field_x
         y0 = rand() * field_y
@@ -579,14 +595,13 @@ function _uniform3D_impl(ρ::T, p::Pattern3D, field_x::T, field_y::T;
             2*(q1*q3 - q0*q2)  2*(q2*q3 + q0*q1)  1-2*(q1^2 + q2^2)
         ]
 
-        for mm = 1:p.n
+        for mm = 1:p_k.n
             # Rotate and translate pattern points
-            pos = R * [p.x[mm]; p.y[mm]; p.z[mm]]
-            x[idx] = pos[1] + x0
-            y[idx] = pos[2] + y0
-            z[idx] = pos[3] + z0
-            pattern_ids[idx] = nn
-            idx += 1
+            pos = R * [p_k.x[mm]; p_k.y[mm]; p_k.z[mm]]
+            push!(x, pos[1] + x0)
+            push!(y, pos[2] + y0)
+            push!(z, pos[3] + z0)
+            push!(pattern_ids, nn)
         end
     end
 

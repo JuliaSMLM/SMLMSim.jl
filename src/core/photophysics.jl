@@ -46,6 +46,11 @@ photons = intensity_trace(fluor, 1000, 10.0; burn_in=5.0)
 - Emission only occurs in state 1 with rate f.γ
 - Frame exposure is assumed to be 1/framerate (100% duty cycle)
 - burn_in is useful for models with photobleaching to simulate pre-illumination
+- Through 0.7.3 a bleached molecule could hang when the final frame end rounded past the
+  CTMC's end time. A state with no transition left now holds through the frame end.
+- The rate matrix and simulation time are promoted to a common floating point type when
+  building the chain. Through 0.7.3 a Float32 rate matrix with a Float64 time failed with a
+  method error. Float64 simulations keep the same random draws and photon counts.
 """
 function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=1, burn_in::Real=0.0)
     # Input validation
@@ -64,7 +69,9 @@ function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=
     simulation_time = burn_in + recording_time
 
     # generate CTMC for full duration (burn_in + recording)
-    ctmc = CTMC(f.q, simulation_time, state1)
+    T = promote_type(eltype(f.q), typeof(simulation_time))
+    q = eltype(f.q) === T ? f.q : T.(f.q)
+    ctmc = CTMC(q, T(simulation_time), state1)
 
     # generate integrated photons (recording starts after burn_in)
     exptime = 1 / framerate
@@ -73,9 +80,10 @@ function intensity_trace(f::GenericFluor, nframes::Int, framerate::Real; state1=
         t = burn_in + (nn - 1) * exptime  # offset by burn_in
         frameend = burn_in + nn * exptime
         while t < frameend
-            currentstate = get_state(ctmc, t)
-            (_, nexttime) = get_next(ctmc, t)
+            currentstate = get_state(ctmc, T(t))
+            (_, nexttime) = get_next(ctmc, T(t))
             tend = min(frameend, nexttime)
+            tend <= t && (tend = frameend)   # no transition left: the state holds to the frame end
             if currentstate == 1  # the fluorescent state
                 photons[nn] += f.γ * (tend - t)
             end
@@ -111,10 +119,18 @@ Generate kinetic blinking model from existing localization data.
 - `BasicSMLD`: New SMLD with simulated blinking kinetics
 
 # Details
-For each unique position in the input SMLD:
+Each non-zero `track_id` identifies one molecule, using its first record. Repeated non-zero
+ids at different positions warn once because later positions are dropped. Each emitter with
+`track_id == 0` is an independent, unlinked molecule; its output id is the next free integer
+above the largest non-zero id, in input order. If these ids would overflow `Int`, an
+`ArgumentError` names the largest non-zero id. Molecules run in sorted non-zero id order,
+followed by unlinked emitters in input order. Through 0.7.3 all unlinked emitters were grouped
+as one molecule, and conflicting positions for a linked id were dropped silently.
+
+For each molecule in the input SMLD:
 1. Simulates fluorophore blinking using the kinetic model
 2. Creates emitters for frames where photon count exceeds threshold
-3. Preserves track_id for linking emitters from same position
+3. Preserves non-zero track_id and assigns ids to unlinked emitters
 4. Maintains camera and extends metadata from input SMLD
 
 # Example
@@ -133,7 +149,9 @@ smld_model = kinetic_model(smld_true, fluor, 1000, 10.0; burn_in=5.0)
 ```
 
 # Note
-The emitter type (2D/3D) is automatically determined from the input SMLD.
+The emitter type (2D/3D fit) is determined from the individual input emitters. Abstract
+container element types and mixed numeric precisions within one dimension are supported;
+output fits use Float64 coordinates. Mixed 2D and 3D inputs throw `ArgumentError`.
 Position uncertainties are initialized to 0 and can be set using the
 apply_noise() function. For models with photobleaching (absorbing states),
 use `state1=1` instead of `:equilibrium` since absorbing states have no
@@ -159,20 +177,47 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         throw(ArgumentError("burn_in must be non-negative"))
     end
 
-    emitter_type = eltype(smld.emitters)
-    emitters = Vector{emitter_type}()
+    # Choose concrete Float64 output storage from the input values, not the container type.
+    emitters = if isempty(smld.emitters)
+        similar(smld.emitters, 0)
+    elseif all(e -> e isa Emitter2DFit, smld.emitters)
+        Emitter2DFit{Float64}[]
+    elseif all(e -> e isa Emitter3DFit, smld.emitters)
+        Emitter3DFit{Float64}[]
+    else
+        throw(ArgumentError("kinetic_model requires only Emitter2DFit or only Emitter3DFit emitters; mixed 2D and 3D inputs are not supported"))
+    end
 
     # Get true positions from input SMLD
     grouped_emitters = Dict()
+    unlinked_emitters = AbstractEmitter[]
     for e in smld.emitters
         key = e.track_id
-        if !haskey(grouped_emitters, key)
+        if key == 0
+            push!(unlinked_emitters, e)
+        elseif !haskey(grouped_emitters, key)
             grouped_emitters[key] = e
+        else
+            first_emitter = grouped_emitters[key]
+            if e.x != first_emitter.x || e.y != first_emitter.y ||
+               (hasproperty(e, :z) && e.z != first_emitter.z)
+                @warn "kinetic_model: repeated non-zero track_id $key has records at different positions; using its first record and dropping later positions" maxlog=1
+            end
         end
     end
 
-    # Sort by track_id to maintain order
+    # Keep the linked molecule order and append independent, unlinked molecules.
     true_positions = sort(collect(values(grouped_emitters)), by=e -> e.track_id)
+    n_linked = length(true_positions)
+    largest_id = maximum(keys(grouped_emitters); init=0)
+    # Reject exhausted ids before sampling any molecule's initial state or blinking trace.
+    try
+        Base.Checked.checked_add(largest_id, length(unlinked_emitters))
+    catch err
+        err isa OverflowError || rethrow()
+        throw(ArgumentError("Unlinked track_ids would overflow Int above the largest non-zero id $largest_id"))
+    end
+    append!(true_positions, unlinked_emitters)
 
     # Precompute equilibrium distribution if needed (do once, not per emitter)
     initial_state_dist = if state1 == :equilibrium
@@ -197,7 +242,8 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         nothing  # Not needed for explicit state
     end
 
-    for dd = 1:ndatasets, pos in true_positions
+    for dd = 1:ndatasets, (i, pos) in enumerate(true_positions)
+        track_id = pos.track_id == 0 ? Base.Checked.checked_add(largest_id, i - n_linked) : pos.track_id
         # Determine initial state based on the option provided
         initial_state = if state1 == :equilibrium
             # Use pre-computed distribution for sampling
@@ -212,9 +258,9 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
 
         # Create emitter for each frame where photons > threshold
         for frame in framenum
-            if emitter_type <: Emitter2DFit
+            if pos isa Emitter2DFit
                 emitter = Emitter2DFit{Float64}(
-                    pos.x, pos.y,        # positions
+                    Float64(pos.x), Float64(pos.y),  # positions
                     photons[frame],      # photons
                     0.0,                 # background
                     0.0, 0.0,            # σ_x, σ_y
@@ -222,12 +268,12 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     σ_xy=0.0,            # x-y covariance (0 for symmetric PSF)
                     frame=frame,
                     dataset=dd,
-                    track_id=pos.track_id,
+                    track_id=track_id,
                     id=pos.id
                 )
-            elseif emitter_type <: Emitter3DFit
+            elseif pos isa Emitter3DFit
                 emitter = Emitter3DFit{Float64}(
-                    pos.x, pos.y, pos.z,  # positions
+                    Float64(pos.x), Float64(pos.y), Float64(pos.z),  # positions
                     photons[frame],       # photons
                     0.0,                  # background
                     0.0, 0.0, 0.0,        # σ_x, σ_y, σ_z
@@ -235,11 +281,11 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
                     σ_xy=0.0,             # x-y covariance (0 for symmetric PSF)
                     frame=frame,
                     dataset=dd,
-                    track_id=pos.track_id,
+                    track_id=track_id,
                     id=pos.id
                 )
             else
-                error("Unsupported emitter type: $emitter_type")
+                error("Unsupported emitter type: $(typeof(pos))")
             end
             push!(emitters, emitter)
         end

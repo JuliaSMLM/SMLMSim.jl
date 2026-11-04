@@ -8,7 +8,7 @@
              pattern::Pattern=nothing,
              labeling::AbstractLabeling=FixedLabeling(),
              molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
-             camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1),
+             camera::Union{Nothing, AbstractCamera}=nothing,
              state1::Union{Int, Symbol}=:equilibrium,
              burn_in::Real=0.0)
 
@@ -17,11 +17,16 @@ and localization uncertainty.
 
 # Arguments
 - `params::StaticSMLMConfig`: Simulation parameters
-- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}`: Optional starting conditions instead of generating patterns
+- `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractEmitter}}`: Optional starting conditions instead of generating patterns.
+  Emitters must be `Emitter2DFit` or `Emitter3DFit`; plain emitters throw `ArgumentError` on entry
+  (through 0.7.3 they failed later with a field error).
 - `pattern::Pattern`: Pattern to use (default depends on params.ndims)
 - `labeling::AbstractLabeling`: Labeling strategy for fluorophore attachment (default: FixedLabeling() = 1 per site)
 - `molecule::Molecule`: Fluorophore model for blinking simulation
-- `camera::AbstractCamera`: Camera model for detection simulation
+- `camera::Union{Nothing, AbstractCamera}=nothing`: Camera model for detection simulation.
+  Defaults to an SMLD's camera, when it has one, otherwise
+  `IdealCamera(1:128, 1:128, 0.1)`.
+  An explicit camera wins. Through 0.7.3 the default replaced an SMLD's camera.
 - `state1::Union{Int, Symbol}=:equilibrium`: Initial fluorophore state:
   - `::Int`: Specific state (1=on, 2=off typically)
   - `:equilibrium`: Sample from equilibrium distribution (default)
@@ -88,8 +93,8 @@ smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 - The field is the camera's full extent, from its first to its last pixel edge in x and in y.
   The sample continues past it: pattern centers are placed uniformly, at `params.density`
   patterns per μm², over the field widened on every side by the pattern's radius r (the largest
-  distance of a binding site from the pattern's center), and only binding sites that land on
-  the camera are kept. The emitter density on the camera is therefore flat to its edges, and a
+  distance of a binding site, or a line endpoint, from the pattern's center), and only binding
+  sites that land on the camera are kept. The emitter density on the camera is therefore flat to its edges, and a
   pattern of zero extent (`Nmer2D(n=1, d=0.0)`, `Nmer3D(n=1, d=0.0)`) is placed over the field
   itself. `info.n_patterns` counts the patterns with a binding site on the camera, before
   labeling (a pattern whose sites all get zero fluorophores still counts), and their ids run
@@ -101,6 +106,14 @@ smld_noisy, info = simulate(params; starting_conditions=custom_emitters)
 - The `params.σ_psf` value is used directly for lateral uncertainty (σx, σy) in both 2D and 3D.
 - For 3D simulations, the axial uncertainty (σz) is scaled by a factor of 3 (i.e., σz = 3 * σ_psf).
 - If `starting_conditions` is provided, it will be used instead of generating patterns, and labeling is not applied.
+  Empty inputs return empty results, using the declared fit dimensionality when available,
+  otherwise `params.ndims`.
+  Each zero `track_id` is an independent molecule, assigned an output id above the largest
+  non-zero id in input order. Non-zero ids use their first record, in sorted id order, before
+  unlinked molecules; conflicting positions for a non-zero id warn once. Through 0.7.3 zero
+  ids were collapsed into one molecule and conflicting positions were dropped silently.
+- Each `Line2D` or `Line3D` copy draws independent Poisson site counts and uniform positions
+  from the endpoints. Through 0.7.3 copies reused the template's sampled sites.
 - Labeling and molecule are separate concepts: labeling controls how many fluorophores per binding site,
   molecule controls the photophysics (blinking) of each fluorophore.
 """
@@ -109,12 +122,27 @@ function simulate(params::StaticSMLMConfig;
                  pattern::Union{Pattern,Nothing}=nothing,
                  labeling::AbstractLabeling=FixedLabeling(),
                  molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
-                 camera::AbstractCamera=IdealCamera(1:128, 1:128, 0.1),
+                 camera::Union{Nothing, AbstractCamera}=nothing,
                  state1::Union{Int, Symbol}=:equilibrium,
                  burn_in::Real=0.0)
 
     start_time = time_ns()
     n_patterns = 0
+
+    if starting_conditions !== nothing
+        source_emitters = starting_conditions isa SMLD ? starting_conditions.emitters : starting_conditions
+        invalid_index = findfirst(e -> !(e isa Union{Emitter2DFit, Emitter3DFit}), source_emitters)
+        if invalid_index !== nothing
+            emitter_type = typeof(source_emitters[invalid_index])
+            throw(ArgumentError("Static starting_conditions has emitter type $emitter_type; Emitter2DFit or Emitter3DFit is needed"))
+        end
+    end
+
+    if camera === nothing
+        camera = starting_conditions isa SMLD && hasproperty(starting_conditions, :camera) &&
+                 starting_conditions.camera isa AbstractCamera ?
+                 starting_conditions.camera : IdealCamera(1:128, 1:128, 0.1)
+    end
 
     # Initialize metadata
     metadata = Dict{String,Any}(
@@ -123,20 +151,8 @@ function simulate(params::StaticSMLMConfig;
 
     # Process starting conditions if provided
     if starting_conditions !== nothing
-        # Extract emitters from starting_conditions
-        emitters = if starting_conditions isa SMLD
-            # Deep copy the emitters from the SMLD
-            deepcopy.(starting_conditions.emitters)
-        else
-            # Already a vector of emitters
-            deepcopy.(starting_conditions)
-        end
-
-        # Validate that emitters have appropriate type
-        emitter_type = eltype(emitters)
-        if !(emitter_type <: AbstractEmitter)
-            error("Starting conditions must contain valid emitters")
-        end
+        # Broadcasting over an empty input can lose its declared element type.
+        emitters = isempty(source_emitters) ? copy(source_emitters) : deepcopy.(source_emitters)
 
         # Set up metadata for ground truth with starting conditions
         metadata["simulation_type"] = "ground_truth_from_starting_conditions"
@@ -252,7 +268,13 @@ function simulate(params::StaticSMLMConfig;
                              state1=state1, burn_in=burn_in)
 
     # Determine PSF scaling based on emitter dimensionality
-    emitter_type = eltype(smld_true.emitters)
+    emitter_type = eltype(smld_model.emitters)
+    if isempty(smld_model.emitters) && !(emitter_type <: Emitter2DFit || emitter_type <: Emitter3DFit)
+        # Without records or a declared fit dimension, use the configured dimension.
+        emitter_type = params.ndims == 2 ? Emitter2DFit{Float64} : Emitter3DFit{Float64}
+        smld_model = BasicSMLD(emitter_type[], smld_model.camera, smld_model.n_frames,
+                              smld_model.n_datasets, smld_model.metadata)
+    end
     σ_scaled = if emitter_type <: Emitter2DFit
         params.σ_psf  # already in microns
     else
@@ -287,3 +309,5 @@ end
 _pattern_radius(p::Pattern2D) = isempty(p.x) ? 0.0 : Float64(maximum(hypot.(p.x, p.y)))
 _pattern_radius(p::Pattern3D) = isempty(p.x) ? 0.0 :
     Float64(maximum(sqrt.(p.x .^ 2 .+ p.y .^ 2 .+ p.z .^ 2)))
+_pattern_radius(p::Line2D) = maximum(hypot(x, y) for (x, y) in p.endpoints)
+_pattern_radius(p::Line3D) = maximum(sqrt(x^2 + y^2 + z^2) for (x, y, z) in p.endpoints)

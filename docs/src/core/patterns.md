@@ -44,7 +44,11 @@ line = Line2D()
 custom_line = Line2D(λ=5.0, endpoints=[(-2.0, 0.0), (2.0, 0.0)])
 ```
 
-The density parameter λ (lambda) specifies the average number of molecules per micron along the line. The actual number of molecules is drawn from a Poisson distribution.
+The density parameter λ (lambda) specifies the average number of molecules per um along the
+line. Every copy placed by `uniform2D` or `simulate` independently draws its site count from
+Poisson(λ × line length), then draws uniform positions between the endpoints. The pattern's
+stored coordinates are one sample for inspection. Through 0.7.3 every copy reused that sample,
+rotated, so all copies had the same count and spacings.
 
 ### Nanoruler2D
 
@@ -80,6 +84,8 @@ hexamer3d = Nmer3D(n=6, d=0.2)
 ### Line3D
 
 The `Line3D` pattern creates a 3D line with specified endpoints and density.
+Each copy independently draws its Poisson site count and uniform positions between the 3D
+endpoints, as for `Line2D`. Through 0.7.3 copies reused the template's sampled sites.
 
 ```julia
 # Default 3D line along x-axis
@@ -123,12 +129,12 @@ smld_noisy, info = simulate(
 
 Behind the scenes, `simulate()` treats the sample as continuing past the camera. It takes the
 camera's full extent (first to last pixel edge), widens it on every side by the pattern's radius
-(the largest distance of a binding site from the pattern's center), and calls `uniform2D()` or
-`uniform3D()` over that widened field, which:
+(the largest distance of a binding site, or a line endpoint, from the pattern's center), and
+calls `uniform2D()` or `uniform3D()` over that widened field, which:
 
 1. Generate a random number of patterns based on the density and field size
 2. Place pattern centers randomly within the field
-3. Apply random rotations to each pattern
+3. Draw independent site counts and positions for line copies, and apply random rotations to each pattern
 4. Return the complete set of molecular coordinates
 
 `simulate()` then keeps only the binding sites that land on the camera, so the emitter density is

@@ -76,7 +76,7 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 ```julia
 Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
-    density::Float64 = 1.0          # number density (molecules/μm²)
+    density::Float64 = 1.0          # molecules per um² in 2D, per um³ in 3D
     box_size::Float64 = 10.0        # simulation box size (μm)
     diff_monomer::Float64 = 0.1     # monomer diffusion coefficient (μm²/s)
     diff_dimer::Float64 = 0.05      # dimer diffusion coefficient (μm²/s)
@@ -114,6 +114,11 @@ end
 #### Line2D
 
 Points with uniform random distribution between two endpoints.
+
+Each copy placed by `uniform2D` or `simulate` draws an independent Poisson(λ × length)
+site count and uniform site positions from its endpoints. `Line3D` follows the same rule in
+3D. The stored coordinates are one sample for inspection. Through 0.7.3 copies reused that
+sample, rotated.
 
 ```julia
 mutable struct Line2D <: Pattern2D
@@ -180,6 +185,17 @@ end
 #### GenericFluor
 
 Defines a fluorophore with photophysical properties.
+
+The keyword constructor accepts real numbers, including integers, for `photons`, `k_off`,
+and `k_on`. Floating point values keep their types and precision; only
+non-float reals such as integers and rationals are converted to Float64. Through 0.7.3 these
+keywords required `AbstractFloat` values, so `GenericFluor(; photons=10000, k_off=50, k_on=1)`
+threw a type error.
+
+Positional construction preserves the supplied floating point types. `intensity_trace`
+promotes the rate matrix and simulation time to a common floating point type when building
+the chain. Through 0.7.3 a Float32 matrix with a Float64 time failed with a method error.
+The Float64 path keeps the same random draws and photon counts.
 
 ```julia
 struct GenericFluor <: Molecule
@@ -358,6 +374,20 @@ camera_scmos = SCMOSCamera(
 The main simulation function with multiple methods for different simulation types.
 All `simulate()` methods return a tuple: `(primary_output, info)`.
 
+Static `starting_conditions` must contain `Emitter2DFit` or `Emitter3DFit`; plain emitters
+throw `ArgumentError` on entry (through 0.7.3 they failed later with a field error). A default
+`camera=nothing` uses an SMLD's camera, when it has one, otherwise
+`IdealCamera(1:128, 1:128, 0.1)`; an explicit camera wins. Through 0.7.3 the default replaced
+an SMLD's camera.
+
+Extra keywords to diffusion `simulate` are ignored with one warning naming them. They are
+deprecated and will throw in 0.8.0; through 0.7.3 they were ignored silently. The emission
+rate keyword is `γ`, not `gamma`.
+
+If `k_off * dt > 1`, diffusion `simulate` warns once, naming both values: every bound pair
+dissociates at the next step, so the mean lifetime is `dt` seconds rather than `1/k_off`.
+The simulation output is unchanged. Through 0.7.3 this probability saturation was silent.
+
 ```julia
 # Static SMLM simulation
 # First create simulation parameters
@@ -405,6 +435,16 @@ println("Simulation took $(info.elapsed_s) seconds")
 
 Generate kinetic blinking model from existing localization data.
 
+Each non-zero `track_id` uses its first record, in sorted id order. Repeated records with
+different positions warn once because later positions are dropped. Each zero id is an
+independent molecule, processed afterward in input order and assigned an output id above
+the largest non-zero input id. Through 0.7.3 zero ids were collapsed into one molecule and
+conflicting linked positions were dropped silently. Static `simulate` uses these same rules.
+
+Abstract container element types and mixed numeric precisions within one dimension are
+supported. The output dimension is chosen from the individual input fits and its coordinates
+are Float64. Mixed 2D and 3D inputs throw `ArgumentError`.
+
 ```julia
 # Example of how to call kinetic_model
 # First create or obtain the required inputs
@@ -449,6 +489,11 @@ smld_noisy_3d = apply_noise(smld_model_3d, [0.13, 0.13, 0.39])  # [x, y, z] widt
 
 Generate camera images from SMLD data using the specified PSF model.
 Returns a tuple: `(images, ImageInfo)`.
+
+Only the selected `dataset` and frames contribute to images and `info.n_photons_total`.
+Through 0.7.3 the dataset keyword was ignored and all datasets were rendered together.
+For an `SCMOSCamera` with `camera_noise=true`, the camera model already draws shot noise, so
+`poisson_noise=true` is skipped. Through 0.7.3 setting both flags applied shot noise twice.
 
 ```julia
 images, info = gen_images(
@@ -521,6 +566,32 @@ single_frame, info = gen_image(
 ### Analysis Functions
 
 #### Diffusion Analysis
+
+`analyze_dimer_fraction` is the exposure-averaged fraction of molecules bound in each frame,
+in [0, 1]. It counts the fraction of bound records for each (frame, track_id), then averages
+over tracks. It needs only `frame`, `track_id`, and `state` and is independent of record order.
+Through 0.7.3 it counted sub-step records divided by two, so its value depended on the number
+of sub-steps and could exceed 1; with one record per molecule it returned half the bound fraction.
+
+`analyze_dimer_lifetime` returns the censored maximum-likelihood mean lifetime in seconds:
+`τ̂ = total bound time (unfinished intervals included) / number of observed breaks`.
+It assumes constant per-step dissociation with probability `k_off * dt`: geometric step
+counts approaching exponential lifetimes, with mean `1/k_off`.
+
+Each interval starts at its first `:dimer` record and ends at the first following `:monomer`
+record (one break), or at the track's last record if unfinished (no break). Durations use
+timestamp differences when available, otherwise frame differences divided by
+`camera_framerate`. Return `0.0` for no bound time and `Inf` for positive bound time with no
+observed break, where the estimate diverges. If exposure is shorter than the frame period,
+a break during the gap appears at the next frame's first record.
+
+Through 0.7.3 a dimer still bound at the end counted as lifetime 0; the first 0.7.4 work
+averaged only completed intervals, which is still biased low.
+
+For simulation output, the lifetime does not depend on record order. Tracks are sorted
+stably by `(frame, timestamp)`, or by frame alone for records without timestamps; equal keys
+retain their input order. Through 0.7.3 sub-step records within a frame kept their input
+order, so reversing or shuffling simulation output could change the lifetime.
 
 ```julia
 # Example usage of diffusion analysis functions
