@@ -96,6 +96,11 @@ With `camera=nothing` (the default), simulation uses an SMLD's camera, when it h
 otherwise the camera defaults to `IdealCamera(1:128, 1:128, 0.1)`. An explicitly passed camera
 wins. Through 0.7.3 an SMLD's camera was replaced by the default unless passed explicitly.
 
+The keyword `brightness` (default `nothing`) gives each molecule its own emission rate: it takes a
+univariate distribution of a factor on the molecule's rate, drawn once per molecule and dataset
+(see [Molecule-to-Molecule Brightness](../core/photophysics.md)). The drawn factors are kept in
+`info.smld_model.metadata["brightness_factors"]`.
+
 ## Understanding Simulation Results
 
 The `simulate()` function returns a tuple `(smld_noisy, info::SimInfo)`:
