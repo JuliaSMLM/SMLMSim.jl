@@ -10,7 +10,8 @@
              molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
              camera::Union{Nothing, AbstractCamera}=nothing,
              state1::Union{Int, Symbol}=:equilibrium,
-             burn_in::Real=0.0)
+             burn_in::Real=0.0,
+             brightness::Union{Nothing, Distributions.UnivariateDistribution}=nothing)
 
 Generate simulated static SMLM data with realistic blinking kinetics
 and localization uncertainty.
@@ -34,6 +35,15 @@ and localization uncertainty.
 - `burn_in::Real=0.0`: Pre-illumination time in seconds before recording starts.
   Simulates experimental protocol where laser is on before data collection,
   allowing some molecules to bleach and reach pseudo-equilibrium.
+- `brightness::Union{Nothing, Distributions.UnivariateDistribution}=nothing`: Distribution of a
+  dimensionless factor on the molecule model's emission rate (passed to `kinetic_model`). A
+  molecule with factor `b` emits at `b * γ` photons/s for all of its frames; one factor is drawn
+  per molecule and dataset, intended because each dataset is an independent sample. Requires a `GenericFluor` and a distribution that is never negative,
+  for example `truncated(Normal(1, 0.3); lower=0.7)` (cut at the floor and renormalized) or
+  `censored(Normal(1, 0.3); lower=0.7)` (draws below the floor set to it). The distribution and
+  the drawn factors are recorded in `info.smld_model.metadata["brightness"]` and
+  `["brightness_factors"]` (`(dataset, track_id)` to factor). `nothing` (default) leaves every
+  molecule at the model's rate and the output unchanged.
 
 # Returns
 - `Tuple{BasicSMLD, SimInfo}`: (noisy_data, info)
@@ -124,7 +134,8 @@ function simulate(params::StaticSMLMConfig;
                  molecule::Molecule=GenericFluor(photons=1e4, k_off=50.0, k_on=1e-2),
                  camera::Union{Nothing, AbstractCamera}=nothing,
                  state1::Union{Int, Symbol}=:equilibrium,
-                 burn_in::Real=0.0)
+                 burn_in::Real=0.0,
+                 brightness::Union{Nothing, Distributions.UnivariateDistribution}=nothing)
 
     start_time = time_ns()
     n_patterns = 0
@@ -137,6 +148,8 @@ function simulate(params::StaticSMLMConfig;
             throw(ArgumentError("Static starting_conditions has emitter type $emitter_type; Emitter2DFit or Emitter3DFit is needed"))
         end
     end
+    # Before the pattern and labeling draws, so a bad brightness consumes no random number
+    _check_brightness(brightness, molecule)
 
     if camera === nothing
         camera = starting_conditions isa SMLD && hasproperty(starting_conditions, :camera) &&
@@ -265,7 +278,7 @@ function simulate(params::StaticSMLMConfig;
     # Apply kinetic model
     smld_model = kinetic_model(smld_true, molecule, params.nframes, params.framerate;
                              ndatasets=params.ndatasets, minphotons=params.minphotons,
-                             state1=state1, burn_in=burn_in)
+                             state1=state1, burn_in=burn_in, brightness=brightness)
 
     # Determine PSF scaling based on emitter dimensionality
     emitter_type = eltype(smld_model.emitters)
