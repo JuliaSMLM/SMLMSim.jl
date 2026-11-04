@@ -38,7 +38,7 @@ and localization uncertainty.
 - `brightness::Union{Nothing, Distributions.UnivariateDistribution}=nothing`: Distribution of a
   dimensionless factor on the molecule model's emission rate (passed to `kinetic_model`). A
   molecule with factor `b` emits at `b * γ` photons/s for all of its frames; one factor is drawn
-  per molecule and dataset. Requires a `GenericFluor` and a distribution that is never negative,
+  per molecule and dataset, intended because each dataset is an independent sample. Requires a `GenericFluor` and a distribution that is never negative,
   for example `truncated(Normal(1, 0.3); lower=0.7)` (cut at the floor and renormalized) or
   `censored(Normal(1, 0.3); lower=0.7)` (draws below the floor set to it). The distribution and
   the drawn factors are recorded in `info.smld_model.metadata["brightness"]` and

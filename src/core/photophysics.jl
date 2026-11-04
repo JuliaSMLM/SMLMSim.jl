@@ -119,8 +119,10 @@ Generate kinetic blinking model from existing localization data.
   dimensionless factor `b` on the molecule model's emission rate. A molecule with factor `b`
   emits at `b * f.γ` photons/s for all of its frames; the rate matrix is the model's, unchanged.
   `b` is drawn once per molecule and dataset, just before that molecule's initial state, and
-  converted to `Float64`. The factor must not be negative: `minimum(brightness) < 0` throws
-  `ArgumentError`, as does a `brightness` given with a model that is not a `GenericFluor`.
+  converted to `Float64`. Redrawing per dataset is intended: each dataset is an independent
+  sample, as its initial states and blinking already are, so the same position can differ in
+  brightness between datasets. The factor must not be negative or NaN: `minimum(brightness) < 0`
+  throws `ArgumentError`, as does a `brightness` given with a model that is not a `GenericFluor`.
   To keep a normal distribution at or above a floor, use either
   `truncated(d; lower=floor)` (cut at the floor and renormalized; no draw lies at the floor) or
   `censored(d; lower=floor)` (draws below the floor are set to it). `nothing` (default) gives

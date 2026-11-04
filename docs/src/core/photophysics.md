@@ -189,7 +189,9 @@ By default every molecule emits at the model's rate `γ`, so every full-frame mo
 exactly `γ / framerate` photons. The keyword `brightness` of `simulate` (static) and
 `kinetic_model` takes any univariate distribution of a dimensionless factor `b`. A molecule
 with factor `b` emits at `b * γ` for all of its frames; the rate matrix is unchanged. One factor
-is drawn per molecule and dataset, and the factor must not be negative.
+is drawn per molecule and dataset, and the factor must not be negative. Redrawing per dataset is
+intended: each dataset is an independent sample, as its initial states and blinking already are,
+so the same position can differ in brightness between datasets.
 
 For a mean and standard deviation of photons per full frame with a floor, set `γ` from the mean
 and give the factor as a normal of mean 1, kept at or above the floor:
