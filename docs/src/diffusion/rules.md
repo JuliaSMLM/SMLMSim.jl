@@ -136,6 +136,8 @@ one to single molecules.
   periodic boundaries it wraps.
 - **Binding.** A pair forms from positions at the end of a step closer than `r_react`, as without a velocity. Two
   molecules whose relative step `|v1 - v2|·dt` exceeds `2·r_react` can pass through each other without binding.
+  `r_react = 0` turns binding off: no pair forms, so molecules pass through each other even at one point, while
+  pairs given in `starting_conditions` still dissociate at `k_off`.
 - **Float32 coordinates** move in whole units of their precision: a drift step `v·dt` below the coordinate's
   resolution is rounded, and a molecule with D 0 and a very small velocity can move slower than `v`, or not at all.
 - **A bound pair** drifts at the mean of its partners' velocities (overdamped force balance with equal drag; a partner

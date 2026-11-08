@@ -82,7 +82,7 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     diff_dimer::Float64 = 0.05      # dimer diffusion coefficient (μm²/s)
     diff_dimer_rot::Float64 = 0.5   # dimer rotational diffusion coefficient (rad²/s)
     k_off::Float64 = 0.2            # dimer dissociation rate (s⁻¹)
-    r_react::Float64 = 0.01         # reaction radius (μm)
+    r_react::Float64 = 0.01         # reaction radius (μm); 0 turns binding off
     d_dimer::Float64 = 0.05         # monomer separation in dimer (μm)
     dt::Float64 = 0.01              # physics step (s); also sets sub-steps per frame (motion blur)
     t_max::Float64 = 10.0           # total simulation time (s)

@@ -150,6 +150,30 @@ end
         @test_logs run(:fixed; track_D=Dict(1 => 0.0, 2 => 0.0), track_velocity=Dict(1 => (1.0, 0.0), 2 => (1.0, 0.0)))
     end
 
+    @testset "r_react = 0: no binding" begin
+        # four D 0 movers through one point at the same moment, a crossing scene of a tracking benchmark: (4, 4)
+        # at t = 1.5 s
+        paths = [(1.0, 1.0, 2.0, 2.0), (7.0, 1.0, -2.0, 2.0), (1.0, 7.0, 2.0, -2.0), (7.0, 7.0, -2.0, -2.0)]
+        start = [DM.DiffusingEmitter2D{Float64}(x, y, 10.0, 0.0, 1, 1, id, :monomer, nothing)
+                 for (id, (x, y, _, _)) in enumerate(paths)]
+        tv = Dict(id => (vx, vy) for (id, (_, _, vx, vy)) in enumerate(paths))
+        cross(r) = (Random.seed!(9190); simulate(dm_config(r_react=r, t_max=3.0); starting_conditions=start, γ=1000.0,
+                                                 track_velocity=tv, track_D=Dict(id => 0.0 for id in 1:4))[1])
+        s = cross(0.0)
+        @test all(e -> e.state == :monomer, s.emitters)
+        # each passes straight through: start + v·t at every record
+        for e in s.emitters
+            x0, y0, vx, vy = paths[e.track_id]
+            @test isapprox(e.x, x0 + vx * e.timestamp; atol=1e-9) && isapprox(e.y, y0 + vy * e.timestamp; atol=1e-9)
+        end
+        mid = [e for e in s.emitters if isapprox(e.timestamp, 1.5; atol=1e-9)]
+        @test length(mid) == 4 && all(e -> isapprox(e.x, 4.0; atol=1e-9) && isapprox(e.y, 4.0; atol=1e-9), mid)
+        # the same paths with r_react > 0 bind
+        @test any(e -> e.state == :dimer, cross(0.01).emitters)
+        @test DiffusionSMLMConfig(r_react=0.0).r_react == 0.0
+        @test_throws ArgumentError DiffusionSMLMConfig(r_react=-0.01)
+    end
+
     @testset "reflecting wall" begin
         Random.seed!(9160)
         p = dm_config(diff_monomer=0.0, box_size=2.0, boundary="reflecting", monomer_velocity=[(2.0, 0.0)], t_max=1.5)

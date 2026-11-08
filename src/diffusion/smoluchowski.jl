@@ -12,7 +12,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `k_off::Float64`: dimer dissociation rate (s⁻¹)
 - `r_react::Float64`: reaction radius (μm): two monomers closer than this form a pair, by their distance in
   Float64 from the stored coordinates, to the minimum image under periodic boundaries (0.7.1 took the plain
-  difference, so no pair formed across a periodic edge)
+  difference, so no pair formed across a periodic edge). `0` turns binding off: no pair forms, and molecules
+  pass through each other (pairs given in `starting_conditions` still dissociate at `k_off`)
 - `d_dimer::Float64`: monomer separation in dimer (μm)
   On dissociation the partners are placed at least `r_react` apart along the pair axis (the
   minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only
@@ -164,8 +165,8 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         if k_off < 0
             throw(ArgumentError("Dissociation rate must be non-negative"))
         end
-        if r_react <= 0
-            throw(ArgumentError("Reaction radius must be positive"))
+        if r_react < 0
+            throw(ArgumentError("Reaction radius must be non-negative (0 turns binding off)"))
         end
         if d_dimer <= 0
             throw(ArgumentError("Dimer separation must be positive"))
@@ -536,10 +537,10 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
         e1.track_id in processed && continue
         
         if e1.state == :monomer
-            # Check if this monomer forms a dimer with any other monomer
+            # Check if this monomer forms a dimer with any other monomer (none can when r_react is 0)
             found_dimer = false
-            
-            for j in i+1:length(emitters)
+
+            for j in (params.r_react > 0 ? (i+1:length(emitters)) : (1:0))
                 e2 = emitters[j]
                 e2.track_id in processed && continue
                 e2.state == :monomer || continue

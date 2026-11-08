@@ -167,7 +167,8 @@ differs from the run's. A bound pair drifts at the
 mean of its partners' velocities, a molecule with a velocity is not immobile for the pair rules below,
 and in a reflecting box a molecule driven into a wall stays at it (its velocity is not reversed).
 Molecules still form a pair when a step ends with them closer than `r_react`, so paths that cross can
-bind unless their relative step per `dt` exceeds `2·r_react`. See
+bind unless their relative step per `dt` exceeds `2·r_react`; `r_react = 0` turns binding off, so
+independent molecules pass through each other. See
 [Placement and Continuation Rules](rules.md), Directed motion.
 
 A bound pair diffuses with `diff_dimer` by default (`pair_mobility = :fixed`, the 0.7 behaviour).
