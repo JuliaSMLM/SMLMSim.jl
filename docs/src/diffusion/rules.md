@@ -59,8 +59,8 @@ anchor):
   orientation and bond length. The center folds into its interval as many times as it crosses a wall (a triangle
   wave).
 - So both partners stay inside the box, `d_dimer` apart to within rounding.
-- When the pair cannot fit (possible only when `box_size < d_dimer`), each partner is reflected on its own, as in
-  0.7.1.
+- When the pair cannot fit (possible only when `box_size < d_dimer`), each partner is reflected on its own, as a
+  monomer is (Directed motion, A wall).
 
 **Every fit** is decided against the physical box `[0, box_size]`. Formation and a bound
 step compute positions in Float64 from the stored coordinates and the partner's Float64
@@ -131,11 +131,16 @@ one to single molecules.
 - **A monomer step** is the diffusion step (Gaussian, variance `2·D·dt` per axis, the same draws as without a
   velocity), then the displacement `v·dt`, then the boundary. A zero velocity takes exactly the step without one, so
   the output and the random stream are unchanged.
-- **A wall.** In a reflecting box the position is reflected as for any step, and the velocity is not reversed, so a
-  molecule driven into a wall stays within one step's displacement of it (for a step shorter than the box). Under
-  periodic boundaries it wraps.
-- **Binding.** A pair forms from positions at the end of a step closer than `r_react`, as without a velocity. Two
-  molecules whose relative step `|v1 - v2|·dt` exceeds `2·r_react` can pass through each other without binding.
+- **A wall.** In a reflecting box the position is reflected off the wall it crossed, as for any monomer step, and the
+  velocity is not reversed, so a molecule driven into a wall stays within one step's displacement of it. A step longer
+  than the box folds back as often as it crosses a wall (before 0.7.4 such a step stopped at the wall, with or without
+  a velocity). Under periodic boundaries it wraps. The drift and the boundary are applied in Float64 and the position
+  is converted to its coordinate type once, so any finite `v·dt` (each component of `v·dt` must be finite) leaves the
+  molecule finite and inside the box.
+- **Binding.** The pair search runs at the start of each step, on the positions the previous step left, as without a
+  velocity: two monomers closer than `r_react` there form a pair in that step instead of moving. So molecules that
+  come within `r_react` at time `t` are recorded at `t` as monomers and as a pair from `t + dt`. Two molecules whose
+  relative step `|v1 - v2|·dt` exceeds `2·r_react` can pass through each other without binding.
   `r_react = 0` turns binding off: no pair forms, so molecules pass through each other even at one point, while
   pairs given in `starting_conditions` still dissociate at `k_off`.
 - **Float32 coordinates** move in whole units of their precision: a drift step `v·dt` below the coordinate's
@@ -179,7 +184,9 @@ copy.
 one warning when this config's `monomer_velocity` differs from the source run's saved copy
 (`metadata["monomer_velocity_config"]`), as for D. A track without a saved velocity (its run had none) takes this
 config's: its population's entry, by the class it drew or kept with its saved D (none when that class is not one of
-this config's populations), or the one velocity of an empty mixture, else none. `track_velocity` and `track_D`
+this config's populations), or the one velocity of an empty mixture, else none. A kept D keeps its saved class, or
+takes the source run's population with that D; a D that is no population's (one set by `track_D`, or a source without
+a mixture) gives no class, so no population's velocity. `track_velocity` and `track_D`
 replace any of these for the molecules they name.
 
 **dt.** The source's saved `dt` is read only by the brightness check (`photons ≈ γ·dt_saved`, rtol 1e-6). A restamp

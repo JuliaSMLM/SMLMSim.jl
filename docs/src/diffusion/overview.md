@@ -165,9 +165,11 @@ Each molecule's velocity is saved in `smld.metadata["monomer_velocity"]` and kep
 single run (not of a concatenation or merge), with a warning when the new config's `monomer_velocity`
 differs from the run's. A bound pair drifts at the
 mean of its partners' velocities, a molecule with a velocity is not immobile for the pair rules below,
-and in a reflecting box a molecule driven into a wall stays at it (its velocity is not reversed).
-Molecules still form a pair when a step ends with them closer than `r_react`, so paths that cross can
-bind unless their relative step per `dt` exceeds `2·r_react`; `r_react = 0` turns binding off, so
+and in a reflecting box a molecule driven into a wall stays at it (its velocity is not reversed); a
+step longer than the box folds back off the walls as often as it crosses them, with or without a
+velocity (before 0.7.4 it stopped at the wall).
+Molecules still form a pair when they are closer than `r_react` at the start of a step (the pair shows
+from the next record), so paths that cross can bind unless their relative step per `dt` exceeds `2·r_react`; `r_react = 0` turns binding off, so
 independent molecules pass through each other. See
 [Placement and Continuation Rules](rules.md), Directed motion.
 
@@ -186,7 +188,7 @@ In a reflecting box a mobile pair (either setting) is a rigid body: when an end 
 formation, both partners move to `d_dimer/2` either side of their midpoint, shifted inward just enough
 to fit, and while bound the pair's center folds off the walls moved in by each end's half-extent as
 often as it crosses them, so both partners stay inside the box at `d_dimer` apart. When
-`box_size < d_dimer` each partner is reflected on its own, as in 0.7.1. Under periodic boundaries (the
+`box_size < d_dimer` each partner is reflected on its own, as a monomer is. Under periodic boundaries (the
 default) a bound pair moves from its partner's minimum image, so a pair straddling the boundary moves by
 one step, and a pair forms from its partner's minimum image too (two monomers within `r_react` across the edge form a pair, which 0.7.1 never did), with each partner wrapped into the box on the formation step. Under the default `:fixed`, forming a pair places both partners `d_dimer` apart about their
 midpoint and a bound pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member

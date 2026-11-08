@@ -644,6 +644,16 @@ function _fold(x::Float64, lo::Float64, hi::Float64)
     return lo + (y <= w ? y : 2w - y)
 end
 
+# x reflected into [0, box]: once off the wall it crossed (exact, as in 0.7), or folded as often as it crosses
+# either wall when one reflection does not bring it inside (a step longer than the box). Internal.
+function _reflect(x::Float64, box::Float64)
+    r = x < 0 ? -x : x > box ? 2box - x : x
+    return 0 <= r <= box ? r : _fold(x, 0.0, box)
+end
+
+# The boundary on one Float64 coordinate: reflected into [0, box], or wrapped under periodic boundaries. Internal.
+_wall(x::Float64, box::Float64, reflecting::Bool) = reflecting ? _reflect(x, box) : mod(x, box)
+
 # Unit vector from p to q (their plain difference, through _disp); (1, 0, ...) when they coincide
 _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N} = _dir(_dispv(p, q, nothing))
 
@@ -717,8 +727,7 @@ function _place_pair(e1::E, e2::E, anchor::Union{Nothing,Int}, v::NTuple{N,Float
     fits(q1) && fits(q2) && return _put(d1, q1, box), _put(d2, q2, box)
     ok, r1, r2 = _place_centered(c, _axis(p1, p2), params.d_dimer, box, T)
     ok && return _at(d1, r1), _at(d2, r2)
-    refl(x) = x < 0 ? -x : x > box ? 2box - x : x
-    return _put(d1, map(refl, q1), box), _put(d2, map(refl, q2), box)
+    return _put(d1, map(x -> _reflect(x, box), q1), box), _put(d2, map(x -> _reflect(x, box), q2), box)
 end
 
 # A mobile pair after a bound step, from its Float64 center `c` and half-bond `h` (`_bound_step`), with the
@@ -737,8 +746,7 @@ function _move_pair(e1::E, e2::E, c::NTuple{N,Float64}, h::NTuple{N,Float64}, d_
     all(x -> 0 <= x <= box, q1) && all(x -> 0 <= x <= box, q2) && return _put(e1, q1, box), _put(e2, q2, box)
     ok, p1, p2 = _place_centered(c, h ./ (d_dimer / 2), d_dimer, box, typeof(e1.x); reflect=true)
     ok && return _at(e1, p1), _at(e2, p2)
-    refl(x) = x < 0 ? -x : x > box ? 2box - x : x
-    return _put(e1, map(refl, q1), box), _put(e2, map(refl, q2), box)
+    return _put(e1, map(x -> _reflect(x, box), q1), box), _put(e2, map(x -> _reflect(x, box), q2), box)
 end
 
 # `e` at the Float64 point `q`, converted to its coordinate type once and clamped into [0, box]
@@ -776,28 +784,11 @@ Apply boundary conditions to a 2D emitter.
 - `DiffusingEmitter2D`: New emitter with position constrained to the box
 """
 function apply_boundary(e::DiffusingEmitter2D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
-    new_x = e.x
-    new_y = e.y
-    
-    if boundary == "periodic"
-        new_x = mod(new_x, box_size)
-        new_y = mod(new_y, box_size)
-    else  # reflecting
-        if new_x < 0
-            new_x = -new_x
-        elseif new_x > box_size
-            new_x = 2box_size - new_x
-        end
-        
-        if new_y < 0
-            new_y = -new_y
-        elseif new_y > box_size
-            new_y = 2box_size - new_y
-        end
-    end
-    
-    # Inside [0, box_size] in T: a Float32 coordinate can round past the wall
-    new_x, new_y = _inbox(T, Float64(new_x), box_size), _inbox(T, Float64(new_y), box_size)
+    # In Float64: wrapped (periodic), or reflected, folding a step longer than the box as often as it crosses a wall;
+    # then inside [0, box_size] in T, since a Float32 coordinate can round past the wall
+    reflecting = boundary != "periodic"
+    new_x = _inbox(T, _wall(Float64(e.x), box_size, reflecting), box_size)
+    new_y = _inbox(T, _wall(Float64(e.y), box_size, reflecting), box_size)
 
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y
@@ -830,37 +821,12 @@ Apply boundary conditions to a 3D emitter.
 - `DiffusingEmitter3D`: New emitter with position constrained to the box
 """
 function apply_boundary(e::DiffusingEmitter3D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
-    new_x = e.x
-    new_y = e.y
-    new_z = e.z
-    
-    if boundary == "periodic"
-        new_x = mod(new_x, box_size)
-        new_y = mod(new_y, box_size)
-        new_z = mod(new_z, box_size)
-    else  # reflecting
-        if new_x < 0
-            new_x = -new_x
-        elseif new_x > box_size
-            new_x = 2box_size - new_x
-        end
-        
-        if new_y < 0
-            new_y = -new_y
-        elseif new_y > box_size
-            new_y = 2box_size - new_y
-        end
-        
-        if new_z < 0
-            new_z = -new_z
-        elseif new_z > box_size
-            new_z = 2box_size - new_z
-        end
-    end
-    
-    # Inside [0, box_size] in T: a Float32 coordinate can round past the wall
-    new_x, new_y, new_z = _inbox(T, Float64(new_x), box_size), _inbox(T, Float64(new_y), box_size),
-                          _inbox(T, Float64(new_z), box_size)
+    # In Float64: wrapped (periodic), or reflected, folding a step longer than the box as often as it crosses a wall;
+    # then inside [0, box_size] in T, since a Float32 coordinate can round past the wall
+    reflecting = boundary != "periodic"
+    new_x = _inbox(T, _wall(Float64(e.x), box_size, reflecting), box_size)
+    new_y = _inbox(T, _wall(Float64(e.y), box_size, reflecting), box_size)
+    new_z = _inbox(T, _wall(Float64(e.z), box_size, reflecting), box_size)
 
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y || new_z != e.z
