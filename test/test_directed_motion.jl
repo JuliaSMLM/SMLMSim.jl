@@ -190,6 +190,25 @@ end
                         merge(copy(smld.metadata), Dict{String,Any}("concatenated_from" => 2)))
         ext2 = @test_logs (:warn, r"concatenation") match_mode=:any extract_end_state(tie)
         @test !haskey(ext2.metadata, "monomer_velocity")
+        # the identical config after a run that named a track: kept, no warning (review r2, S1)
+        k = dm_config(t_max=0.3)
+        k1, _ = simulate(k; override_count=5, γ=1000.0, track_velocity=Dict(1 => (0.5, 0.0)), track_D=Dict(1 => 0.0))
+        @test k1.metadata["monomer_velocity_config"] == []
+        k2, _ = @test_logs simulate(k; starting_conditions=k1)
+        @test all(d -> all(isapprox.(d, (0.005, 0.0); atol=1e-12)), monomer_steps(k2, k.box_size)[1])
+        # a saved velocity that does not fit is an ArgumentError naming its source
+        md = copy(k1.metadata)
+        md["monomer_velocity"] = merge(copy(k1.metadata["monomer_velocity"]), Dict(2 => (1.0, 0.0, 0.0)))
+        bad = BasicSMLD(k1.emitters, k1.camera, k1.n_frames, k1.n_datasets, md)
+        @test_throws r"saved velocity of track 2" simulate(k; starting_conditions=bad)
+        # a kept class that is not one of this config's populations takes no velocity
+        src3, _ = simulate(dm_config(monomer_mobility=[(0.3, 0.01), (0.3, 0.02), (0.4, 0.03)], t_max=0.02);
+                           override_count=40, γ=1000.0)
+        two = dm_config(monomer_mobility=[(0.5, 0.01), (0.5, 0.02)], monomer_velocity=[(1.0, 0.0), (0.0, 1.0)], t_max=0.02)
+        c3, _ = @test_logs (:warn, r"monomer_mobility differs") match_mode=:any simulate(two; starting_conditions=src3)
+        cls3, mv3 = src3.metadata["monomer_class"], c3.metadata["monomer_velocity"]
+        @test any(==(3), values(cls3))
+        @test all(mv3[id] == (cls3[id] == 3 ? (0.0, 0.0) : two.monomer_velocity[cls3[id]]) for id in keys(cls3))
     end
 
     @testset "binding and unbinding of directed molecules" begin
@@ -243,6 +262,8 @@ end
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => NaN))
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(9 => 0.1))
         @test_throws ArgumentError simulate(p; override_count=3, track_velocity=Dict(1.5 => (1.0, 0.0)))
+        @test_throws ArgumentError simulate(p; override_count=3, track_velocity=Dict(true => (1.0, 0.0)))
+        @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1e30 => 0.1))
         @test_throws ArgumentError simulate(p; override_count=3, track_velocity=Dict(1 => nothing))
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict("1" => 0.1))
         # the config is mutable: simulate checks its velocities again

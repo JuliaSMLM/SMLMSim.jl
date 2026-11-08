@@ -242,8 +242,9 @@ function _check_track_velocity(given, ndims::Int)
     return out
 end
 
-# A keyword's key must be a whole-number track_id. Internal.
-_track_key(id, name) = (id isa Integer || (id isa Real && isinteger(id))) ||
+# A keyword's key must be a whole-number track_id that fits an Int (not a Bool). Internal.
+_track_key(id, name) =
+    (id isa Real && !(id isa Bool) && isfinite(id) && isinteger(id) && typemin(Int) <= id <= typemax(Int)) ||
     throw(ArgumentError("$name keys must be track_id integers; got $(repr(id))"))
 
 # `simulate`'s `track_D` as Dict{Int,Float64}, each finite and >= 0 (nothing when not given). Internal.
@@ -849,6 +850,7 @@ function simulate(params::DiffusionSMLMConfig;
     n_initial_emitters = 0
     prior_D = nothing
     prior_v = nothing
+    prior_vcfg = nothing
     prior_class = nothing
     prior_mix = nothing
     sim_params = nothing
@@ -866,6 +868,7 @@ function simulate(params::DiffusionSMLMConfig;
             prior_D = saved_D === nothing || isempty(saved_D) ? nothing : saved_D
             saved_v = get(md, "monomer_velocity", nothing)
             prior_v = saved_v === nothing || isempty(saved_v) ? nothing : saved_v
+            prior_vcfg = get(md, "monomer_velocity_config", nothing)
             prior_class = get(md, "monomer_class", nothing)
             prior_mix = get(md, "monomer_mobility", nothing)
             sim_params = get(md, "simulation_parameters", nothing)
@@ -966,20 +969,21 @@ function simulate(params::DiffusionSMLMConfig;
         k = get(track_class, id, 0)
         return 1 <= k <= length(params.monomer_velocity) ? params.monomer_velocity[k] : nothing
     end
-    kept_other_v = false
     for e in emitters
         id = e.track_id
-        cv = config_velocity(id)
         if prior_v !== nothing && haskey(prior_v, id)
             mol_v[id] = _velocity_ndims(prior_v[id], params.ndims,
                                         "the saved velocity of track $id (starting_conditions metadata \"monomer_velocity\")")
-            named = v_keyword !== nothing && haskey(v_keyword, id)
-            kept_other_v |= !named && mol_v[id] != something(cv, zero_v)
-        elseif cv !== nothing
-            mol_v[id] = cv
+        else
+            cv = config_velocity(id)
+            cv === nothing || (mol_v[id] = cv)
         end
     end
-    kept_other_v && @warn "starting_conditions: tracks keep their saved velocity (metadata \"monomer_velocity\") although this config's monomer_velocity gives some of them a different one; pass track_velocity to set them, or extract_end_state(smld).emitters for this config's" maxlog=1
+    # As for D: one warning when kept velocities meet a config whose monomer_velocity differs from the source run's
+    if prior_v !== nothing && prior_vcfg !== nothing && collect(prior_vcfg) != params.monomer_velocity &&
+       any(e -> haskey(prior_v, e.track_id), emitters)
+        @warn "starting_conditions: tracks keep their saved velocity (metadata \"monomer_velocity\") although this config's monomer_velocity differs from the source run's; pass track_velocity to set them, or extract_end_state(smld).emitters for this config's" maxlog=1
+    end
     ids = Set(e.track_id for e in emitters)
     for (name, given) in (("track_velocity", v_keyword), ("track_D", D_keyword))
         given === nothing && continue
@@ -1129,8 +1133,8 @@ unchanged from that run (the latest record per track of the last frame matches
 `metadata["last_frame_latest"]`). Otherwise (filtered, edited or re-wrapped
 without metadata) the record with the largest timestamp per track in the last frame present is
 used, with its photons as they are; tracks absent from that frame are not resumed. The result carries
-copies of `"γ"`, `"rate_source"`, `"dt"`, `"monomer_mobility"`, `"monomer_D"`, `"monomer_class"` and
-`"monomer_velocity"` when present. A concatenation or merge of runs has unknown provenance: metadata `"concatenated_from"` or
+copies of `"γ"`, `"rate_source"`, `"dt"`, `"monomer_mobility"`, `"monomer_D"`, `"monomer_class"`,
+`"monomer_velocity"` and `"monomer_velocity_config"` when present. A concatenation or merge of runs has unknown provenance: metadata `"concatenated_from"` or
 `"merged_from"` (written by SMLMData's `cat_smld` and `merge_smld`), or, as a backstop, a last frame
 holding two records of one track at the same timestamp, which no single run produces. Then the latest
 record per track (the first of tied ones) is resumed, `"γ"`, `"rate_source"`, `"monomer_D"`,
@@ -1168,7 +1172,7 @@ function extract_end_state(smld::BasicSMLD{T,E}) where {T, E<:AbstractDiffusingE
 
     metadata = Dict{String,Any}("n_substeps" => 1)
     for key in ("simulation_type", "simulation_parameters", "dt", "camera_framerate", "camera_exposure", "γ", "rate_source",
-                "monomer_mobility", "monomer_D", "monomer_class", "monomer_velocity")
+                "monomer_mobility", "monomer_D", "monomer_class", "monomer_velocity", "monomer_velocity_config")
         tie && key in ("γ", "rate_source", "monomer_D", "monomer_class", "monomer_velocity") && continue
         haskey(smld.metadata, key) && (metadata[key] = _md_copy(smld.metadata[key]))
     end

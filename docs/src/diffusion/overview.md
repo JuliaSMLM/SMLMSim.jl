@@ -131,8 +131,8 @@ Continuation assumes the SMLD comes from one simulation run, or a filtered subse
 concatenation of different runs is unsupported, and the γ check cannot detect a molecule from another
 run that happens to carry γ·dt. A concatenation or merge (SMLMData's `cat_smld` and `merge_smld` mark
 it in the metadata) or, as a backstop, a last frame holding two records of one track at the same
-timestamp, which no single run produces, is taken as unknown provenance: no γ, rate source or saved D
-is carried, with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
+timestamp, which no single run produces, is taken as unknown provenance: no γ, rate source, saved D,
+mobility class or saved velocity is carried, with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
 its last frame, which is not the exact end state and carries no per-molecule history beyond that record
 (blinking, bleaching or brightness-jitter state is not rebuilt). `extract_final_state` is deprecated.
 The full continuation rule is in [Placement and Continuation Rules](rules.md).
@@ -161,8 +161,9 @@ smld, info = simulate(params; override_count = 10,
                       track_velocity = Dict(1 => (0.6, 0.6)), track_D = Dict(1 => 0.0, 2 => 0.3))
 ```
 
-Each molecule's velocity is saved in `smld.metadata["monomer_velocity"]` and kept by continuation (with
-a warning when the new config would give a kept molecule a different one). A bound pair drifts at the
+Each molecule's velocity is saved in `smld.metadata["monomer_velocity"]` and kept by continuation of a
+single run (not of a concatenation or merge), with a warning when the new config's `monomer_velocity`
+differs from the run's. A bound pair drifts at the
 mean of its partners' velocities, a molecule with a velocity is not immobile for the pair rules below,
 and in a reflecting box a molecule driven into a wall stays at it (its velocity is not reversed).
 Molecules still form a pair when a step ends with them closer than `r_react`, so paths that cross can

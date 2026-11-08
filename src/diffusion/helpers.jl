@@ -898,7 +898,8 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
   `metadata["rate_source"]`; no key when `nothing`
 - `n_frames::Union{Nothing,Int}=nothing`: Frame count of the movie; the largest frame present when `nothing`
 - `track_v::Union{Nothing,AbstractDict}=nothing`: Per-track velocities (μm/s), stored as
-  `metadata["monomer_velocity"]`; no key when `nothing`
+  `metadata["monomer_velocity"]`, with a copy of the config's `monomer_velocity` as
+  `metadata["monomer_velocity_config"]`; neither key when `nothing`
 
 # Returns
 - `BasicSMLD`: SMLD containing all emitters for further analysis or visualization
@@ -926,7 +927,10 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
     )
     γ === nothing || (metadata["γ"] = γ)
     rate_source === nothing || (metadata["rate_source"] = rate_source)
-    track_v === nothing || (metadata["monomer_velocity"] = track_v)
+    if track_v !== nothing
+        metadata["monomer_velocity"] = track_v
+        metadata["monomer_velocity_config"] = copy(params.monomer_velocity)
+    end
 
     # Create SMLD object
     return BasicSMLD(

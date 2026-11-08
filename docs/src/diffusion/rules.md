@@ -147,8 +147,9 @@ one to single molecules.
 - **Single molecules.** `track_velocity` and `track_D` replace the velocity and D of the molecules they name.
   Populations are still drawn for every molecule, so the other molecules' draws are unchanged.
 - **Saved.** When the run has any velocity (the config's, a keyword's or a continued run's),
-  `metadata["monomer_velocity"]` (`track_id => velocity`) holds the velocity every molecule moved with, zero included.
-  A run without any velocity has no such key, and its molecules moved with none.
+  `metadata["monomer_velocity"]` (`track_id => velocity`) holds the velocity every molecule moved with, zero included,
+  and `metadata["monomer_velocity_config"]` a copy of the config's `monomer_velocity`. A run without any velocity has
+  neither key, and its molecules moved with none.
 
 ## Continuation
 
@@ -172,10 +173,11 @@ photon-edited subset of the run. Every other track takes the current setting at 
 A kept saved D warns once when this config's `monomer_mobility`, weights included, differs from the source run's saved
 copy.
 
-**Velocity.** A velocity is a property of the molecule, as a saved D is. A resumed track keeps its saved velocity; one
-warning is given when this config's `monomer_velocity` would give some kept track a different one (including none).
-A track without a saved velocity (its run had none) takes this config's: its population's entry, by the class it
-drew or kept with its saved D, or the one velocity of an empty mixture, else none. `track_velocity` and `track_D`
+**Velocity.** A velocity is a property of the molecule, as a saved D is. A resumed track keeps its saved velocity, with
+one warning when this config's `monomer_velocity` differs from the source run's saved copy
+(`metadata["monomer_velocity_config"]`), as for D. A track without a saved velocity (its run had none) takes this
+config's: its population's entry, by the class it drew or kept with its saved D (none when that class is not one of
+this config's populations), or the one velocity of an empty mixture, else none. `track_velocity` and `track_D`
 replace any of these for the molecules they name.
 
 **dt.** The source's saved `dt` is read only by the brightness check (`photons ≈ γ·dt_saved`, rtol 1e-6). A restamp
