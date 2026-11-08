@@ -50,8 +50,9 @@ end
             smld, _ = simulate(p; override_count=400, γ=1000.0)
             steps = monomer_steps(smld, p.box_size)
             check_stats(reduce(vcat, values(steps)), v, p.diff_monomer)
-            # the config's one velocity is not saved per track (as diff_monomer); the key says the run has one
-            @test haskey(smld.metadata, "monomer_velocity") && isempty(smld.metadata["monomer_velocity"])
+            # a run with a velocity saves every track's
+            mv = smld.metadata["monomer_velocity"]
+            @test length(mv) == 400 && all(==(v), values(mv))
         end
     end
 
@@ -96,7 +97,8 @@ end
         @test all(d -> all(isapprox.(d, (0.01, -0.005); atol=1e-12)), directed)
         check_stats(reduce(vcat, [steps[id] for id in 101:200]), (1.0, -0.5), p.diff_monomer)
         check_stats(reduce(vcat, [steps[id] for id in 201:300]), (0.0, 0.0), p.diff_monomer)
-        @test sort!(collect(keys(smld.metadata["monomer_velocity"]))) == 1:200
+        mv = smld.metadata["monomer_velocity"]
+        @test sort!(collect(keys(mv))) == 1:300 && all(mv[id] == (0.0, 0.0) for id in 201:300)
         @test sort!(collect(keys(smld.metadata["monomer_D"]))) == 1:100
         # the keywords leave the other molecules' population draws unchanged
         q = dm_config(monomer_mobility=[(0.5, 0.01), (0.5, 0.1)])
@@ -166,14 +168,64 @@ end
         @test ext.metadata["monomer_velocity"] == smld.metadata["monomer_velocity"]
         # a saved velocity is a property of the molecule: kept under a config without velocities
         q = dm_config(monomer_mobility=mix, t_max=0.3)
-        smld2, _ = simulate(q; starting_conditions=smld, γ=1000.0)
+        smld2, _ = @test_logs (:warn, r"keep their saved velocity") match_mode=:any simulate(q; starting_conditions=smld, γ=1000.0)
         @test smld2.metadata["monomer_velocity"] == smld.metadata["monomer_velocity"]
         steps = monomer_steps(smld2, q.box_size)
         @test isapprox(mean(d[2] for d in steps[7]), 0.02; atol=5 * sqrt(2 * 0.05 * 0.01 / length(steps[7])))
-        # a run that set no velocity: its tracks keep their D and stay without drift, with a warning
+        # a run that set no velocity: its tracks keep their D and class and take this config's velocity for it
         src, _ = simulate(q; override_count=10, γ=1000.0)
-        cont = @test_logs (:warn, r"keep the source run's velocity") match_mode=:any simulate(p; starting_conditions=src)
-        @test all(v -> v == (0.0, 0.0), values(cont[1].metadata["monomer_velocity"]))
+        cont, _ = @test_logs simulate(p; starting_conditions=src)
+        @test all(cont.metadata["monomer_velocity"][id] == p.monomer_velocity[k] for (id, k) in src.metadata["monomer_class"])
+        # a changed velocity: kept, with one warning
+        p2 = dm_config(monomer_mobility=mix, monomer_velocity=[(2.0, 0.0), (0.0, 2.0)], t_max=0.1)
+        cont2, _ = @test_logs (:warn, r"keep their saved velocity") match_mode=:any simulate(p2; starting_conditions=smld)
+        @test cont2.metadata["monomer_velocity"] == smld.metadata["monomer_velocity"]
+        # the same config: kept, no warning; a molecule whose D was set with track_D keeps moving (review r1, M1)
+        u = dm_config(monomer_velocity=[(0.5, 0.0)], t_max=0.3)
+        s1, _ = simulate(u; override_count=5, γ=1000.0, track_D=Dict(1 => 0.0))
+        s2, _ = @test_logs simulate(u; starting_conditions=s1)
+        @test all(d -> all(isapprox.(d, (0.005, 0.0); atol=1e-12)), monomer_steps(s2, u.box_size)[1])
+        # a tie (unknown provenance) carries no velocity
+        tie = BasicSMLD(smld.emitters, smld.camera, smld.n_frames, smld.n_datasets,
+                        merge(copy(smld.metadata), Dict{String,Any}("concatenated_from" => 2)))
+        ext2 = @test_logs (:warn, r"concatenation") match_mode=:any extract_end_state(tie)
+        @test !haskey(ext2.metadata, "monomer_velocity")
+    end
+
+    @testset "binding and unbinding of directed molecules" begin
+        mono(id, x) = DM.DiffusingEmitter2D{Float64}(x, 1.0, 10.0, 0.0, 1, 1, id, :monomer, nothing)
+        bound(id, x, partner) = DM.DiffusingEmitter2D{Float64}(x, 1.0, 10.0, 0.0, 1, 1, id, :dimer, partner)
+        cfg(pm; kw...) = dm_config(; r_react=0.01, d_dimer=0.02, k_off=0.0, t_max=0.03, pair_mobility=pm, kw...)
+        at(s, id, t) = only(e for e in s.emitters if e.track_id == id && isapprox(e.timestamp, t; atol=1e-12))
+        sim(p, start; kw...) = (Random.seed!(9180); simulate(p; starting_conditions=start, γ=1000.0, kw...)[1])
+        D0 = Dict(1 => 0.0, 2 => 0.0)
+        # two directed molecules with D 0 form a pair: neither is immobile, so under :min they are placed about
+        # their midpoint (not anchored), with no drift on the formation step; under :fixed there is no warning
+        for pm in (:min, :fixed)
+            s = @test_logs sim(cfg(pm), [mono(1, 1.0), mono(2, 1.004)]; track_D=D0,
+                               track_velocity=Dict(1 => (1.0, 0.0), 2 => (0.0, 0.5)))
+            a, b = at(s, 1, 0.01), at(s, 2, 0.01)
+            @test a.state == :dimer && isapprox(a.x, 0.992; atol=1e-12) && isapprox(b.x, 1.012; atol=1e-12)
+            @test a.y == 1.0 && b.y == 1.0
+        end
+        # a directed D 0 molecule meets an immobile one under :min: the immobile one anchors
+        s = sim(cfg(:min), [mono(1, 1.0), mono(2, 1.004)]; track_D=D0, track_velocity=Dict(1 => (1.0, 0.0)))
+        @test at(s, 2, 0.01).x == 1.004 && isapprox(at(s, 1, 0.01).x, 0.984; atol=1e-12)
+        @test at(s, 2, 0.02).x == 1.004
+        # a split closer than r_react under :min: the immobile partner stays, the directed one is placed and drifts
+        sp(pm) = cfg(pm; d_dimer=0.004, k_off=100.0)
+        s = sim(sp(:min), [bound(1, 1.0, 2), bound(2, 1.004, 1)]; track_D=D0, track_velocity=Dict(1 => (-1.0, 0.0)))
+        @test at(s, 1, 0.01).state == :monomer && at(s, 2, 0.01).x == 1.004
+        @test at(s, 1, 0.01).x < 1.004 - 0.01 - 0.01 + 1e-9
+        # a split under :fixed of two directed D 0 molecules moves both, with no warning
+        s = @test_logs sim(sp(:fixed), [bound(1, 1.0, 2), bound(2, 1.004, 1)]; track_D=D0,
+                           track_velocity=Dict(1 => (-1.0, 0.0), 2 => (1.0, 0.0)))
+        @test at(s, 1, 0.01).state == :monomer
+        # the dissociation step drifts each partner (a pair wider than r_react is not re-placed)
+        s = sim(cfg(:fixed; d_dimer=0.05, k_off=100.0), [bound(1, 1.0, 2), bound(2, 1.05, 1)]; track_D=D0,
+                track_velocity=Dict(1 => (1.0, 0.0), 2 => (0.0, 1.0)))
+        @test isapprox(at(s, 1, 0.01).x, 1.01; atol=1e-12) && at(s, 1, 0.01).y == 1.0
+        @test at(s, 2, 0.01).x == 1.05 && isapprox(at(s, 2, 0.01).y, 1.01; atol=1e-12)
     end
 
     @testset "validation" begin
@@ -190,6 +242,9 @@ end
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => -0.1))
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => NaN))
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(9 => 0.1))
+        @test_throws ArgumentError simulate(p; override_count=3, track_velocity=Dict(1.5 => (1.0, 0.0)))
+        @test_throws ArgumentError simulate(p; override_count=3, track_velocity=Dict(1 => nothing))
+        @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict("1" => 0.1))
         # the config is mutable: simulate checks its velocities again
         p.monomer_velocity = [(1.0, 0.0), (0.0, 1.0)]
         @test_throws ArgumentError simulate(p; override_count=3)

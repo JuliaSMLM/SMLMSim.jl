@@ -351,15 +351,14 @@ _unbind_spacing(params, ::Type{T}) where {T<:AbstractFloat} =
         params.r_react + 8 * Float64(eps(T)) * max(1.0, params.box_size + params.r_react))
 
 """
-    _anchor(params, e1, e2, D1, D2; still=(D1 == 0, D2 == 0)) -> Union{Nothing,Int}
+    _anchor(params, e1, e2, s1::Bool, s2::Bool) -> Union{Nothing,Int}
 
 The `track_id` of the pair member that keeps its position, or `nothing` when the pair is not
 anchored. A pair is anchored only when `params.pair_mobility == :min` and one member is immobile
-(`still`: by default `D == 0`; `update_system` passes D 0 and no velocity); that member is the
-anchor, and if both are immobile the one with the smaller `track_id`.
+(`s1`, `s2`: monomer D 0 and no velocity); that member is the anchor, and if both are immobile the
+one with the smaller `track_id`.
 """
-function _anchor(params, e1, e2, D1::Real, D2::Real; still::NTuple{2,Bool}=(D1 == 0, D2 == 0))
-    s1, s2 = still
+function _anchor(params, e1, e2, s1::Bool, s2::Bool)
     (params.pair_mobility == :min && (s1 || s2)) || return nothing
     return s1 && (!s2 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
 end
@@ -421,7 +420,7 @@ function _unbind_positions(p1::NTuple{N,Float64}, p2::NTuple{N,Float64}, params,
 end
 
 """
-    _unbind(m1, m2, params, D1, D2, unfit=nothing)
+    _unbind(m1, m2, params, s1, s2, unfit=nothing)
 
 Place two freshly dissociated monomers at least `params.r_react` apart along their pair axis (the
 minimum-image distance under periodic boundaries), so that the formation check (`can_dimerize`) cannot
@@ -441,21 +440,18 @@ changes positions only.
 # Arguments
 - `m1, m2`: The monomers returned by `dissociate`
 - `params`: Simulation parameters (`r_react`, `pair_mobility`, `box_size`, `boundary`)
-- `D1, D2::Float64`: Monomer diffusion coefficients of `m1` and `m2`
+- `s1, s2::Bool`: Whether `m1` and `m2` are immobile (monomer D 0 and no velocity)
 - `unfit::Union{Nothing,Base.RefValue{Bool}}=nothing`: Set to `true` when the placement cannot fit
-- `still::NTuple{2,Bool}=(D1 == 0, D2 == 0)`: Which members are immobile (`update_system` passes D 0 and
-  no velocity)
 
 # Returns
 - `Tuple`: The two monomers, moved apart if they were closer than `r_react`
 """
-function _unbind(m1::E, m2::E, params, D1::Real, D2::Real,
-                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing;
-                 still::NTuple{2,Bool}=(D1 == 0, D2 == 0)) where {E<:AbstractDiffusingEmitter}
+function _unbind(m1::E, m2::E, params, s1::Bool, s2::Bool,
+                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing) where {E<:AbstractDiffusingEmitter}
     p1, p2 = _pos(m1), _pos(m2)
     _sep(p1, p2, _period(params)) >= params.r_react && return (m1, m2)
     T = typeof(m1.x)
-    ok, q1, q2 = _unbind_positions(p1, p2, params, _anchor(params, m1, m2, D1, D2; still=still), m1.track_id,
+    ok, q1, q2 = _unbind_positions(p1, p2, params, _anchor(params, m1, m2, s1, s2), m1.track_id,
                                    _unbind_spacing(params, T), T)
     ok && return (_at(m1, q1), _at(m2, q2))
     unfit === nothing || (unfit[] = true)

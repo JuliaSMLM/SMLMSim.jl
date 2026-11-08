@@ -79,7 +79,7 @@ pair keeps its 0.7.1 placement (`d_dimer/2` either side of its midpoint, the min
 **Every boundary step**, a monomer's included, ends inside the box in the coordinate type.
 
 **Under the default `:fixed`**, forming a pair places both partners `d_dimer` apart about their midpoint, and a bound
-pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member is immobile (monomer D = 0).
+pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member is immobile (monomer D = 0 and no velocity).
 `simulate` warns once per run when any step moves an immobile member (at formation, while bound or at dissociation,
 recorded by the camera or not), pointing to `:min`, which keeps such a pair in place.
 
@@ -132,7 +132,12 @@ one to single molecules.
   velocity), then the displacement `v·dt`, then the boundary. A zero velocity takes exactly the step without one, so
   the output and the random stream are unchanged.
 - **A wall.** In a reflecting box the position is reflected as for any step, and the velocity is not reversed, so a
-  molecule driven into a wall stays within one step's displacement of it. Under periodic boundaries it wraps.
+  molecule driven into a wall stays within one step's displacement of it (for a step shorter than the box). Under
+  periodic boundaries it wraps.
+- **Binding.** A pair forms from positions at the end of a step closer than `r_react`, as without a velocity. Two
+  molecules whose relative step `|v1 - v2|·dt` exceeds `2·r_react` can pass through each other without binding.
+- **Float32 coordinates** move in whole units of their precision: a drift step `v·dt` below the coordinate's
+  resolution is rounded, and a molecule with D 0 and a very small velocity can move slower than `v`, or not at all.
 - **A bound pair** drifts at the mean of its partners' velocities (overdamped force balance with equal drag; a partner
   without a velocity counts as zero). The drift is added to the pair's center after its diffusion and rotation draws.
   The formation step places the pair without drift, as it does without diffusion. An anchored pair does not move.
@@ -141,9 +146,9 @@ one to single molecules.
   molecule with D 0 and a velocity is mobile. Under `:min` its pair has D 0 (the pair rule is by D) and only drifts.
 - **Single molecules.** `track_velocity` and `track_D` replace the velocity and D of the molecules they name.
   Populations are still drawn for every molecule, so the other molecules' draws are unchanged.
-- **Saved.** `metadata["monomer_velocity"]` (`track_id => velocity`) is present when the run has any velocity. It
-  holds the velocities from a population, a keyword or a continued run. A molecule moving with the config's one
-  velocity (an empty mixture) has no entry: as with `diff_monomer`, a later change applies.
+- **Saved.** When the run has any velocity (the config's, a keyword's or a continued run's),
+  `metadata["monomer_velocity"]` (`track_id => velocity`) holds the velocity every molecule moved with, zero included.
+  A run without any velocity has no such key, and its molecules moved with none.
 
 ## Continuation
 
@@ -167,10 +172,11 @@ photon-edited subset of the run. Every other track takes the current setting at 
 A kept saved D warns once when this config's `monomer_mobility`, weights included, differs from the source run's saved
 copy.
 
-**Velocity.** A resumed track keeps a saved velocity. A track that keeps a saved D but has no saved velocity keeps its
-run's, which is none (zero), with one warning when this config sets `monomer_velocity`. Every other track takes the
-current setting: its drawn population's velocity (saved), or the config's one velocity at run time (not saved).
-`track_velocity` and `track_D` replace any of these for the molecules they name.
+**Velocity.** A velocity is a property of the molecule, as a saved D is. A resumed track keeps its saved velocity; one
+warning is given when this config's `monomer_velocity` would give some kept track a different one (including none).
+A track without a saved velocity (its run had none) takes this config's: its population's entry, by the class it
+drew or kept with its saved D, or the one velocity of an empty mixture, else none. `track_velocity` and `track_D`
+replace any of these for the molecules they name.
 
 **dt.** The source's saved `dt` is read only by the brightness check (`photons ≈ γ·dt_saved`, rtol 1e-6). A restamp
 uses the current `dt`, and a source that keeps its photons per record ignores both.
@@ -187,7 +193,7 @@ detect a molecule from another run that happens to carry `γ·dt_saved`.
 Then `extract_end_state` resumes the latest record per track (the first of tied ones), carries no `γ`, `rate_source`,
 `monomer_D`, `monomer_class` or `monomer_velocity`, and warns once, so every molecule keeps its photons per record and
 takes the current D and velocity settings. The tie is only a backstop: in a Float32 SMLD from one run, timestamps `k·dt` can collide after about 8.4e6
-steps. Such a run then shows a false tie, which only drops its γ rate and saved D, with the warning.
+steps. Such a run then shows a false tie, which only drops its γ rate, saved D and saved velocity, with the warning.
 
 ### Definitions
 

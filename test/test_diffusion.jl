@@ -832,15 +832,15 @@ end
             pos(e) = nd == 2 ? [e.x, e.y] : [e.x, e.y, e.z]
             # already apart: returned untouched
             a, b = mk(1.0, 1.0, 1.0, 1), mk(1.06, 1.0, 1.0, 2)
-            r = unbind(a, b, pf, 0.3, 0.3)
+            r = unbind(a, b, pf, false, false)
             @test r[1] === a && r[2] === b
-            r = unbind(a, b, pm, 0.0, 0.3)
+            r = unbind(a, b, pm, true, false)
             @test r[1] === a && r[2] === b
             # symmetric: midpoint and axis kept
             a, b = mk(1.0, 1.0, 1.0, 1), mk(1.01, 1.02, 1.02, 2)
             u = (pos(b) - pos(a)) / dist(a, b)
             for (pp, D1, D2) in ((pf, 0.3, 0.0), (pm, 0.3, 0.2))
-                r = unbind(a, b, pp, D1, D2)
+                r = unbind(a, b, pp, D1 == 0, D2 == 0)
                 @test isapprox((pos(r[1]) + pos(r[2])) / 2, (pos(a) + pos(b)) / 2; atol=1e-12)
                 @test dist(r[1], r[2]) >= 0.05
                 @test isapprox((pos(r[2]) - pos(r[1])) / dist(r[1], r[2]), u; atol=1e-12)
@@ -848,7 +848,7 @@ end
             end
             # anchored: the immobile one stays put bit for bit, the other moves along the axis on its own side
             for (D1, D2, id_anchor) in ((0.0, 0.3, 1), (0.3, 0.0, 2), (0.0, 0.0, 1))
-                r = unbind(a, b, pm, D1, D2)
+                r = unbind(a, b, pm, D1 == 0, D2 == 0)
                 anchor, other = id_anchor == 1 ? (r[1], r[2]) : (r[2], r[1])
                 a0, o0 = id_anchor == 1 ? (a, b) : (b, a)
                 @test pos(anchor) == pos(a0)
@@ -857,11 +857,11 @@ end
             end
             # both immobile with the lower track_id second: that one is the anchor
             a2, b2 = mk(1.0, 1.0, 1.0, 5), mk(1.01, 1.0, 1.0, 3)
-            r = unbind(a2, b2, pm, 0.0, 0.0)
+            r = unbind(a2, b2, pm, true, true)
             @test pos(r[2]) == pos(b2) && isapprox(r[1].x, 1.01 - 0.05; atol=1e-8)
             # coincident partners separate along x
             c, d = mk(1.0, 1.0, 1.0, 1), mk(1.0, 1.0, 1.0, 2)
-            r = unbind(c, d, pf, 0.3, 0.3)
+            r = unbind(c, d, pf, false, false)
             @test dist(r[1], r[2]) >= 0.05 && r[1].y == r[2].y && r[2].x > r[1].x
             nd == 3 && @test r[1].z == r[2].z
         end
@@ -914,7 +914,7 @@ end
                 a, b = mk(x, y, z, 1), mk(x + dx, y + dy, z + sgn * 0.005, 2)
                 (inside(a, nd) && inside(b, nd)) || continue
                 for (D1, D2, id_anchor) in ((0.0, 0.3, 1), (0.3, 0.0, 2))
-                    r = unbind(a, b, pr(:min), D1, D2)
+                    r = unbind(a, b, pr(:min), D1 == 0, D2 == 0)
                     anchor, other = id_anchor == 1 ? (r[1], r[2]) : (r[2], r[1])
                     a0 = id_anchor == 1 ? a : b
                     @test pos(anchor) == pos(a0)
@@ -922,20 +922,20 @@ end
                     @test dist(r[1], r[2]) >= r_react
                 end
                 # symmetric pair near the wall
-                r = unbind(a, b, pr(:fixed), 0.3, 0.3)
+                r = unbind(a, b, pr(:fixed), false, false)
                 @test inside(r[1], nd) && inside(r[2], nd)
                 @test dist(r[1], r[2]) >= r_react
                 # periodic: never mirrored; the placed point (anchor ± s*u) is wrapped into the box, and a
                 # symmetric pair keeps its midpoint up to the wrap
                 mi(v) = v .- bx .* round.(v ./ bx)
-                r = unbind(a, b, pp_(:fixed), 0.3, 0.3)
+                r = unbind(a, b, pp_(:fixed), false, false)
                 @test inside(r[1], nd) && inside(r[2], nd)
                 @test all(abs.(mi(pos(r[1]) + mi(pos(r[2]) - pos(r[1])) / 2 - (pos(a) + pos(b)) / 2)) .< 1e-12)
                 d = pos(b) - pos(a)
                 u = d / sqrt(sum(abs2, d))
-                r = unbind(a, b, pp_(:min), 0.0, 0.3)
+                r = unbind(a, b, pp_(:min), true, false)
                 @test r[1] === a && pos(r[2]) == mod.(pos(a) + s * u, bx)
-                r = unbind(a, b, pp_(:min), 0.3, 0.0)
+                r = unbind(a, b, pp_(:min), false, true)
                 @test r[2] === b && pos(r[1]) == mod.(pos(b) - s * u, bx)
                 n_out += any(v -> !(0 <= v <= bx), pos(b) - s * u)
             end
@@ -943,10 +943,10 @@ end
         @test n_out > 0
         # explicit corner: anchor at the corner, u = (-0.7, 0.7)/|.|
         a, b = E2(0.0, 0.0, 1), E2(-0.007, 0.007, 2)
-        r = unbind(a, b, pr(:min), 0.0, 0.3)
+        r = unbind(a, b, pr(:min), true, false)
         @test r[1] === a && inside(r[2], 2) && dist(r[1], r[2]) >= r_react
         a, b = E3(0.0, 0.0, 0.0, 1), E3(-0.007, 0.007, -0.007, 2)
-        r = unbind(a, b, pr(:min), 0.0, 0.3)
+        r = unbind(a, b, pr(:min), true, false)
         @test r[1] === a && inside(r[2], 3) && dist(r[1], r[2]) >= r_react
 
 
@@ -1192,7 +1192,7 @@ end
             i1, i2 = rand(Bool) ? (1, 2) : (2, 1)
             a, b = f(T, p, i1, nd), f(T, q, i2, nd)
             D1, D2 = rand(((0.0, 0.3), (0.3, 0.0), (0.0, 0.0), (0.3, 0.3)))
-            m1, m2 = ID._unbind(a, b, prm, D1, D2)
+            m1, m2 = ID._unbind(a, b, prm, D1 == 0, D2 == 0)
             if d64(a, b, L, bnd) >= 0.05
                 (m1 === a && m2 === b) || (n_kept += 1)
                 continue
@@ -1213,7 +1213,7 @@ end
         for nd in (2, 3), pm_ in (:fixed, :min), (x1, x2) in ((99.97479f0, 0.024792459f0), (0.024792459f0, 99.97479f0))
             prm = (r_react = 0.05, pair_mobility = pm_, box_size = 100.0, boundary = "periodic")
             a, b = f(Float32, (x1, 50.0, 50.0), 1, nd), f(Float32, (x2, 50.0, 50.0), 2, nd)
-            m1, m2 = ID._unbind(a, b, prm, 0.0, 0.3)
+            m1, m2 = ID._unbind(a, b, prm, true, false)
             @test d64(a, b, 100.0, "periodic") < 0.05 <= d64(m1, m2, 100.0, "periodic")
             @test inbox(m1, 100.0) && inbox(m2, 100.0) && (pm_ == :fixed || m1 === a)
         end
@@ -1231,7 +1231,7 @@ end
             a, b = f(T, (x1, 50.0, 50.0), 1, nd), f(T, (mod(x2, 100.0), 50.0 + dy, 50.0), 2, nd)
             rand(Bool) && ((a, b) = (b, a))
             D1, D2 = rand(((0.0, 0.3), (0.3, 0.0), (0.0, 0.0), (0.3, 0.3)))
-            m1, m2 = ID._unbind(a, b, prm, D1, D2)
+            m1, m2 = ID._unbind(a, b, prm, D1 == 0, D2 == 0)
             if d64(a, b, 100.0, bnd) < 0.05
                 n_near += 1
                 (d64(m1, m2, 100.0, bnd) >= 0.05 && inbox(m1, 100.0) && inbox(m2, 100.0)) || (n_bad += 1)
@@ -1248,7 +1248,7 @@ end
         for nd in (2, 3), pm_ in (:fixed, :min), (x1, x2) in ((99.975, xe), (xe, 99.975))
             prm = (r_react = 0.05, pair_mobility = pm_, box_size = 100.0, boundary = "periodic")
             a, b = f(Float64, (x1, 50.0, 50.0), 1, nd), f(Float64, (x2, 50.0, 50.0), 2, nd)
-            m1, m2 = ID._unbind(a, b, prm, 0.0, 0.0)
+            m1, m2 = ID._unbind(a, b, prm, true, true)
             @test m1 === a && m2 === b
         end
         # Float32 pairs 0.05000000006 and 0.0500000005 apart in Float64 (0.049999997 measured in Float32), both
@@ -1260,7 +1260,7 @@ end
             prm = (r_react = 0.05, pair_mobility = pm_, box_size = 1.0, boundary = "reflecting")
             a, b = f(Float32, p, 1, nd), f(Float32, q, 2, nd)
             swap && ((a, b) = (b, a))
-            m1, m2 = ID._unbind(a, b, prm, 0.0, 0.0)
+            m1, m2 = ID._unbind(a, b, prm, true, true)
             @test m1 === a && m2 === b && !ID.can_dimerize(m1, m2, 0.05)
         end
         # property: no pair that dissociation returns is within formation distance, kept or moved. Pairs within a
@@ -1280,7 +1280,7 @@ end
             i1, i2 = rand(Bool) ? (1, 2) : (2, 1)
             a, b = f(T, p, i1, nd), f(T, q, i2, nd)
             D1, D2 = rand(((0.0, 0.3), (0.3, 0.0), (0.0, 0.0), (0.3, 0.3)))
-            m1, m2 = ID._unbind(a, b, prm, D1, D2)
+            m1, m2 = ID._unbind(a, b, prm, D1 == 0, D2 == 0)
             m1 === a && m2 === b ? (n_kept += 1) : (n_moved += 1)
             ID.can_dimerize(m1, m2, 0.05, ID._period(prm)) && (n_recap += 1)
         end
@@ -1288,12 +1288,12 @@ end
         # Float32 partners at 99.88 and 99.89 in a 99.9 reflecting box, and pairs across the periodic boundary
         for nd in (2, 3), pm_ in (:fixed, :min)
             prm = (r_react = 0.05, pair_mobility = pm_, box_size = 99.9, boundary = "reflecting")
-            m1, m2 = ID._unbind(f(Float32, (99.88, 50.0, 50.0), 1, nd), f(Float32, (99.89, 50.0, 50.0), 2, nd), prm, 0.0, 0.3)
+            m1, m2 = ID._unbind(f(Float32, (99.88, 50.0, 50.0), 1, nd), f(Float32, (99.89, 50.0, 50.0), 2, nd), prm, true, false)
             @test inbox(m1, 99.9) && inbox(m2, 99.9) && !ID.can_dimerize(m1, m2, 0.05)
             prm = (r_react = 0.05, pair_mobility = pm_, box_size = 10.0, boundary = "periodic")
             for (x1, x2) in ((9.99, 0.005), (0.005, 9.99))
                 a, b = f(Float64, (x1, 5.0, 5.0), 1, nd), f(Float64, (x2, 5.0, 5.0), 2, nd)
-                m1, m2 = ID._unbind(a, b, prm, 0.0, 0.3)
+                m1, m2 = ID._unbind(a, b, prm, true, false)
                 @test inbox(m1, 10.0) && inbox(m2, 10.0) && !ID.can_dimerize(m1, ID._near(m2, m1, prm), 0.05)
                 @test pm_ == :fixed || m1 === a
             end
@@ -1302,7 +1302,7 @@ end
         # B2. the placement allocates nothing and is type stable
         pw = (r_react = 0.05, pair_mobility = :min, box_size = 2.0, boundary = "reflecting")
         place_allocs(g, p1, p2, pw, anchor, s, ::Type{T}) where {T} = @allocated g(p1, p2, pw, anchor, 1, s, T)
-        unbind_allocs(g, a, b, pw) = @allocated g(a, b, pw, 0.0, 0.3)
+        unbind_allocs(g, a, b, pw) = @allocated g(a, b, pw, true, false)
         for (p1, p2) in (((1.0, 1.0), (1.01, 1.0)), ((0.01, 1.0, 1.0), (0.02, 1.0, 1.0))), anchor in (nothing, 1),
             T in (Float32, Float64), bnd in ("reflecting", "periodic")
             pb = merge(pw, (boundary = bnd,))
@@ -1313,7 +1313,7 @@ end
             a, b = f(T, p1, 1, length(p1)), f(T, p2, 2, length(p1))
             unbind_allocs(ID._unbind, a, b, pb)
             @test unbind_allocs(ID._unbind, a, b, pb) == 0
-            @test (@inferred ID._unbind(a, b, pb, 0.0, 0.3)) isa Tuple{typeof(a),typeof(a)}
+            @test (@inferred ID._unbind(a, b, pb, true, false)) isa Tuple{typeof(a),typeof(a)}
         end
 
         # B3. every configuration 0.7.1 accepts still constructs. A box that fits the placement along the pair's
@@ -1326,11 +1326,11 @@ end
         a = DiffusingEmitter2D{Float64}(0.03, 0.04, 100.0, 0.0, 1, 1, 1, :monomer, nothing)
         b = DiffusingEmitter2D{Float64}(0.05, 0.04, 100.0, 0.0, 1, 1, 2, :monomer, nothing)
         unfit = Ref(false)
-        r = @test_logs ID._unbind(a, b, tiny, 0.3, 0.3, unfit)
+        r = @test_logs ID._unbind(a, b, tiny, false, false, unfit)
         @test all(e -> 0 <= e.x <= 0.08 && e.y == 0.04, r) && !ID.can_dimerize(r[1], r[2], 0.05) && !unfit[]
         a = DiffusingEmitter2D{Float64}(0.01, 0.02, 100.0, 0.0, 1, 1, 1, :monomer, nothing)
         b = DiffusingEmitter2D{Float64}(0.03, 0.02, 100.0, 0.0, 1, 1, 2, :monomer, nothing)
-        r = @test_logs ID._unbind(a, b, merge(tiny, (box_size = 0.04,)), 0.3, 0.3, unfit)
+        r = @test_logs ID._unbind(a, b, merge(tiny, (box_size = 0.04,)), false, false, unfit)
         @test r == (a, b) && unfit[]
         # simulate warns once per run, not once per session: two runs under one logger give two warnings
         c4 = DiffusionSMLMConfig(box_size=0.04, diff_monomer=0.3, r_react=0.05, d_dimer=0.02, k_off=1e4, dt=0.01,

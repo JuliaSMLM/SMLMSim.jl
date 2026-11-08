@@ -291,8 +291,8 @@ one row per (frame, track_id) present, sorted by (frame, track_id).
   partner is immobile (monomer D == 0 and no velocity), D read from `smld.metadata["monomer_D"]`, or for an SMLD without
   a track there from its `"monomer_class"` and the `monomer_mobility` of `"simulation_parameters"`, else
   that config's `diff_monomer` (the D a track without a saved D moves with); the velocity from
-  `smld.metadata["monomer_velocity"]`, else that config's one `monomer_velocity` (an empty mixture),
-  else none; `false` when unbound or
+  `smld.metadata["monomer_velocity"]` (a run with any velocity saves every track's), else none;
+  `false` when unbound or
   when a D is not known. Two mobile partners with different D, or two
   immobile ones, are not mixed.
 
@@ -315,10 +315,9 @@ function frame_dimer_truth(smld::BasicSMLD)
     D_of(id) = Dsaved !== nothing && haskey(Dsaved, id) ? Float64(Dsaved[id]) :
                class !== nothing && haskey(class, id) && 1 <= class[id] <= length(mix) ? mix[class[id]][2] :
                cfg isa DiffusionSMLMConfig ? cfg.diff_monomer : nothing
-    # The velocity each track moved with: its saved velocity, else the run's one velocity, else none
+    # The velocity each track moved with: a run with any velocity saves every track's; none otherwise
     vsaved = get(smld.metadata, "monomer_velocity", nothing)
-    v_all = cfg isa DiffusionSMLMConfig ? _uniform_velocity(cfg) : nothing
-    v_of(id) = vsaved !== nothing && haskey(vsaved, id) ? vsaved[id] : v_all
+    v_of(id) = vsaved !== nothing && haskey(vsaved, id) ? vsaved[id] : nothing
     function is_mixed(id, partner)
         partner == 0 && return false
         D1, D2 = D_of(id), D_of(partner)

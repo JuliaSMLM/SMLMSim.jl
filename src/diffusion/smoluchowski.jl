@@ -52,7 +52,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   every pair diffuses with `diff_dimer` and rotates with `diff_dimer_rot`. `:min`: a pair moves at
   `min(D1, D2) × diff_dimer/diff_monomer`, with `D1`, `D2` the partners' monomer D (from
   `monomer_mobility`, or `diff_monomer`), so two partners at `diff_monomer` move at `diff_dimer` (as
-  under `:fixed`) and a pair with an immobile partner does not move; the rotation scales the same way
+  under `:fixed`) and a pair with a D = 0 partner does not diffuse (anchored when that partner is
+  immobile, D 0 and no velocity; otherwise it only drifts); the rotation scales the same way
   (`diff_dimer_rot × D_pair/diff_dimer`; with `diff_dimer = 0` a `:min` pair does not rotate, while a
   `:fixed` pair still rotates with `diff_dimer_rot`). On formation an immobile partner keeps its
   position and the other is placed `d_dimer` from it (in a reflecting box, mirrored across the immobile
@@ -68,7 +69,7 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   pair forms from its partner's minimum image too (across the edge as anywhere else), with each partner
   wrapped into the box on the formation step.
   Under `:fixed` forming a pair places both partners `d_dimer` apart about their midpoint and a bound
-  pair moves and rotates, even when a member is immobile (monomer D = 0), and on dissociation a pair
+  pair moves and rotates, even when a member is immobile (monomer D = 0, no velocity), and on dissociation a pair
   closer than `r_react` is spread about its midpoint; `simulate` warns once per run when a step moves an
   immobile member, recorded or not; `:min` keeps such a pair in place.
 - `monomer_velocity::Vector{Tuple{Vararg{Float64}}}`: optional directed motion, velocities in μm/s with
@@ -207,7 +208,8 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         if pair_mobility == :min && !(diff_monomer > 0)
             throw(ArgumentError("pair_mobility = :min requires diff_monomer > 0 (it is the scale reference)"))
         end
-        velocities = Tuple{Vararg{Float64}}[_velocity_tuple(v) for v in monomer_velocity]
+        velocities = Tuple{Vararg{Float64}}[_velocity_tuple(_velocity_ndims(v, length(v), "each monomer_velocity entry"))
+                                            for v in monomer_velocity]
         _check_monomer_velocity(velocities, monomer_mobility, ndims)
 
         new(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
@@ -221,6 +223,8 @@ _velocity_tuple(v) = Tuple(Float64(x) for x in v)
 
 # A velocity as an NTuple of `ndims` Float64, or ArgumentError (wrong length or not finite). Internal.
 function _velocity_ndims(v, ndims::Int, what::AbstractString="velocity")
+    (v isa Union{Tuple,AbstractVector} && all(x -> x isa Real, v)) ||
+        throw(ArgumentError("$what must be a tuple or vector of $ndims numbers (μm/s); got $(repr(v))"))
     t = _velocity_tuple(v)
     length(t) == ndims || throw(ArgumentError("$what must have ndims = $ndims components (μm/s); got $(length(t))"))
     all(isfinite, t) || throw(ArgumentError("$what components must be finite; got $t"))
@@ -232,16 +236,22 @@ function _check_track_velocity(given, ndims::Int)
     given === nothing && return nothing
     out = Dict{Int,NTuple{ndims,Float64}}()
     for (id, v) in given
+        _track_key(id, "track_velocity")
         out[Int(id)] = _velocity_ndims(v, ndims, "track_velocity[$id]")
     end
     return out
 end
+
+# A keyword's key must be a whole-number track_id. Internal.
+_track_key(id, name) = (id isa Integer || (id isa Real && isinteger(id))) ||
+    throw(ArgumentError("$name keys must be track_id integers; got $(repr(id))"))
 
 # `simulate`'s `track_D` as Dict{Int,Float64}, each finite and >= 0 (nothing when not given). Internal.
 function _check_track_D(given)
     given === nothing && return nothing
     out = Dict{Int,Float64}()
     for (id, D) in given
+        _track_key(id, "track_D")
         (D isa Real && isfinite(D) && D >= 0) ||
             throw(ArgumentError("track_D[$id] must be a finite diffusion coefficient >= 0 (μm²/s); got $D"))
         out[Int(id)] = Float64(D)
@@ -259,8 +269,7 @@ function _check_monomer_velocity(velocities, mixture, ndims)
         "monomer_velocity must have exactly one entry (the velocity of every monomer) when monomer_mobility is empty; got $(length(velocities))" :
         "monomer_velocity must have one entry per monomer_mobility population ($n); got $(length(velocities))"))
     for v in velocities
-        length(v) == ndims || throw(ArgumentError("each monomer_velocity entry must have ndims = $ndims components (μm/s); got $(length(v))"))
-        all(isfinite, v) || throw(ArgumentError("monomer_velocity components must be finite; got $v"))
+        _velocity_ndims(v, ndims, "each monomer_velocity entry")
     end
     return nothing
 end
@@ -338,7 +347,8 @@ end
 
 Translational and rotational diffusion coefficients of a bound pair whose partners have
 monomer coefficients `D1` and `D2`. `:fixed` gives `(diff_dimer, diff_dimer_rot)`. `:min` gives
-`(0, 0)` when either partner is immobile (the pair is anchored), otherwise
+`(0, 0)` when either partner has D 0 (an immobile partner, with no velocity, anchors the pair; a
+directed one leaves it drifting), otherwise
 `D = min(D1, D2) * diff_dimer / diff_monomer` and `D_rot = diff_dimer_rot * D / diff_dimer`
 (`0` when `diff_dimer == 0`): two partners at `diff_monomer` give `(diff_dimer, diff_dimer_rot)`,
 as under `:fixed`. Internal.
@@ -535,10 +545,9 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                 
                 if can_dimerize(e1, e2, params.r_react, _period(params))
                     # Create new dimer pair
-                    D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
                     s1, s2 = still(e1.track_id), still(e2.track_id)
                     # Under :min an immobile partner keeps its position (both immobile: the lower track_id)
-                    anchor = _anchor(params, e1, e2, D1, D2; still=(s1, s2))
+                    anchor = _anchor(params, e1, e2, s1, s2)
                     # The placement rule, once in Float64, oriented along the Float64
                     # minimum-image displacement (+x only when it is exactly zero)
                     v = _dispv(_pos(e1), _pos(e2), _period(params))
@@ -569,7 +578,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                 m1, m2 = dissociate(e1, emitters)
                 D1, D2 = monomer_D(m1.track_id), monomer_D(m2.track_id)
                 s1, s2 = still(m1.track_id), still(m2.track_id)
-                u1, u2 = _unbind(m1, m2, params, D1, D2, split_unfit; still=(s1, s2))
+                u1, u2 = _unbind(m1, m2, params, s1, s2, split_unfit)
                 _note_immobile!(moved_immobile, params, s1, s2, m1, m2, u1, u2)
                 m1, m2 = u1, u2
 
@@ -592,7 +601,7 @@ function update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Dif
                     D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
                     s1, s2 = still(e1.track_id), still(e2.track_id)
                     D_pair, rot = _pair_motion(params, D1, D2)
-                    if _anchor(params, e1, e2, D1, D2; still=(s1, s2)) !== nothing
+                    if _anchor(params, e1, e2, s1, s2) !== nothing
                         # An immobile partner pins the pair: no translation, rotation or RNG draws
                         d1 = restamp(e1; timestamp=e1.timestamp + dt)
                         d2 = restamp(e2; timestamp=e2.timestamp + dt)
@@ -690,6 +699,9 @@ end
              γ::Union{Nothing, Real}=nothing,
              photons::Union{Nothing, Real}=nothing,
              override_count::Union{Nothing, Int}=nothing,
+             camera::Union{Nothing, AbstractCamera}=nothing,
+             track_velocity::Union{Nothing, AbstractDict}=nothing,
+             track_D::Union{Nothing, AbstractDict}=nothing,
              kwargs...)
 
 Run a Smoluchowski diffusion simulation and return a BasicSMLD object
@@ -700,7 +712,7 @@ with emitters that have both frame number and timestamp information.
 
 # Keyword Arguments
 - `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing`: Optional starting emitters.
-  An SMLD resumes at its exact end state (`extract_end_state`) and carries each track's D and γ
+  An SMLD resumes at its exact end state (`extract_end_state`) and carries each track's D, velocity and γ
   forward. A Vector keeps each emitter's own `photons`, gets fresh D draws, and is deduplicated
   to the latest record per track_id (with a warning) if track_ids repeat.
 - `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (finite, ≥ 0); each of the
@@ -925,36 +937,49 @@ function simulate(params::DiffusionSMLMConfig;
     track_class = Dict{Int,Int}()
     # A saved D and its class are properties of the molecule and are kept even if the new mixture differs; any
     # other track draws a class from a non-empty mixture (saved) or uses diff_monomer at run time (never saved).
-    # Without a saved class, it is recovered from the saved D against the source run's mixture.
-    # The velocity follows: a saved one is kept; a track that keeps a saved D keeps its run's velocity, zero
-    # when it saved none; a drawn class takes its population's velocity (saved); any other track moves with the
-    # config's one velocity at run time (never saved). The keywords replace D and velocity of the tracks they name
+    # Without a saved class, it is recovered from the saved D against the source run's mixture
     src_mix = prior_mix !== nothing ? prior_mix :
               sim_params isa DiffusionSMLMConfig ? sim_params.monomer_mobility : params.monomer_mobility
-    kept_unmoving = false
     for e in emitters
         id = e.track_id
         if prior_D !== nothing && haskey(prior_D, id)
             mol_D[id] = Float64(prior_D[id])
             track_class[id] = prior_class !== nothing && haskey(prior_class, id) ? Int(prior_class[id]) :
                 something(findfirst(c -> c[2] == mol_D[id], src_mix), 1)
-            if !(prior_v !== nothing && haskey(prior_v, id)) && !isempty(params.monomer_velocity)
-                mol_v[id] = ntuple(_ -> 0.0, params.ndims)
-                kept_unmoving |= !(v_keyword !== nothing && haskey(v_keyword, id))
-            end
         elseif !isempty(params.monomer_mobility)
             k = draw_monomer_class(params)
             mol_D[id] = params.monomer_mobility[k][2]
             track_class[id] = k
-            isempty(params.monomer_velocity) || (mol_v[id] = params.monomer_velocity[k])
         end
-        prior_v !== nothing && haskey(prior_v, id) && (mol_v[id] = _velocity_ndims(prior_v[id], params.ndims))
     end
     if prior_D !== nothing && prior_mix !== nothing && params.monomer_mobility != prior_mix &&
        any(e -> haskey(prior_D, e.track_id), emitters)
         @warn "starting_conditions: tracks keep their saved D (metadata \"monomer_D\") although this config's monomer_mobility differs from the source run's; the new mixture applies only to tracks without a saved D; pass extract_end_state(smld).emitters (and γ, to keep a γ rate) for fresh draws" maxlog=1
     end
-    kept_unmoving && @warn "starting_conditions: tracks that keep their saved D keep the source run's velocity, which it did not set (zero), although this config sets monomer_velocity; pass track_velocity to set them, or extract_end_state(smld).emitters for fresh draws" maxlog=1
+    # The velocity, a property of the molecule: a saved one is kept; any other track takes this config's, its
+    # population's entry (by its class, drawn or kept) or the one velocity of an empty mixture, else none. When the
+    # run has any velocity, every track's is saved, zero included, so a missing entry means its run had none
+    zero_v = ntuple(_ -> 0.0, params.ndims)
+    function config_velocity(id)
+        isempty(params.monomer_velocity) && return nothing
+        isempty(params.monomer_mobility) && return params.monomer_velocity[1]
+        k = get(track_class, id, 0)
+        return 1 <= k <= length(params.monomer_velocity) ? params.monomer_velocity[k] : nothing
+    end
+    kept_other_v = false
+    for e in emitters
+        id = e.track_id
+        cv = config_velocity(id)
+        if prior_v !== nothing && haskey(prior_v, id)
+            mol_v[id] = _velocity_ndims(prior_v[id], params.ndims,
+                                        "the saved velocity of track $id (starting_conditions metadata \"monomer_velocity\")")
+            named = v_keyword !== nothing && haskey(v_keyword, id)
+            kept_other_v |= !named && mol_v[id] != something(cv, zero_v)
+        elseif cv !== nothing
+            mol_v[id] = cv
+        end
+    end
+    kept_other_v && @warn "starting_conditions: tracks keep their saved velocity (metadata \"monomer_velocity\") although this config's monomer_velocity gives some of them a different one; pass track_velocity to set them, or extract_end_state(smld).emitters for this config's" maxlog=1
     ids = Set(e.track_id for e in emitters)
     for (name, given) in (("track_velocity", v_keyword), ("track_D", D_keyword))
         given === nothing && continue
@@ -969,6 +994,13 @@ function simulate(params::DiffusionSMLMConfig;
     if D_keyword !== nothing
         for (id, D) in D_keyword
             mol_D[id] = D
+        end
+    end
+    # A run with any velocity saves every track's (zero for a track without one)
+    has_v = !isempty(params.monomer_velocity) || !isempty(mol_v)
+    if has_v
+        for e in emitters
+            haskey(mol_v, e.track_id) || (mol_v[e.track_id] = zero_v)
         end
     end
 
@@ -996,8 +1028,6 @@ function simulate(params::DiffusionSMLMConfig;
     split_unfit[] && @warn "box_size=$(params.box_size) is too small to place dissociated partners r_react=$(params.r_react) apart along their axis; they stayed where they were (0.7.1's behaviour) and may have re-formed at once"
 
     # Convert to SMLD
-    # Velocities are recorded when the run has any (the config's, a keyword's or a saved one)
-    has_v = !isempty(mol_v) || !isempty(params.monomer_velocity)
     smld = create_smld(camera_emitters, camera, params; track_D=mol_D, track_class=track_class, γ=γ_val,
                        rate_source=rate_source, n_frames=n_frames, track_v=has_v ? mol_v : nothing)
 

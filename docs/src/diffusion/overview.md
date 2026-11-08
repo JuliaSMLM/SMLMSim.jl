@@ -161,16 +161,19 @@ smld, info = simulate(params; override_count = 10,
                       track_velocity = Dict(1 => (0.6, 0.6)), track_D = Dict(1 => 0.0, 2 => 0.3))
 ```
 
-The velocities are saved in `smld.metadata["monomer_velocity"]` and kept by continuation. A bound pair
-drifts at the mean of its partners' velocities, a molecule with a velocity is not immobile for the pair
-rules below, and in a reflecting box a molecule driven into a wall stays at it (its velocity is not
-reversed). Two molecules that come within `r_react` still form a pair, so straight paths that cross at
-the same moment bind. See [Placement and Continuation Rules](rules.md), Directed motion.
+Each molecule's velocity is saved in `smld.metadata["monomer_velocity"]` and kept by continuation (with
+a warning when the new config would give a kept molecule a different one). A bound pair drifts at the
+mean of its partners' velocities, a molecule with a velocity is not immobile for the pair rules below,
+and in a reflecting box a molecule driven into a wall stays at it (its velocity is not reversed).
+Molecules still form a pair when a step ends with them closer than `r_react`, so paths that cross can
+bind unless their relative step per `dt` exceeds `2·r_react`. See
+[Placement and Continuation Rules](rules.md), Directed motion.
 
 A bound pair diffuses with `diff_dimer` by default (`pair_mobility = :fixed`, the 0.7 behaviour).
 With `pair_mobility = :min` a pair moves at `min(D1, D2) × diff_dimer/diff_monomer`, where `D1`, `D2`
 are its partners' monomer D, so two partners at `diff_monomer` move at `diff_dimer` (as under `:fixed`)
-and a pair with an immobile partner (D = 0) does not move or rotate while bound: the immobile partner
+and a pair with an immobile partner (D = 0, no velocity) does not move or rotate while bound (with a D = 0
+partner that has a velocity it does not diffuse or rotate, and drifts): the immobile partner
 keeps its position when the pair forms, and the mobile partner is placed `d_dimer` from it (in a
 reflecting box, mirrored across the immobile partner on each axis it would leave, so the bond keeps its
 length; if some axis fits neither way, possible only when `box_size < 2·d_dimer`, it keeps its
@@ -185,7 +188,7 @@ often as it crosses them, so both partners stay inside the box at `d_dimer` apar
 default) a bound pair moves from its partner's minimum image, so a pair straddling the boundary moves by
 one step, and a pair forms from its partner's minimum image too (two monomers within `r_react` across the edge form a pair, which 0.7.1 never did), with each partner wrapped into the box on the formation step. Under the default `:fixed`, forming a pair places both partners `d_dimer` apart about their
 midpoint and a bound pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member
-is immobile (a D = 0 population); `simulate` warns once per run when a step moves an immobile member,
+is immobile (a D = 0 population without velocity); `simulate` warns once per run when a step moves an immobile member,
 recorded by the camera or not, and `pair_mobility = :min` keeps such a pair in place.
 
 On dissociation the partners are placed at least `r_react` apart along the pair axis (the minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only because `d_dimer < r_react`; a mobile partner can still diffuse back and re-form (geminate re-encounter). Under `pair_mobility = :min` an immobile partner stays put and the other is placed from it, mirrored across it on each axis it would leave a reflecting box. Otherwise, including every pair under `:fixed`, both partners move apart about their midpoint, shifted inward just enough to fit a reflecting box or wrapped under periodic boundaries; under `:fixed` this moves an immobile partner, and `simulate` counts it toward its one warning per run. Partners already `r_react` or more apart (by minimum image, computed in Float64 from their stored coordinates) keep their positions. That is every pair bound at `d_dimer` when `d_dimer` exceeds `r_react` by more than coordinate rounding and the box is at least `2·d_dimer`; in a smaller box a pair can be closer than `d_dimer` (a reflecting anchored formation that kept its separation, or a periodic bond whose minimum image is shorter), and one closer than `r_react` moves at the split.
