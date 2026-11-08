@@ -29,30 +29,81 @@ function censored_moments(μ, σ, a)
     return m1, m2 - m1^2
 end
 
-@testset "Molecule brightness" begin
-    @testset "P1: absent keyword changes nothing" begin
-        cam = IdealCamera(32, 32, 0.1)
-        params = StaticSMLMConfig(density=10.0, nframes=20, ndatasets=2, minphotons=10)
-        run(; kw...) = (Random.seed!(7);
-            simulate(params; pattern=Nmer2D(n=4, d=0.2), camera=cam, kw...))
-        s0, i0 = run()
-        s1, i1 = run(brightness=nothing)
-        @test length(s0.emitters) == length(s1.emitters) > 0
-        @test all(fieldnames(Emitter2DFit{Float64})) do fn
-            all(getfield.(s0.emitters, fn) .== getfield.(s1.emitters, fn))
-        end
-        @test sort(collect(keys(i0.smld_model.metadata))) == sort(collect(keys(i1.smld_model.metadata)))
-        @test !haskey(i0.smld_model.metadata, "brightness")
-        @test !haskey(i0.smld_model.metadata, "brightness_factors")
+# Main's output and random stream before the keyword existed, recorded at b016876 (the base of
+# this branch) on Julia 1.10.11, 1.11.9, 1.12.7 and 1.13.0 with Distributions 0.25.134, SMLMData
+# 0.7.1 and MicroscopePSFs 0.5.7, identical on all four. The recorder is
+# dev/record_golden_brightness.jl (keep its cases identical to the two below); re-record only when
+# a toolchain change moves the random numbers.
+const BR_GOLDEN_FLUOR = GenericFluor(photons=1e4, k_off=50.0, k_on=5.0)
 
-        # rand(rng, ::Dirac) returns its value and draws no random number (Distributions
-        # src/univariate/discrete/dirac.jl), so a unit factor reproduces the default exactly.
-        s2, i2 = run(brightness=Dirac(1.0))
-        @test length(s0.emitters) == length(s2.emitters)
-        @test all(fieldnames(Emitter2DFit{Float64})) do fn
-            all(getfield.(s0.emitters, fn) .== getfield.(s2.emitters, fn))
+function br_golden_simulate(; kw...)
+    Random.seed!(20261108)
+    params = StaticSMLMConfig(density=2.0, nframes=40, ndatasets=3, minphotons=50)
+    noisy, info = simulate(params; pattern=Nmer2D(n=6, d=0.2), camera=IdealCamera(16, 16, 0.1),
+                           molecule=BR_GOLDEN_FLUOR, kw...)
+    return noisy.emitters, info.smld_model.metadata, rand()
+end
+
+function br_golden_kinetic(; kw...)
+    emitters = [Emitter2DFit{Float64}(0.1 * k, 0.2 * k, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+                                      σ_xy=0.0, frame=1, dataset=1,
+                                      track_id=isodd(k) ? k : 0, id=k) for k in 1:8]
+    smld = BasicSMLD(emitters, IdealCamera(32, 32, 0.1), 1, 1, Dict{String,Any}())
+    Random.seed!(20261109)
+    out = kinetic_model(smld, GenericFluor(1e4, [-30.0 30.0; 5.0 -5.0]), 40, 20.0;
+                        ndatasets=2, minphotons=0.0, kw...)
+    return out.emitters, out.metadata, rand()
+end
+
+# The record count, every record's photons and x summed in order (foldl: no reassociation),
+# the first, middle and last records, and the next rand() after the call.
+function br_golden_fingerprint(em, next)
+    n = length(em)
+    rec(e) = (x=e.x, y=e.y, photons=e.photons, frame=e.frame, dataset=e.dataset, track_id=e.track_id)
+    return (n=n, sum_photons=foldl(+, (e.photons for e in em)), sum_x=foldl(+, (e.x for e in em)),
+            first=rec(em[1]), middle=rec(em[cld(n, 2)]), last=rec(em[n]), next_rand=next)
+end
+
+const BR_GOLDEN = Dict(
+    "simulate" => (n = 546, sum_photons = 75244.28196763992, sum_x = 310.151949079229,
+        first = (x = 0.1497072990457574, y = 1.2518301625993002, photons = 200.00000000000017, frame = 14, dataset = 1, track_id = 1),
+        middle = (x = 1.278725603652781, y = 1.3590819118278106, photons = 89.54875394927898, frame = 34, dataset = 2, track_id = 17),
+        last = (x = 0.074529134241171, y = 0.2073023930191488, photons = 200.00000000000017, frame = 40, dataset = 3, track_id = 38),
+        next_rand = 0.3387342381109394),
+    "kinetic_model" => (n = 182, sum_photons = 38070.39582538464, sum_x = 81.9999999999999,
+        first = (x = 0.1, y = 0.2, photons = 49.97272395235577, frame = 3, dataset = 1, track_id = 1),
+        middle = (x = 0.8, y = 1.6, photons = 500.00000000000045, frame = 31, dataset = 1, track_id = 11),
+        last = (x = 0.8, y = 1.6, photons = 110.4056530080455, frame = 39, dataset = 2, track_id = 11),
+        next_rand = 0.9483899313031025),
+)
+
+same_records(a, b) = length(a) == length(b) &&
+    all(fn -> isequal(getfield.(a, fn), getfield.(b, fn)), fieldnames(eltype(a)))
+
+# A distribution that reports minimum 0 but draws below it
+struct NegativeDraw <: ContinuousUnivariateDistribution end
+Base.minimum(::NegativeDraw) = 0.0
+Base.maximum(::NegativeDraw) = Inf
+Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
+
+@testset "Molecule brightness" begin
+    @testset "P1: absent keyword gives main's output and random stream ($name)" for (name, case) in
+            (("simulate", br_golden_simulate), ("kinetic_model", br_golden_kinetic))
+        ref = BR_GOLDEN[name]
+        em0 = nothing
+        for kw in (NamedTuple(), (brightness=nothing,))
+            em, md, next = case(; kw...)
+            @test br_golden_fingerprint(em, next) == ref
+            @test !haskey(md, "brightness")
+            @test !haskey(md, "brightness_factors")
+            em0 = em
         end
-        @test haskey(i2.smld_model.metadata, "brightness_factors")
+        # rand(rng, ::Dirac) returns its value and draws no random number (Distributions
+        # src/univariate/discrete/dirac.jl), so a unit factor gives main's records and stream.
+        em, md, next = case(; brightness=Dirac(1.0))
+        @test br_golden_fingerprint(em, next) == ref
+        @test same_records(em, em0)
+        @test haskey(md, "brightness_factors")
     end
 
     @testset "P2: factors follow the distribution" begin
@@ -203,5 +254,34 @@ end
         @test_throws ArgumentError simulate(params; camera=IdealCamera(16, 16, 0.1), brightness=Normal(1, 0.3))
         # a NaN factor is rejected
         @test_throws ArgumentError br_run(smld, Dirac(NaN))
+    end
+
+    @testset "P6b: every drawn factor is checked ($(repr(bad)))" for bad in (NaN, Inf)
+        # Minimum 1.0, so the up-front check passes. Each of 64 molecules draws the bad value
+        # with probability 1/2: a run that never draws it has probability 2^-64.
+        d = DiscreteNonParametric([1.0, bad], [0.5, 0.5])
+        @test minimum(d) == 1.0
+        Random.seed!(12)
+        err = try br_run(br_start(64), d); nothing catch e e end
+        @test err isa ArgumentError
+        @test occursin("drew the factor $(repr(bad))", err.msg)
+        @test occursin("DiscreteNonParametric", err.msg)
+        Random.seed!(12)
+        err = try
+            simulate(StaticSMLMConfig(nframes=1, minphotons=0); starting_conditions=br_start(64),
+                     camera=IdealCamera(32, 32, 0.1), molecule=BR_FLUOR, state1=1, brightness=d)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("drew the factor $(repr(bad))", err.msg)
+        @test occursin("DiscreteNonParametric", err.msg)
+    end
+
+    @testset "P6c: a negative draw is rejected even when the minimum is not" begin
+        err = try br_run(br_start(3), NegativeDraw()); nothing catch e e end
+        @test err isa ArgumentError
+        @test occursin("drew the factor -0.5", err.msg)
     end
 end

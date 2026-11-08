@@ -189,9 +189,9 @@ By default every molecule emits at the model's rate `γ`, so every full-frame mo
 exactly `γ / framerate` photons. The keyword `brightness` of `simulate` (static) and
 `kinetic_model` takes any univariate distribution of a dimensionless factor `b`. A molecule
 with factor `b` emits at `b * γ` for all of its frames; the rate matrix is unchanged. One factor
-is drawn per molecule and dataset, and the factor must not be negative. Redrawing per dataset is
-intended: each dataset is an independent sample, as its initial states and blinking already are,
-so the same position can differ in brightness between datasets.
+is drawn per molecule and dataset, and the factor must be finite and not negative. Redrawing per
+dataset is intended: each dataset is an independent sample, as its initial states and blinking
+already are, so the same position can differ in brightness between datasets.
 
 For a mean and standard deviation of photons per full frame with a floor, set `γ` from the mean
 and give the factor as a normal of mean 1, kept at or above the floor:
@@ -218,12 +218,17 @@ and renormalizes, so the distribution is smooth and no molecule sits exactly at 
 molecules has the factor exactly equal to the floor. Both raise the mean above that of the
 underlying normal and narrow its spread; `mean` and `var` of either distribution give the exact
 moments. With 32-bit parameters, `truncated(Normal(1f0, 0.3f0); lower=0.7f0)` fails when drawn
-from in Distributions 0.25; build the distribution from 64-bit values.
+from in Distributions 0.25 (a Distributions.jl bug, its issue 1089, through 0.25.134); build the
+distribution from 64-bit values.
 
-A distribution with negative values (such as a plain `Normal`) throws `ArgumentError`. With
-`brightness` given, `metadata["brightness"]` holds the distribution and
-`metadata["brightness_factors"]` the factor drawn for each `(dataset, track_id)`; without it no
-random number is drawn for brightness and neither key is present.
+A distribution with negative values (such as a plain `Normal`) throws `ArgumentError` before any
+random number is drawn. That check sees only the distribution's minimum, so every drawn factor is
+checked too: a factor that is NaN, infinite or negative throws `ArgumentError` naming the value
+and the distribution, when it is drawn. `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`, for
+example, has minimum 1.0 and throws at its first draw of NaN. With `brightness` given,
+`metadata["brightness"]` holds the distribution and `metadata["brightness_factors"]` the factor
+drawn for each `(dataset, track_id)`; without it no random number is drawn for brightness and
+neither key is present.
 
 ## Photophysical Parameters and Duty Cycle
 

@@ -121,12 +121,15 @@ Generate kinetic blinking model from existing localization data.
   `b` is drawn once per molecule and dataset, just before that molecule's initial state, and
   converted to `Float64`. Redrawing per dataset is intended: each dataset is an independent
   sample, as its initial states and blinking already are, so the same position can differ in
-  brightness between datasets. The factor must not be negative or NaN: `minimum(brightness) < 0`
-  throws `ArgumentError`, as does a `brightness` given with a model that is not a `GenericFluor`.
-  To keep a normal distribution at or above a floor, use either
-  `truncated(d; lower=floor)` (cut at the floor and renormalized; no draw lies at the floor) or
-  `censored(d; lower=floor)` (draws below the floor are set to it). `nothing` (default) gives
-  every molecule the rate `f.γ`, with no extra random draw.
+  brightness between datasets. The factor must be finite and not negative. Before any random
+  draw, `ArgumentError` is thrown when `minimum(brightness)` is negative or NaN, or when
+  `brightness` is given with a model that is not a `GenericFluor`. Every drawn factor is also
+  checked: a draw that is NaN, infinite or negative throws `ArgumentError` naming the value and
+  the distribution (a support can hold such a value above a valid minimum, as in
+  `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`). To keep a normal distribution at or above
+  a floor, use either `truncated(d; lower=floor)` (cut at the floor and renormalized; no draw
+  lies at the floor) or `censored(d; lower=floor)` (draws below the floor are set to it).
+  `nothing` (default) gives every molecule the rate `f.γ`, with no extra random draw.
 
 # Returns
 - `BasicSMLD`: New SMLD with simulated blinking kinetics. When `brightness` is given, its metadata
@@ -274,7 +277,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         # One brightness factor per molecule and dataset, drawn before the initial state
         fm = f
         if brightness !== nothing
-            b = Float64(rand(brightness))
+            b = _draw_brightness(brightness)
             brightness_factors[(dd, track_id)] = b
             fm = GenericFluor(b * f.γ, f.q)
         end
@@ -352,6 +355,17 @@ function _check_brightness(brightness, f::Molecule)
     minimum(brightness) >= 0 ||
         throw(ArgumentError("brightness must not take negative values (a factor below zero would make a negative emission rate); use truncated(d; lower=floor) to cut the distribution at a floor or censored(d; lower=floor) to clamp draws to it"))
     return nothing
+end
+
+# One brightness factor, drawn and checked. The check above sees only the distribution's
+# minimum, so a support that also holds NaN or Inf (DiscreteNonParametric([1.0, NaN], ...))
+# passes it. One random draw, as an unchecked draw makes. Internal.
+function _draw_brightness(brightness)
+    x = rand(brightness)
+    b = Float64(x)
+    isfinite(b) && b >= 0 ||
+        throw(ArgumentError("brightness drew the factor $(repr(x)) from $brightness; every drawn factor must be finite and non-negative as a Float64"))
+    return b
 end
 
 """
