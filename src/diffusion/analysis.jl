@@ -288,9 +288,11 @@ one row per (frame, track_id) present, sorted by (frame, track_id).
   track's previous record (in time, across frames) was `:monomer`; `NaN` if none
 - `t_break::Float64`: the same for `:monomer` after `:dimer`
 - `mixed::Bool`: `true` when the row's `partner_id` is nonzero and exactly one of the track and its
-  partner is immobile (monomer D == 0), read from `smld.metadata["monomer_D"]`, or for an SMLD without
+  partner is immobile (monomer D == 0 and no velocity), D read from `smld.metadata["monomer_D"]`, or for an SMLD without
   a track there from its `"monomer_class"` and the `monomer_mobility` of `"simulation_parameters"`, else
-  that config's `diff_monomer` (the D a track without a saved D moves with); `false` when unbound or
+  that config's `diff_monomer` (the D a track without a saved D moves with); the velocity from
+  `smld.metadata["monomer_velocity"]`, else that config's one `monomer_velocity` (an empty mixture),
+  else none; `false` when unbound or
   when a D is not known. Two mobile partners with different D, or two
   immobile ones, are not mixed.
 
@@ -313,10 +315,16 @@ function frame_dimer_truth(smld::BasicSMLD)
     D_of(id) = Dsaved !== nothing && haskey(Dsaved, id) ? Float64(Dsaved[id]) :
                class !== nothing && haskey(class, id) && 1 <= class[id] <= length(mix) ? mix[class[id]][2] :
                cfg isa DiffusionSMLMConfig ? cfg.diff_monomer : nothing
+    # The velocity each track moved with: its saved velocity, else the run's one velocity, else none
+    vsaved = get(smld.metadata, "monomer_velocity", nothing)
+    v_all = cfg isa DiffusionSMLMConfig ? _uniform_velocity(cfg) : nothing
+    v_of(id) = vsaved !== nothing && haskey(vsaved, id) ? vsaved[id] : v_all
     function is_mixed(id, partner)
         partner == 0 && return false
         D1, D2 = D_of(id), D_of(partner)
-        return D1 !== nothing && D2 !== nothing && ((D1 == 0) ⊻ (D2 == 0))
+        (D1 === nothing || D2 === nothing) && return false
+        still1, still2 = D1 == 0 && !_moving(v_of(id)), D2 == 0 && !_moving(v_of(partner))
+        return still1 ⊻ still2
     end
 
     rows = NamedTuple{(:frame, :track_id, :partner_id, :bound_fraction, :t_form, :t_break, :mixed),

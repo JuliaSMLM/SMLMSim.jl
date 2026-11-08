@@ -123,6 +123,28 @@ The construction cannot fit when its fit test fails:
   `s` is `8·eps(T)·max(1, box_size + r_react)`, and at least `1e-9·r_react`. It is larger than the rounding of both
   partners, so the separation after conversion is still at least `r_react`.
 
+## Directed motion
+
+A molecule can carry a constant velocity `v` in μm/s. The config's `monomer_velocity` gives one velocity to every
+monomer, or one per `monomer_mobility` population, drawn with the population's D. `simulate`'s `track_velocity` gives
+one to single molecules.
+- **A monomer step** is the diffusion step (Gaussian, variance `2·D·dt` per axis, the same draws as without a
+  velocity), then the displacement `v·dt`, then the boundary. A zero velocity takes exactly the step without one, so
+  the output and the random stream are unchanged.
+- **A wall.** In a reflecting box the position is reflected as for any step, and the velocity is not reversed, so a
+  molecule driven into a wall stays within one step's displacement of it. Under periodic boundaries it wraps.
+- **A bound pair** drifts at the mean of its partners' velocities (overdamped force balance with equal drag; a partner
+  without a velocity counts as zero). The drift is added to the pair's center after its diffusion and rotation draws.
+  The formation step places the pair without drift, as it does without diffusion. An anchored pair does not move.
+- **Immobile** means monomer D 0 and no velocity, everywhere these rules or `pair_mobility` say immobile: the `:min`
+  anchor at formation, while bound and at dissociation, the `:fixed` warning, and `frame_dimer_truth`'s `mixed`. A
+  molecule with D 0 and a velocity is mobile. Under `:min` its pair has D 0 (the pair rule is by D) and only drifts.
+- **Single molecules.** `track_velocity` and `track_D` replace the velocity and D of the molecules they name.
+  Populations are still drawn for every molecule, so the other molecules' draws are unchanged.
+- **Saved.** `metadata["monomer_velocity"]` (`track_id => velocity`) is present when the run has any velocity. It
+  holds the velocities from a population, a keyword or a continued run. A molecule moving with the config's one
+  velocity (an empty mixture) has no entry: as with `diff_monomer`, a later change applies.
+
 ## Continuation
 
 These rules apply when `starting_conditions` is an SMLD or the output of `extract_end_state`.
@@ -145,6 +167,11 @@ photon-edited subset of the run. Every other track takes the current setting at 
 A kept saved D warns once when this config's `monomer_mobility`, weights included, differs from the source run's saved
 copy.
 
+**Velocity.** A resumed track keeps a saved velocity. A track that keeps a saved D but has no saved velocity keeps its
+run's, which is none (zero), with one warning when this config sets `monomer_velocity`. Every other track takes the
+current setting: its drawn population's velocity (saved), or the config's one velocity at run time (not saved).
+`track_velocity` and `track_D` replace any of these for the molecules they name.
+
 **dt.** The source's saved `dt` is read only by the brightness check (`photons ≈ γ·dt_saved`, rtol 1e-6). A restamp
 uses the current `dt`, and a source that keeps its photons per record ignores both.
 
@@ -158,8 +185,8 @@ detect a molecule from another run that happens to carry `γ·dt_saved`.
   which no single run produces).
 
 Then `extract_end_state` resumes the latest record per track (the first of tied ones), carries no `γ`, `rate_source`,
-`monomer_D` or `monomer_class`, and warns once, so every molecule keeps its photons per record and takes the current D
-setting. The tie is only a backstop: in a Float32 SMLD from one run, timestamps `k·dt` can collide after about 8.4e6
+`monomer_D`, `monomer_class` or `monomer_velocity`, and warns once, so every molecule keeps its photons per record and
+takes the current D and velocity settings. The tie is only a backstop: in a Float32 SMLD from one run, timestamps `k·dt` can collide after about 8.4e6
 steps. Such a run then shows a false tie, which only drops its γ rate and saved D, with the warning.
 
 ### Definitions
@@ -168,7 +195,7 @@ steps. Such a run then shows a false tie, which only drops its γ rate and saved
   `simulate` from its own keywords. A continuation that does not restamp stores `"default"` for a default source and
   `"photons"` otherwise; any other or missing saved value, including a non-String, reads as `"photons"`.
 - **Unknown provenance** is decided once, in `extract_end_state`, which every SMLD `starting_conditions` passes
-  through. Its output then lacks the four keys above, so a second extraction and `simulate` take it at face value. Its
+  through. Its output then lacks the five keys above, so a second extraction and `simulate` take it at face value. Its
   output's metadata holds copies (including `simulation_parameters`), so editing the extract does not change the
   source.
 - **Saved mixture:** `create_smld` stores `metadata["monomer_mobility"]`, a copy of the config's mixture at run time,

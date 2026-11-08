@@ -351,15 +351,17 @@ _unbind_spacing(params, ::Type{T}) where {T<:AbstractFloat} =
         params.r_react + 8 * Float64(eps(T)) * max(1.0, params.box_size + params.r_react))
 
 """
-    _anchor(params, e1, e2, D1, D2) -> Union{Nothing,Int}
+    _anchor(params, e1, e2, D1, D2; still=(D1 == 0, D2 == 0)) -> Union{Nothing,Int}
 
 The `track_id` of the pair member that keeps its position, or `nothing` when the pair is not
 anchored. A pair is anchored only when `params.pair_mobility == :min` and one member is immobile
-(`D == 0`); that member is the anchor, and if both are immobile the one with the smaller `track_id`.
+(`still`: by default `D == 0`; `update_system` passes D 0 and no velocity); that member is the
+anchor, and if both are immobile the one with the smaller `track_id`.
 """
-function _anchor(params, e1, e2, D1::Real, D2::Real)
-    (params.pair_mobility == :min && (D1 == 0 || D2 == 0)) || return nothing
-    return D1 == 0 && (D2 != 0 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
+function _anchor(params, e1, e2, D1::Real, D2::Real; still::NTuple{2,Bool}=(D1 == 0, D2 == 0))
+    s1, s2 = still
+    (params.pair_mobility == :min && (s1 || s2)) || return nothing
+    return s1 && (!s2 || e1.track_id < e2.track_id) ? e1.track_id : e2.track_id
 end
 
 # Displacement from p to q on one axis in Float64, rounded once: q - p, less L*round((q - p)/L) when `L` is a box
@@ -441,16 +443,19 @@ changes positions only.
 - `params`: Simulation parameters (`r_react`, `pair_mobility`, `box_size`, `boundary`)
 - `D1, D2::Float64`: Monomer diffusion coefficients of `m1` and `m2`
 - `unfit::Union{Nothing,Base.RefValue{Bool}}=nothing`: Set to `true` when the placement cannot fit
+- `still::NTuple{2,Bool}=(D1 == 0, D2 == 0)`: Which members are immobile (`update_system` passes D 0 and
+  no velocity)
 
 # Returns
 - `Tuple`: The two monomers, moved apart if they were closer than `r_react`
 """
 function _unbind(m1::E, m2::E, params, D1::Real, D2::Real,
-                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing) where {E<:AbstractDiffusingEmitter}
+                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing;
+                 still::NTuple{2,Bool}=(D1 == 0, D2 == 0)) where {E<:AbstractDiffusingEmitter}
     p1, p2 = _pos(m1), _pos(m2)
     _sep(p1, p2, _period(params)) >= params.r_react && return (m1, m2)
     T = typeof(m1.x)
-    ok, q1, q2 = _unbind_positions(p1, p2, params, _anchor(params, m1, m2, D1, D2), m1.track_id,
+    ok, q1, q2 = _unbind_positions(p1, p2, params, _anchor(params, m1, m2, D1, D2; still=still), m1.track_id,
                                    _unbind_spacing(params, T), T)
     ok && return (_at(m1, q1), _at(m2, q2))
     unfit === nothing || (unfit[] = true)
@@ -896,6 +901,8 @@ Convert a collection of diffusing emitters to a BasicSMLD object.
 - `rate_source::Union{Nothing,String}=nothing`: How the rate was set (`"γ"`, `"photons"` or `"default"`), stored as
   `metadata["rate_source"]`; no key when `nothing`
 - `n_frames::Union{Nothing,Int}=nothing`: Frame count of the movie; the largest frame present when `nothing`
+- `track_v::Union{Nothing,AbstractDict}=nothing`: Per-track velocities (μm/s), stored as
+  `metadata["monomer_velocity"]`; no key when `nothing`
 
 # Returns
 - `BasicSMLD`: SMLD containing all emitters for further analysis or visualization
@@ -904,7 +911,7 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
                      track_D::Dict{Int,Float64}=Dict{Int,Float64}(),
                      track_class::Dict{Int,Int}=Dict{Int,Int}(),
                      γ::Union{Nothing,Real}=nothing, rate_source::Union{Nothing,String}=nothing,
-                     n_frames::Union{Nothing,Int}=nothing)
+                     n_frames::Union{Nothing,Int}=nothing, track_v::Union{Nothing,AbstractDict}=nothing)
     # Determine max frame number
     max_frame = n_frames !== nothing ? n_frames : isempty(emitters) ? 0 : maximum(e -> e.frame, emitters)
     
@@ -923,7 +930,8 @@ function create_smld(emitters::Vector{<:AbstractDiffusingEmitter}, camera::Abstr
     )
     γ === nothing || (metadata["γ"] = γ)
     rate_source === nothing || (metadata["rate_source"] = rate_source)
-    
+    track_v === nothing || (metadata["monomer_velocity"] = track_v)
+
     # Create SMLD object
     return BasicSMLD(
         emitters,

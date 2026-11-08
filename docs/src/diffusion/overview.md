@@ -142,7 +142,30 @@ Monomers can be given a mixture of mobility populations with
 `(fraction, D)`); the drawn coefficient per molecule is stored in
 `smld.metadata["monomer_D"]`. `frame_dimer_truth(smld)` returns per-frame, per-molecule
 dimer ground truth; its `mixed` field is `true` when exactly one of a molecule and its partner is
-immobile (monomer D = 0).
+immobile (monomer D = 0 and no velocity).
+
+Directed motion: `monomer_velocity` gives monomers a constant velocity in μm/s, with their diffusion on
+top, so each step is `v·dt` plus a Gaussian step of variance `2·D·dt` per axis. Give one entry for
+every monomer, or with a mixture one entry per population:
+
+```julia
+# every monomer drifts at 0.5 μm/s along x, diffusing with diff_monomer
+params = DiffusionSMLMConfig(diff_monomer = 0.02, monomer_velocity = [(0.5, 0.0)])
+
+# 80% diffusing, 20% transported along y
+params = DiffusionSMLMConfig(monomer_mobility = [(0.8, 0.05), (0.2, 0.001)],
+                             monomer_velocity = [(0.0, 0.0), (0.0, 0.8)])
+
+# single molecules: molecule 1 moves in a straight line, molecule 2 diffuses fast
+smld, info = simulate(params; override_count = 10,
+                      track_velocity = Dict(1 => (0.6, 0.6)), track_D = Dict(1 => 0.0, 2 => 0.3))
+```
+
+The velocities are saved in `smld.metadata["monomer_velocity"]` and kept by continuation. A bound pair
+drifts at the mean of its partners' velocities, a molecule with a velocity is not immobile for the pair
+rules below, and in a reflecting box a molecule driven into a wall stays at it (its velocity is not
+reversed). Two molecules that come within `r_react` still form a pair, so straight paths that cross at
+the same moment bind. See [Placement and Continuation Rules](rules.md), Directed motion.
 
 A bound pair diffuses with `diff_dimer` by default (`pair_mobility = :fixed`, the 0.7 behaviour).
 With `pair_mobility = :min` a pair moves at `min(D1, D2) × diff_dimer/diff_monomer`, where `D1`, `D2`
