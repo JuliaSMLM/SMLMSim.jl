@@ -43,9 +43,8 @@ and localization uncertainty.
   `truncated(Normal(1, 0.3); lower=0.7)` (cut at the floor and renormalized) or
   `censored(Normal(1, 0.3); lower=0.7)` (draws below the floor set to it); otherwise
   `ArgumentError` is thrown before any random draw. A drawn factor that is NaN, infinite or
-  negative, or that makes the rate `b * γ` overflow or underflow, throws `ArgumentError` when it
-  is drawn, and one whose photon counts overflow throws after the molecule's blinking is
-  simulated. The distribution and
+  negative throws `ArgumentError` when it is drawn, and one whose photon counts overflow throws
+  after the molecule's blinking is simulated. The distribution and
   the drawn factors are recorded in `info.smld_model.metadata["brightness"]` and
   `["brightness_factors"]` (`(dataset, track_id)` to factor). `nothing` (default) leaves every
   molecule at the model's rate and the output unchanged.

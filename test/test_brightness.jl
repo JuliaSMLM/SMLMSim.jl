@@ -29,15 +29,26 @@ function censored_moments(μ, σ, a)
     return m1, m2 - m1^2
 end
 
-# Main's output and random stream before the keyword existed, recorded at b016876 (the base of
-# this branch) on Julia 1.10.11, 1.11.9, 1.12.7 and 1.13.0 with Distributions 0.25.134, SMLMData
-# 0.7.1 and MicroscopePSFs 0.5.7, identical on all four. The recorder is
-# dev/record_golden_brightness.jl (keep its cases identical to the two below); re-record only when
-# a toolchain change moves the random numbers.
+# Golden values, identical on Julia 1.10.11, 1.11.9, 1.12.7 and 1.13.0 with Distributions
+# 0.25.134, SMLMData 0.7.1 and MicroscopePSFs 0.5.7. BR_GOLDEN is main's output and random stream
+# before the keyword existed, recorded at b016876 (the base of this branch). BR_GOLDEN_UDRAW is
+# the output and stream with a factor drawn, recorded at 3a816c6 (the first commit of the
+# keyword). To re-record, only when a toolchain change moves the random numbers: in a temporary
+# environment that develops SMLMSim at that commit (a `git archive` of it) and adds Distributions
+# and Random, evaluate this file's definitions above BR_GOLDEN, call each case as P1 or P1b does,
+# and print br_golden_fingerprint(em, next) of its (em, md, next), and br_golden_factors(md) for
+# P1b.
 const BR_GOLDEN_FLUOR = GenericFluor(photons=1e4, k_off=50.0, k_on=5.0)
 
-function br_golden_simulate(; kw...)
-    Random.seed!(20261108)
+# A distribution that draws exactly one rand(rng), so a golden with it depends only on Julia's
+# random stream and not on a Distributions sampler
+struct UDraw <: ContinuousUnivariateDistribution end
+Base.minimum(::UDraw) = 0.5
+Base.maximum(::UDraw) = 1.5
+Random.rand(rng::AbstractRNG, ::UDraw) = 0.5 + rand(rng)
+
+function br_golden_simulate(; seed=20261108, kw...)
+    Random.seed!(seed)
     params = StaticSMLMConfig(density=2.0, nframes=40, ndatasets=3, minphotons=50)
     noisy, info = simulate(params; pattern=Nmer2D(n=6, d=0.2), camera=IdealCamera(16, 16, 0.1),
                            molecule=BR_GOLDEN_FLUOR, kw...)
@@ -64,6 +75,13 @@ function br_golden_fingerprint(em, next)
             first=rec(em[1]), middle=rec(em[cld(n, 2)]), last=rec(em[n]), next_rand=next)
 end
 
+# The drawn factors in (dataset, track_id) order: their count, their sum and the first three
+function br_golden_factors(md)
+    f = md["brightness_factors"]
+    ks = sort!(collect(keys(f)))
+    return (n=length(ks), sum=foldl(+, (f[k] for k in ks)), first=[k => f[k] for k in ks[1:3]])
+end
+
 const BR_GOLDEN = Dict(
     "simulate" => (n = 546, sum_photons = 75244.28196763992, sum_x = 310.151949079229,
         first = (x = 0.1497072990457574, y = 1.2518301625993002, photons = 200.00000000000017, frame = 14, dataset = 1, track_id = 1),
@@ -75,6 +93,28 @@ const BR_GOLDEN = Dict(
         middle = (x = 0.8, y = 1.6, photons = 500.00000000000045, frame = 31, dataset = 1, track_id = 11),
         last = (x = 0.8, y = 1.6, photons = 110.4056530080455, frame = 39, dataset = 2, track_id = 11),
         next_rand = 0.9483899313031025),
+)
+
+# With a factor drawn: simulate's seed is 20261110, as the default seed's noise draws differ on
+# Julia 1.10 at a tail value
+const BR_UDRAW_SEED = Dict("simulate" => (seed=20261110,), "kinetic_model" => NamedTuple())
+const BR_GOLDEN_UDRAW = Dict(
+    "simulate" => (
+        fingerprint = (n = 708, sum_photons = 100120.29923255455, sum_x = 513.2092957062177,
+            first = (x = 1.3040029682264414, y = 0.9778276114159444, photons = 176.85056688188715, frame = 11, dataset = 1, track_id = 1),
+            middle = (x = 0.412539702938199, y = 0.5230549062482032, photons = 198.80528802814212, frame = 1, dataset = 2, track_id = 20),
+            last = (x = 0.14485560368013398, y = 1.0135446628943747, photons = 176.38217937275098, frame = 25, dataset = 3, track_id = 48),
+            next_rand = 0.15086413498368334),
+        factors = (n = 144, sum = 139.00315949868872,
+            first = [(1, 1) => 1.4929194575475249, (1, 2) => 0.6015207615004396, (1, 3) => 1.3445548041903552])),
+    "kinetic_model" => (
+        fingerprint = (n = 216, sum_photons = 43895.18309388006, sum_x = 99.59999999999994,
+            first = (x = 0.1, y = 0.2, photons = 115.49340469378866, frame = 24, dataset = 1, track_id = 1),
+            middle = (x = 0.8, y = 1.6, photons = 113.22776038542882, frame = 17, dataset = 1, track_id = 11),
+            last = (x = 0.8, y = 1.6, photons = 212.4894930518612, frame = 40, dataset = 2, track_id = 11),
+            next_rand = 0.47901542052010293),
+        factors = (n = 16, sum = 15.546548980094808,
+            first = [(1, 1) => 0.9353995372199828, (1, 3) => 1.3914885169109128, (1, 5) => 0.9785612024224327])),
 )
 
 same_records(a, b) = length(a) == length(b) &&
@@ -99,11 +139,22 @@ Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
             em0 = em
         end
         # rand(rng, ::Dirac) returns its value and draws no random number (Distributions
-        # src/univariate/discrete/dirac.jl), so a unit factor gives main's records and stream.
+        # src/univariate/discrete/dirac.jl), so with these Float64 models a unit factor gives
+        # main's records and stream.
         em, md, next = case(; brightness=Dirac(1.0))
         @test br_golden_fingerprint(em, next) == ref
         @test same_records(em, em0)
         @test haskey(md, "brightness_factors")
+    end
+
+    @testset "P1b: a drawn factor: draw order and random stream ($name)" for (name, case) in
+            (("simulate", br_golden_simulate), ("kinetic_model", br_golden_kinetic))
+        # One rand() per molecule and dataset, just before that molecule's initial state: a
+        # factor drawn anywhere else changes the records and the stream
+        em, md, next = case(; BR_UDRAW_SEED[name]..., brightness=UDraw())
+        @test br_golden_fingerprint(em, next) == BR_GOLDEN_UDRAW[name].fingerprint
+        @test br_golden_factors(md) == BR_GOLDEN_UDRAW[name].factors
+        @test md["brightness"] == UDraw()
     end
 
     @testset "P2: factors follow the distribution" begin
@@ -187,11 +238,17 @@ Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
             facs[(e.dataset, e.track_id)] * BR_γ / BR_FRAMERATE; rtol=1e-12), out.emitters)
     end
 
-    @testset "P3d: a later run without brightness drops earlier factors" begin
+    @testset "P3d: a later run without brightness drops earlier factors, not a caller's values" begin
         bright_run = br_run(br_start(10), Dirac(2.0))
         second = kinetic_model(bright_run, BR_FLUOR, 1, BR_FRAMERATE; minphotons=0.0, state1=1)
         @test !haskey(second.metadata, "brightness")
         @test !haskey(second.metadata, "brightness_factors")
+        own = br_start(10)
+        own.metadata["brightness"] = "a caller's note"
+        own.metadata["brightness_factors"] = [1.0, 2.0]
+        third = kinetic_model(own, BR_FLUOR, 1, BR_FRAMERATE; minphotons=0.0, state1=1)
+        @test third.metadata["brightness"] == "a caller's note"
+        @test third.metadata["brightness_factors"] == [1.0, 2.0]
     end
 
     @testset "P4: 2D and 3D, starting conditions and pattern path" begin
@@ -285,10 +342,10 @@ Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
         @test occursin("drew the factor -0.5", err.msg)
     end
 
-    @testset "P6d: a factor whose rate or photons leave Float64 is rejected" begin
-        # When drawn: the rate b·γ must be 0 or a normal Float64 (1e305 × 1e4 overflows, also for a
-        # BigFloat model; 1e-200 × 1e-200 underflows). After the trace: a photon count that still
-        # overflows (a frame time that rounds a full frame past the largest Float64; a later frame).
+    @testset "P6d: a factor whose photons leave Float64 is rejected" begin
+        # Checked on the molecule's trace: a photon count that overflows (1e305 × 1e4, also for a
+        # BigFloat model; a frame time that rounds a full frame past the largest Float64; a later
+        # frame). A rate that underflows is a molecule that is in effect dark, and is accepted.
         on = zeros(2, 2)  # a molecule that stays in state 1
         rejected(f, b; nframes=1, framerate=BR_FRAMERATE) = try
             kinetic_model(br_start(1), f, nframes, framerate; state1=1, minphotons=0.0, brightness=Dirac(b))
@@ -296,14 +353,16 @@ Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
         catch e
             e isa ArgumentError ? e.msg : "not an ArgumentError: $e"
         end
-        at_draw, in_trace = "must be 0 or a normal Float64", "not finite as a Float64"
-        @test occursin(at_draw, rejected(GenericFluor(1e4, on), 1e305))
-        @test occursin(at_draw, rejected(GenericFluor(big"1e4", on), 1e305; framerate=1.0))
-        @test occursin(at_draw, rejected(GenericFluor(1e-200, on), 1e-200))
-        @test occursin(at_draw, rejected(GenericFluor(1e-200, on), 1e-200; framerate=big"1e-400"))
+        in_trace = "not finite as a Float64"
+        @test occursin(in_trace, rejected(GenericFluor(1e4, on), 1e305))
+        @test occursin(in_trace, rejected(GenericFluor(big"1e4", on), 1e305; framerate=1.0))
         @test occursin(in_trace, rejected(GenericFluor(1e4, on), 1.6179238213760842e304; framerate=0.9))
         @test occursin(in_trace, rejected(GenericFluor(1e4, on), 5.3930794045869466e303; nframes=4, framerate=0.3))
+        # the message names the model's rate too, so an invalid model shows as one
+        msg = rejected(GenericFluor(NaN, on), 1.0)
+        @test occursin("drew the factor 1.0", msg) && occursin("γ = NaN", msg)
         @test rejected(GenericFluor(1e4, on), 0.0) == ""  # b = 0: a rate of 0 is allowed
+        @test rejected(GenericFluor(1e-200, on), 1e-200) == ""  # the rate underflows: dark, accepted
         # the same through static simulate
         sim_rejected(b; framerate=50.0) = try
             Random.seed!(3)
@@ -313,8 +372,20 @@ Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
         catch e
             e isa ArgumentError ? e.msg : "not an ArgumentError: $e"
         end
-        @test occursin(at_draw, sim_rejected(1e305))
+        @test occursin(in_trace, sim_rejected(1e305))
         @test occursin(in_trace, sim_rejected(1.6179238213760842e304; framerate=0.9))
         @test length(br_run(br_start(1), Dirac(1e300)).emitters) == 1  # a large factor that fits is accepted
+    end
+
+    @testset "P6e: a large distribution is cut short in the message ($(repr(bad)))" for bad in (NaN, 1e305)
+        # 5001 support points print as about 150,000 characters; NaN is caught when drawn, 1e305
+        # on the trace
+        d = DiscreteNonParametric([collect(1.0:5000.0); bad], [fill(0.5 / 5000, 5000); 0.5])
+        Random.seed!(12)
+        err = try br_run(br_start(64), d); nothing catch e e end
+        @test err isa ArgumentError
+        @test occursin("drew the factor $(repr(bad))", err.msg)
+        @test occursin("DiscreteNonParametric", err.msg) && occursin("characters in all", err.msg)
+        @test length(err.msg) < 600
     end
 end

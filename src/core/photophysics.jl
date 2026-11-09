@@ -124,12 +124,11 @@ Generate kinetic blinking model from existing localization data.
   brightness between datasets. The factor must be finite and not negative. Before any random
   draw, `ArgumentError` is thrown when `minimum(brightness)` is negative or NaN, or when
   `brightness` is given with a model that is not a `GenericFluor`. Every drawn factor is also
-  checked when it is drawn: a factor that is NaN, infinite or negative, or one that makes the
-  molecule's rate `b * f.γ` overflow or underflow (the rate must be 0 or a normal `Float64`),
-  throws `ArgumentError` naming the value and the distribution (a support can hold such a value
-  above a valid minimum, as in `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`). A factor whose
-  photon counts still overflow throws `ArgumentError` after the molecule's blinking is
-  simulated. To keep a normal distribution at or above
+  checked when it is drawn: a factor that is NaN, infinite or negative throws `ArgumentError`
+  naming the value and the distribution (a support can hold such a value above a valid minimum,
+  as in `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`). A factor so large that the molecule's
+  photon counts overflow throws `ArgumentError` after its blinking is simulated. To keep a
+  normal distribution at or above
   a floor, use either `truncated(d; lower=floor)` (cut at the floor and renormalized; no draw
   lies at the floor) or `censored(d; lower=floor)` (draws below the floor are set to it).
   `nothing` (default) gives every molecule the rate `f.γ`, with no extra random draw.
@@ -138,8 +137,9 @@ Generate kinetic blinking model from existing localization data.
 - `BasicSMLD`: New SMLD with simulated blinking kinetics. When `brightness` is given, its metadata
   holds `"brightness"` (the distribution) and `"brightness_factors"`, a
   `Dict{Tuple{Int,Int},Float64}` from `(dataset, track_id)` to the drawn factor, with the
-  output `track_id`. Without `brightness` neither key is present: none is added, and any carried
-  in from the input's metadata is removed.
+  output `track_id`. Without `brightness` neither key is added, and values an earlier
+  `brightness` run wrote under them (a distribution, a factor `Dict`) are removed from the
+  metadata carried in from the input; other values under these keys pass through.
 
 # Details
 Each non-zero `track_id` identifies one molecule, using its first record. Repeated non-zero
@@ -280,7 +280,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         # One brightness factor per molecule and dataset, drawn before the initial state
         fm = f
         if brightness !== nothing
-            b = _draw_brightness(brightness, f)
+            b = _draw_brightness(brightness)
             brightness_factors[(dd, track_id)] = b
             fm = GenericFluor(b * f.γ, f.q)
         end
@@ -297,7 +297,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         # A factor so large that a photon count overflows: the trace is a Float64 vector, so an
         # overflow anywhere in it (a BigFloat model's included) shows as Inf or NaN
         brightness === nothing || all(isfinite, photons) ||
-            throw(ArgumentError("brightness drew the factor $(brightness_factors[(dd, track_id)]) from $brightness; with this model and frame rate it gives a photon count that is not finite as a Float64"))
+            throw(ArgumentError("brightness drew the factor $(brightness_factors[(dd, track_id)]) from $(_brief(brightness)); with the model's γ = $(f.γ) photons/s and the frame rate $framerate Hz it gives a photon count that is not finite as a Float64"))
         framenum = findall(photons .> minphotons)
 
         # Create emitter for each frame where photons > threshold
@@ -345,9 +345,12 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         metadata["brightness"] = brightness
         metadata["brightness_factors"] = brightness_factors
     else
-        # An input from an earlier brightness run must not carry its factors into this one
-        delete!(metadata, "brightness")
-        delete!(metadata, "brightness_factors")
+        # An input from an earlier brightness run must not carry its factors into this one; a
+        # caller's own values under these keys are not SMLMSim's to remove
+        get(metadata, "brightness", nothing) isa Distributions.UnivariateDistribution &&
+            delete!(metadata, "brightness")
+        get(metadata, "brightness_factors", nothing) isa Dict{Tuple{Int,Int},Float64} &&
+            delete!(metadata, "brightness_factors")
     end
 
     return BasicSMLD(emitters, smld.camera, nframes, ndatasets, metadata)
@@ -364,21 +367,23 @@ function _check_brightness(brightness, f::Molecule)
     return nothing
 end
 
-# One brightness factor, drawn and checked with the rate it gives the model `f`. The check
-# above sees only the distribution's minimum, so a support that also holds NaN or Inf
-# (DiscreteNonParametric([1.0, NaN], ...)) passes it. The rate b·γ must be 0 (b or γ is 0) or a
-# normal Float64, so it neither overflows nor underflows to a wrong rate. One random draw, as an
-# unchecked draw makes. A photon count that still overflows is caught on the molecule's trace, in
-# kinetic_model. Internal.
-function _draw_brightness(brightness, f::GenericFluor)
+# One brightness factor, drawn and checked. The check above sees only the distribution's
+# minimum, so a support that also holds NaN or Inf (DiscreteNonParametric([1.0, NaN], ...))
+# passes it. One random draw, as an unchecked draw makes. A factor so large that a photon count
+# overflows is caught on the molecule's trace, in kinetic_model. Internal.
+function _draw_brightness(brightness)
     x = rand(brightness)
     b = Float64(x)
     isfinite(b) && b >= 0 ||
-        throw(ArgumentError("brightness drew the factor $(repr(x)) from $brightness; every drawn factor must be finite and non-negative as a Float64"))
-    r = Float64(b * f.γ)
-    (iszero(b) || iszero(f.γ) || (isfinite(r) && abs(r) >= floatmin(Float64))) ||
-        throw(ArgumentError("brightness drew the factor $(repr(x)) from $brightness; the molecule's rate b·γ = $(b * f.γ) photons/s must be 0 or a normal Float64 (it overflows or underflows)"))
+        throw(ArgumentError("brightness drew the factor $(repr(x)) from $(_brief(brightness)); every drawn factor must be finite and non-negative as a Float64"))
     return b
+end
+
+# A distribution as error-message text, cut to 200 characters: a DiscreteNonParametric prints
+# every point of its support. Internal.
+function _brief(d)
+    s = repr(d)
+    return length(s) <= 200 ? s : first(s, 200) * " … ($(length(s)) characters in all)"
 end
 
 """
