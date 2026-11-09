@@ -285,18 +285,31 @@ Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
         @test occursin("drew the factor -0.5", err.msg)
     end
 
-    @testset "P6d: a factor whose photons would overflow is rejected" begin
-        # BR_γ = 1e4: b·γ = 1e309 overflows; at framerate 0.1 a full frame's 1e309 photons overflow
-        # although b·γ = 1e308 does not
-        err = try br_run(br_start(1), Dirac(1e305)); nothing catch e e end
-        @test err isa ArgumentError && occursin("must be finite", err.msg)
+    @testset "P6d: a factor whose photons overflow is rejected" begin
+        # Checked on the molecule's photon counts as stored: the rate b·γ overflowing (1e305 × 1e4),
+        # a frame time that rounds a full frame past the largest Float64, a later frame boundary,
+        # and a BigFloat model whose finite count overflows as a Float64
+        on = zeros(2, 2)  # a molecule that stays in state 1
+        overflows(f, b; nframes=1, framerate=BR_FRAMERATE) = try
+            kinetic_model(br_start(1), f, nframes, framerate; state1=1, minphotons=0.0, brightness=Dirac(b))
+            false
+        catch e
+            e isa ArgumentError && occursin("not finite as a Float64", e.msg)
+        end
+        @test overflows(GenericFluor(1e4, on), 1e305)
+        @test overflows(GenericFluor(1e4, on), 1.6179238213760842e304; framerate=0.9)
+        @test overflows(GenericFluor(1e4, on), 5.3930794045869466e303; nframes=4, framerate=0.3)
+        @test overflows(GenericFluor(big"1e4", on), 1e305; framerate=1.0)
+        Random.seed!(3)
         err = try
-            kinetic_model(br_start(1), BR_FLUOR, 1, 0.1; state1=1, minphotons=0.0, brightness=Dirac(1e304))
+            simulate(StaticSMLMConfig(nframes=1, minphotons=0); starting_conditions=br_start(1),
+                     camera=IdealCamera(32, 32, 0.1), molecule=GenericFluor(1e4, on), state1=1,
+                     brightness=Dirac(1e305))
             nothing
         catch e
             e
         end
-        @test err isa ArgumentError && occursin("must be finite", err.msg)
+        @test err isa ArgumentError && occursin("not finite as a Float64", err.msg)
         @test length(br_run(br_start(1), Dirac(1e300)).emitters) == 1  # a large factor that fits is accepted
     end
 end

@@ -126,8 +126,9 @@ Generate kinetic blinking model from existing localization data.
   `brightness` is given with a model that is not a `GenericFluor`. Every drawn factor is also
   checked: a draw that is NaN, infinite or negative throws `ArgumentError` naming the value and
   the distribution (a support can hold such a value above a valid minimum, as in
-  `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`), and so does one that makes the molecule's
-  rate `b * f.γ` or a full frame's photons `b * f.γ / framerate` overflow. To keep a normal distribution at or above
+  `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`). A factor so large that one of the
+  molecule's photon counts is not finite as a `Float64` throws `ArgumentError` once its trace
+  is simulated. To keep a normal distribution at or above
   a floor, use either `truncated(d; lower=floor)` (cut at the floor and renormalized; no draw
   lies at the floor) or `censored(d; lower=floor)` (draws below the floor are set to it).
   `nothing` (default) gives every molecule the rate `f.γ`, with no extra random draw.
@@ -278,7 +279,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         # One brightness factor per molecule and dataset, drawn before the initial state
         fm = f
         if brightness !== nothing
-            b = _draw_brightness(brightness, f.γ, framerate)
+            b = _draw_brightness(brightness)
             brightness_factors[(dd, track_id)] = b
             fm = GenericFluor(b * f.γ, f.q)
         end
@@ -292,6 +293,10 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         end
         
         photons = intensity_trace(fm, nframes, framerate; state1=initial_state, burn_in=burn_in)
+        # A factor so large that a photon count overflows: the trace is a Float64 vector, so an
+        # overflow anywhere in it (a BigFloat model's included) shows as Inf or NaN
+        brightness === nothing || all(isfinite, photons) ||
+            throw(ArgumentError("brightness drew the factor $(brightness_factors[(dd, track_id)]) from $brightness; with this model and frame rate it gives a photon count that is not finite as a Float64"))
         framenum = findall(photons .> minphotons)
 
         # Create emitter for each frame where photons > threshold
@@ -360,15 +365,13 @@ end
 
 # One brightness factor, drawn and checked. The check above sees only the distribution's
 # minimum, so a support that also holds NaN or Inf (DiscreteNonParametric([1.0, NaN], ...))
-# passes it; and a finite factor can still make the molecule's rate b·γ, or a full frame's
-# photons b·γ/framerate, overflow. One random draw, as an unchecked draw makes. Internal.
-function _draw_brightness(brightness, γ::Real, framerate::Real)
+# passes it. One random draw, as an unchecked draw makes. A finite factor whose photons
+# overflow is caught on the molecule's trace, in kinetic_model. Internal.
+function _draw_brightness(brightness)
     x = rand(brightness)
     b = Float64(x)
     isfinite(b) && b >= 0 ||
         throw(ArgumentError("brightness drew the factor $(repr(x)) from $brightness; every drawn factor must be finite and non-negative as a Float64"))
-    isfinite(b * γ) && isfinite(b * γ / framerate) ||
-        throw(ArgumentError("brightness drew the factor $(repr(x)) from $brightness; the molecule's rate b·γ = $(b * γ) photons/s and a full frame's photons b·γ/framerate must be finite"))
     return b
 end
 
