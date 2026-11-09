@@ -251,7 +251,8 @@ Create two new monomers from a dimer.
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: All emitters in the system
 
 # Returns
-- `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters in monomer state
+- `Tuple{DiffusingEmitter2D, DiffusingEmitter2D}`: Two new emitters in monomer state, each in its own
+  coordinate type
 """
 function dissociate(e::DiffusingEmitter2D{T}, emitters::Vector{<:AbstractDiffusingEmitter}) where T <: AbstractFloat
     # Find partner
@@ -278,7 +279,7 @@ function dissociate(e::DiffusingEmitter2D{T}, emitters::Vector{<:AbstractDiffusi
         nothing             # Partner ID
     )
     
-    m2 = DiffusingEmitter2D{T}(
+    m2 = DiffusingEmitter2D{typeof(partner.x)}(   # the partner keeps its own coordinate type
         partner.x, partner.y,  # Position
         partner.photons,       # Photons
         partner.timestamp,     # Timestamp
@@ -302,7 +303,8 @@ Create two new monomers from a 3D dimer.
 - `emitters::Vector{<:AbstractDiffusingEmitter}`: All emitters in the system
 
 # Returns
-- `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters in monomer state
+- `Tuple{DiffusingEmitter3D, DiffusingEmitter3D}`: Two new emitters in monomer state, each in its own
+  coordinate type
 """
 function dissociate(e::DiffusingEmitter3D{T}, emitters::Vector{<:AbstractDiffusingEmitter}) where T <: AbstractFloat
     # Find partner
@@ -329,7 +331,7 @@ function dissociate(e::DiffusingEmitter3D{T}, emitters::Vector{<:AbstractDiffusi
         nothing             # Partner ID
     )
     
-    m2 = DiffusingEmitter3D{T}(
+    m2 = DiffusingEmitter3D{typeof(partner.x)}(   # the partner keeps its own coordinate type
         partner.x, partner.y, partner.z,  # Position
         partner.photons,                  # Photons
         partner.timestamp,                # Timestamp
@@ -349,6 +351,9 @@ end
 _unbind_spacing(params, ::Type{T}) where {T<:AbstractFloat} =
     max(params.r_react * (1 + 1e-9),
         params.r_react + 8 * Float64(eps(T)) * max(1.0, params.box_size + params.r_react))
+
+# The coarser of two coordinate types (the larger eps): partners of different types are spaced for it
+_coarser(::Type{A}, ::Type{B}) where {A<:AbstractFloat,B<:AbstractFloat} = eps(A) >= eps(B) ? A : B
 
 """
     _anchor(params, e1, e2, s1::Bool, s2::Bool) -> Union{Nothing,Int}
@@ -399,24 +404,24 @@ function _image(p::NTuple{N,Float64}, r::NTuple{N,Float64}, params) where {N}
     return L === nothing ? p : ntuple(k -> p[k] - L * _nimg(r[k], p[k], L), Val(N))
 end
 
-# New positions of the two members of `_unbind` in the coordinate type T, by the dissociation rule
+# New positions of the two members of `_unbind`, each in its coordinate type (T1, T2), by the dissociation rule
 # (docs/src/diffusion/rules.md, Dissociation): `(ok, q1, q2)`, `ok` false when the construction cannot fit.
 # `p1`, `p2` are their coordinates and `s` their separation (`_unbind_spacing`); under periodic
 # boundaries the other member is taken at its minimum image. The anchor's own entry is its position.
 function _unbind_positions(p1::NTuple{N,Float64}, p2::NTuple{N,Float64}, params, anchor, id1, s::Float64,
-                           ::Type{T}) where {N,T<:AbstractFloat}
+                           ::Type{T1}, ::Type{T2}) where {N,T1<:AbstractFloat,T2<:AbstractFloat}
     box, reflecting = params.box_size, params.boundary == "reflecting"
     if anchor !== nothing
         a, m = anchor == id1 ? (p1, p2) : (p2, p1)
-        ok, q = _place_from(a, _dir(_dispv(a, m, _period(params))), s, box, reflecting, T)
-        at = ntuple(k -> T(a[k]), Val(N))
+        ok, q = _place_from(a, _dir(_dispv(a, m, _period(params))), s, box, reflecting, anchor == id1 ? T2 : T1)
+        at = ntuple(k -> (anchor == id1 ? T1 : T2)(a[k]), Val(N))
         return anchor == id1 ? (ok, at, q) : (ok, q, at)
     end
     u, c = _dir(_dispv(p1, p2, _period(params))), (p1 .+ _image(p2, p1, params)) ./ 2
-    reflecting && return _place_centered(c, u, s, box, T)
+    reflecting && return _place_centered(c, u, s, box, T1, T2)
     ok = all(ntuple(k -> s * abs(u[k]) <= box / 2, Val(N)))
-    return ok, ntuple(k -> _inbox(T, mod(c[k] - (s / 2) * u[k], box), box), Val(N)),
-           ntuple(k -> _inbox(T, mod(c[k] + (s / 2) * u[k], box), box), Val(N))
+    return ok, ntuple(k -> _inbox(T1, mod(c[k] - (s / 2) * u[k], box), box), Val(N)),
+           ntuple(k -> _inbox(T2, mod(c[k] + (s / 2) * u[k], box), box), Val(N))
 end
 
 """
@@ -430,9 +435,9 @@ boundaries; partners `r_react` or more apart by it are returned unchanged. Under
 immobile: the lower `track_id`, see `_anchor`) keeps its position and the other is placed from it
 (mirrored across it on each axis it would leave a reflecting box); otherwise, including every pair under
 `:fixed`, both move apart about their midpoint, shifted inward just far enough that both are inside a
-reflecting box, or wrapped under periodic boundaries. Every placed coordinate is inside the box in the
-coordinate type, and the separation carries a margin in that precision (`_unbind_spacing`), so Float32
-partners are also beyond `r_react` after conversion. When that placement cannot fit along the pair's axis
+reflecting box, or wrapped under periodic boundaries. Every placed coordinate is inside the box in its
+partner's coordinate type, and the separation carries a margin in the coarser of the two precisions
+(`_unbind_spacing`), so Float32 partners are also beyond `r_react` after conversion. When that placement cannot fit along the pair's axis
 (docs/src/diffusion/rules.md, Dissociation), the partners are left where `dissociate` put them (0.7.1's
 behaviour) and `unfit[]` is set, from which `simulate` warns once per run. Draws no random numbers and
 changes positions only.
@@ -446,13 +451,13 @@ changes positions only.
 # Returns
 - `Tuple`: The two monomers, moved apart if they were closer than `r_react`
 """
-function _unbind(m1::E, m2::E, params, s1::Bool, s2::Bool,
-                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing) where {E<:AbstractDiffusingEmitter}
+function _unbind(m1::AbstractDiffusingEmitter, m2::AbstractDiffusingEmitter, params, s1::Bool, s2::Bool,
+                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing)
     p1, p2 = _pos(m1), _pos(m2)
     _sep(p1, p2, _period(params)) >= params.r_react && return (m1, m2)
-    T = typeof(m1.x)
+    T1, T2 = typeof(m1.x), typeof(m2.x)
     ok, q1, q2 = _unbind_positions(p1, p2, params, _anchor(params, m1, m2, s1, s2), m1.track_id,
-                                   _unbind_spacing(params, T), T)
+                                   _unbind_spacing(params, _coarser(T1, T2)), T1, T2)
     ok && return (_at(m1, q1), _at(m2, q2))
     unfit === nothing || (unfit[] = true)
     return (m1, m2)
@@ -684,27 +689,27 @@ end
 
 # Two points `s` apart along `u`, centered on `c`, in a reflecting box [0, box]: the center keeps
 # (s/2)|u_k| from each wall, clamped there when placing, or folded into that interval as often as it
-# crosses when moving (`reflect = true`); `ok` is false when some s|u_k| exceeds the box.
+# crosses when moving (`reflect = true`); `ok` is false when some s|u_k| exceeds the box. The first point
+# is converted to T1 and the second to T2 (each partner's coordinate type).
 function _place_centered(c::NTuple{N,Float64}, u::NTuple{N,Float64}, s::Float64, box::Float64,
-                         ::Type{T}; reflect::Bool=false) where {N,T<:AbstractFloat}
+                         ::Type{T1}, ::Type{T2}; reflect::Bool=false) where {N,T1<:AbstractFloat,T2<:AbstractFloat}
     h = ntuple(k -> (s / 2) * abs(u[k]), Val(N))
     ok = all(ntuple(k -> 2h[k] <= box, Val(N)))
     m = ntuple(k -> reflect ? _fold(c[k], h[k], box - h[k]) : clamp(c[k], h[k], box - h[k]), Val(N))
-    return ok, ntuple(k -> _inbox(T, m[k] - (s / 2) * u[k], box), Val(N)), ntuple(k -> _inbox(T, m[k] + (s / 2) * u[k], box), Val(N))
+    return ok, ntuple(k -> _inbox(T1, m[k] - (s / 2) * u[k], box), Val(N)), ntuple(k -> _inbox(T2, m[k] + (s / 2) * u[k], box), Val(N))
 end
 
 # A pair just formed from monomers `e1`, `e2`, by the placement rule
 # (docs/src/diffusion/rules.md, A bound pair and the box), in Float64 from the stored
 # coordinates and the partner's minimum image, oriented along the Float64 displacement `v`
-# from `e1` to `e2`, each end converted to the coordinate type once: an anchored pair keeps
+# from `e1` to `e2`, each end converted once to its own coordinate type: an anchored pair keeps
 # the anchor at its stored position and places the other partner `d_dimer` from it along the
 # axis to its minimum image, or leaves it where it was when that cannot fit; a mobile pair
 # is placed `d_dimer/2` either side of the midpoint, each end wrapped into the box under
 # periodic boundaries, or in a reflecting box with an end outside moved to its midpoint
 # shifted inward just enough (each end reflected on its own when it cannot fit). Internal.
-function _place_pair(e1::E, e2::E, anchor::Union{Nothing,Int}, v::NTuple{N,Float64},
-                     params::DiffusionSMLMConfig) where {N,E<:AbstractDiffusingEmitter}
-    T = typeof(e1.x)
+function _place_pair(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, anchor::Union{Nothing,Int},
+                     v::NTuple{N,Float64}, params::DiffusionSMLMConfig) where {N}
     box, reflecting = params.box_size, params.boundary == "reflecting"
     d1 = restamp(e1; state=:dimer, partner_id=e2.track_id)
     d2 = restamp(e2; state=:dimer, partner_id=e1.track_id)
@@ -712,7 +717,7 @@ function _place_pair(e1::E, e2::E, anchor::Union{Nothing,Int}, v::NTuple{N,Float
         fixed, mover = anchor == e1.track_id ? (e1, e2) : (e2, e1)
         a = _pos(fixed)
         u = _dir(_dispv(a, _pos(mover), _period(params)))
-        ok, q = _place_from(a, u, params.d_dimer, box, reflecting, T)
+        ok, q = _place_from(a, u, params.d_dimer, box, reflecting, typeof(mover.x))
         p = ok ? q : _coords(mover)
         return anchor == e1.track_id ? (_at(d1, _coords(e1)), _at(d2, p)) :
                                        (_at(d1, p), _at(d2, _coords(e2)))
@@ -727,18 +732,18 @@ function _place_pair(e1::E, e2::E, anchor::Union{Nothing,Int}, v::NTuple{N,Float
     end
     fits(q) = all(x -> 0 <= x <= box, q)
     fits(q1) && fits(q2) && return _put(d1, q1, box), _put(d2, q2, box)
-    ok, r1, r2 = _place_centered(c, _axis(p1, p2), params.d_dimer, box, T)
+    ok, r1, r2 = _place_centered(c, _axis(p1, p2), params.d_dimer, box, typeof(e1.x), typeof(e2.x))
     ok && return _at(d1, r1), _at(d2, r2)
     return _put(d1, map(x -> _reflect(x, box), q1), box), _put(d2, map(x -> _reflect(x, box), q2), box)
 end
 
 # A mobile pair after a bound step, from its Float64 center `c` and half-bond `h` (`_bound_step`), with the
-# boundary applied in Float64 and each end converted to the coordinate type once (`e1`, `e2` carry the other
+# boundary applied in Float64 and each end converted once to its own coordinate type (`e1`, `e2` carry the other
 # fields): under periodic boundaries the center is wrapped into the box and each end c ∓ h then wrapped; in a
 # reflecting box with an end outside, the center folds off the walls moved in by each end's half-extent, keeping
 # the carried direction and bond length (each end reflected on its own when it cannot fit). Internal.
-function _move_pair(e1::E, e2::E, c::NTuple{N,Float64}, h::NTuple{N,Float64}, d_dimer::Float64,
-                    params::DiffusionSMLMConfig) where {N,E<:AbstractDiffusingEmitter}
+function _move_pair(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, c::NTuple{N,Float64},
+                    h::NTuple{N,Float64}, d_dimer::Float64, params::DiffusionSMLMConfig) where {N}
     box = params.box_size
     if params.boundary != "reflecting"
         cw = map(x -> mod(x, box), c)
@@ -746,7 +751,7 @@ function _move_pair(e1::E, e2::E, c::NTuple{N,Float64}, h::NTuple{N,Float64}, d_
     end
     q1, q2 = c .- h, c .+ h
     all(x -> 0 <= x <= box, q1) && all(x -> 0 <= x <= box, q2) && return _put(e1, q1, box), _put(e2, q2, box)
-    ok, p1, p2 = _place_centered(c, h ./ (d_dimer / 2), d_dimer, box, typeof(e1.x); reflect=true)
+    ok, p1, p2 = _place_centered(c, h ./ (d_dimer / 2), d_dimer, box, typeof(e1.x), typeof(e2.x); reflect=true)
     ok && return _at(e1, p1), _at(e2, p2)
     return _put(e1, map(x -> _reflect(x, box), q1), box), _put(e2, map(x -> _reflect(x, box), q2), box)
 end

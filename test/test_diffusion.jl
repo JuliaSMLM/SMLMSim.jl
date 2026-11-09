@@ -1301,7 +1301,7 @@ end
 
         # B2. the placement allocates nothing and is type stable
         pw = (r_react = 0.05, pair_mobility = :min, box_size = 2.0, boundary = "reflecting")
-        place_allocs(g, p1, p2, pw, anchor, s, ::Type{T}) where {T} = @allocated g(p1, p2, pw, anchor, 1, s, T)
+        place_allocs(g, p1, p2, pw, anchor, s, ::Type{T}) where {T} = @allocated g(p1, p2, pw, anchor, 1, s, T, T)
         unbind_allocs(g, a, b, pw) = @allocated g(a, b, pw, true, false)
         for (p1, p2) in (((1.0, 1.0), (1.01, 1.0)), ((0.01, 1.0, 1.0), (0.02, 1.0, 1.0))), anchor in (nothing, 1),
             T in (Float32, Float64), bnd in ("reflecting", "periodic")
@@ -1309,7 +1309,7 @@ end
             s = ID._unbind_spacing(pb, T)
             place_allocs(ID._unbind_positions, p1, p2, pb, anchor, s, T)
             @test place_allocs(ID._unbind_positions, p1, p2, pb, anchor, s, T) == 0
-            @test (@inferred ID._unbind_positions(p1, p2, pb, anchor, 1, s, T)) isa Tuple{Bool,NTuple{length(p1),T},NTuple{length(p1),T}}
+            @test (@inferred ID._unbind_positions(p1, p2, pb, anchor, 1, s, T, T)) isa Tuple{Bool,NTuple{length(p1),T},NTuple{length(p1),T}}
             a, b = f(T, p1, 1, length(p1)), f(T, p2, 2, length(p1))
             unbind_allocs(ID._unbind, a, b, pb)
             @test unbind_allocs(ID._unbind, a, b, pb) == 0

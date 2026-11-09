@@ -57,7 +57,9 @@ timestamps are stored in each emitter's own type: with Float32 starting conditio
 `simulate` throws `ArgumentError` when the box, the run's duration or the photons per record a `γ`
 restamp gives does not fit Float32 (about `3e38`); photons kept from the source, or set by the
 deprecated `photons` keyword, are not checked, as in 0.7. A diffusion step beyond that range overflows
-the coordinate.
+the coordinate. Molecules of different types may pair: a pair forms, moves and dissociates with each partner
+placed in Float64 and stored in its own type, and partners split closer than `r_react` are spaced with the
+margin of the coarser type.
 
 ### A bound pair and the box
 

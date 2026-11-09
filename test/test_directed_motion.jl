@@ -381,6 +381,68 @@ end
         @test at(s, 2, 0.01).x == 1.05 && isapprox(at(s, 2, 0.01).y, 1.01; atol=1e-12)
     end
 
+    @testset "partners of different coordinate types each keep their own (Codex review r7)" begin
+        # main threw MethodError when a Float64 and a Float32 molecule formed or kept a pair, and dissociation
+        # converted the partner to the first molecule's type
+        e(T, id, x; state=:monomer, partner=nothing, ph=10.0) =
+            DM.DiffusingEmitter2D{T}(T(x), T(0.5), T(ph), T(0), 1, 1, id, state, partner)
+        types(out) = Dict(o.track_id => typeof(o.x) for o in out)
+        xs(out) = Dict(o.track_id => Float64(o.x) for o in out)
+        D0 = Dict(1 => 0.0, 2 => 0.0)  # both immobile (pair_mobility = :min needs diff_monomer > 0)
+        for b in ("periodic", "reflecting"), pm in (:fixed, :min), (T1, T2) in ((Float64, Float32), (Float32, Float64))
+            # formation (both immobile: :min anchors track 1), mid-box and at a wall, then a bound step
+            for x1 in (0.5, 0.0)
+                p = dm_config(box_size=1.0, boundary=b, r_react=0.01, d_dimer=0.02, k_off=0.0, pair_mobility=pm)
+                out = DM.update_system(DM.AbstractDiffusingEmitter[e(T1, 1, x1), e(T2, 2, x1 + 0.005)], p, 0.01;
+                                       track_D=D0)
+                @test types(out) == Dict(1 => T1, 2 => T2)
+                @test all(o -> o.state == :dimer, out)
+                d = xs(out)[2] - xs(out)[1]
+                @test isapprox(b == "periodic" ? d - round(d) : d, 0.02; atol=1e-6)
+                out = DM.update_system(out, p, 0.01; track_D=D0)
+                @test types(out) == Dict(1 => T1, 2 => T2) && all(o -> o.state == :dimer, out)
+            end
+            # dissociation of a pair closer than r_react: each keeps its type, and they end r_react apart in
+            # the stored coordinates (the margin is the coarser type's)
+            p = dm_config(box_size=1.0, boundary=b, r_react=0.01, d_dimer=0.004, k_off=Inf, pair_mobility=pm)
+            for k in 1:20
+                x2 = 0.5 + 0.004 + k * 1.37e-5
+                out = DM.update_system(DM.AbstractDiffusingEmitter[e(T1, 1, 0.5; state=:dimer, partner=2),
+                                                                 e(T2, 2, x2; state=:dimer, partner=1)], p, 0.01;
+                                       track_D=D0)
+                @test types(out) == Dict(1 => T1, 2 => T2) && all(o -> o.state == :monomer, out)
+                @test abs(xs(out)[2] - xs(out)[1]) >= 0.01
+            end
+        end
+        # a bound step that takes an end past a reflecting wall: the pair is re-centered off the wall, each end in
+        # its own type
+        for (T1, T2) in ((Float64, Float32), (Float32, Float64))
+            p = dm_config(box_size=1.0, boundary="reflecting", d_dimer=0.02, k_off=0.0)
+            o1, o2 = DM._move_pair(e(T1, 1, 0.5; state=:dimer, partner=2), e(T2, 2, 0.5; state=:dimer, partner=1),
+                                   (0.005, 0.5), (0.01, 0.0), 0.02, p)
+            @test o1 isa DM.DiffusingEmitter2D{T1} && o2 isa DM.DiffusingEmitter2D{T2}
+            # the center 0.005 folds off 0.01 (the wall moved in by the half-bond) to 0.015
+            @test isapprox(Float64(o1.x), 0.005; atol=1e-7) && isapprox(Float64(o2.x), 0.025; atol=1e-7)
+        end
+        # Codex's case: a Float64 partner keeps its coordinates and photons when its Float32 partner dissociates
+        p = dm_config(box_size=1.0, diff_monomer=0.0, r_react=0.0, k_off=Inf)
+        out = DM.update_system(DM.AbstractDiffusingEmitter[e(Float32, 1, 0.5; state=:dimer, partner=2),
+                                                         e(Float64, 2, 0.50000001; state=:dimer, partner=1, ph=1e40)], p, 0.01)
+        o2 = only(o for o in out if o.track_id == 2)
+        @test o2 isa DM.DiffusingEmitter2D{Float64} && o2.x == 0.50000001 && o2.photons == 1e40
+        e3(T, id, x, partner) = DM.DiffusingEmitter3D{T}(T(x), T(0.5), T(0.5), T(10), T(0), 1, 1, id, :dimer, partner)
+        out = DM.update_system(DM.AbstractDiffusingEmitter[e3(Float32, 1, 0.5, 2), e3(Float64, 2, 0.50000001, 1)],
+                               dm_config(ndims=3, box_size=1.0, diff_monomer=0.0, r_react=0.0, k_off=Inf), 0.01)
+        @test types(out) == Dict(1 => Float32, 2 => Float64)
+        @test only(o for o in out if o.track_id == 2).x == 0.50000001
+        # a whole run: pairs form and split, and every record keeps its molecule's type
+        Random.seed!(9190)
+        s, _ = simulate(DiffusionSMLMConfig(box_size=1.0, t_max=0.1, r_react=0.01);
+                        starting_conditions=[e(Float64, 1, 0.5), e(Float32, 2, 0.501)], γ=1000.0)
+        @test any(r -> r.state == :dimer, s.emitters)
+        @test all(r -> typeof(r.x) == (r.track_id == 1 ? Float64 : Float32), s.emitters)
+    end
+
     @testset "validation" begin
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[(1.0, 0.0), (0.0, 1.0)])
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[(1.0, 0.0, 0.0)])
