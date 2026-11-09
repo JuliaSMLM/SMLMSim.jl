@@ -165,11 +165,11 @@ Each molecule's velocity is saved in `smld.metadata["monomer_velocity"]` and kep
 single run (not of a concatenation or merge), with a warning when the new config's `monomer_velocity`
 differs from the run's. A bound pair drifts at the
 mean of its partners' velocities, a molecule with a velocity is not immobile for the pair rules below,
-and in a reflecting box a molecule driven into a wall stays at it (its velocity is not reversed); a
-step longer than the box folds back off the walls as often as it crosses them, with or without a
-velocity (before 0.7.4 it stopped at the wall).
-Molecules still form a pair when they are closer than `r_react` at the start of a step (the pair shows
-from the next record), so paths that cross can bind unless their relative step per `dt` exceeds `2·r_react`; `r_react = 0` turns binding off, so
+and in a reflecting box a molecule driven into a wall stays within one step's displacement of it (its
+velocity is not reversed); a step longer than the box folds back off the walls as often as it crosses
+them, with or without a velocity (before 0.7.4 it stopped at the wall).
+Molecules still form a pair when they are closer than `r_react` at the start of a step (the pair exists
+from the next step on, and shows in the records taken while it lasts), so paths that cross can bind unless their relative step per `dt` exceeds `2·r_react`; `r_react = 0` turns binding off, so
 independent molecules pass through each other. See
 [Placement and Continuation Rules](rules.md), Directed motion.
 

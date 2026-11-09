@@ -248,6 +248,11 @@ end
         # the mean of two finite velocities never overflows, and a pair moving at it stays finite (Codex review r2)
         @test DM._pair_velocity((1e308, -1e308), (1e308, -1e308)) == (1e308, -1e308)
         @test DM._pair_velocity((1.0, 3.0), (2.0, -1.0)) == (1.5, 1.0)
+        u = nextfloat(0.0)  # nor does it underflow (Codex review r3)
+        @test DM._pair_velocity((u, 0.0), (u, 0.0)) == (u, 0.0)
+        # the boundary is computed as on main for any coordinate type, BigFloat included (Codex review r3)
+        eb = DM.DiffusingEmitter2D{BigFloat}(BigFloat(1) - BigFloat(2)^-60, BigFloat(0.5), 10.0, 0.0, 1, 1, 1, :monomer, nothing)
+        @test DM.apply_boundary(eb, 1.0, "periodic").x == 1
         pr = [DM.DiffusingEmitter2D{Float64}(0.5, 0.5, 10.0, 0.0, 1, 1, 1, :dimer, 2),
               DM.DiffusingEmitter2D{Float64}(0.55, 0.5, 10.0, 0.0, 1, 1, 2, :dimer, 1)]
         pp = dm_config(box_size=1.0, diff_dimer=0.0, diff_dimer_rot=0.0, k_off=0.0, d_dimer=0.05)
@@ -297,6 +302,14 @@ end
         md["monomer_velocity"] = merge(copy(k1.metadata["monomer_velocity"]), Dict(2 => (1.0, 0.0, 0.0)))
         bad = BasicSMLD(k1.emitters, k1.camera, k1.n_frames, k1.n_datasets, md)
         @test_throws r"saved velocity of track 2" simulate(k; starting_conditions=bad)
+        # a saved velocity that track_velocity replaces is not read (Codex review r3): v·dt overflows at dt = 10
+        md2 = copy(k1.metadata)
+        md2["monomer_velocity"] = merge(copy(k1.metadata["monomer_velocity"]), Dict(2 => (1e308, 0.0)))
+        huge = BasicSMLD(k1.emitters, k1.camera, k1.n_frames, k1.n_datasets, md2)
+        k10 = dm_config(dt=10.0, t_max=20.0, camera_framerate=0.1, camera_exposure=10.0, k_off=0.0)
+        @test_throws r"saved velocity of track 2" simulate(k10; starting_conditions=huge)
+        s10, _ = simulate(k10; starting_conditions=huge, track_velocity=Dict(2 => (0.0, 0.0)))
+        @test s10.metadata["monomer_velocity"][2] == (0.0, 0.0)
         # a kept class that is not one of this config's populations takes no velocity
         src3, _ = simulate(dm_config(monomer_mobility=[(0.3, 0.01), (0.3, 0.02), (0.4, 0.03)], t_max=0.02);
                            override_count=40, γ=1000.0)

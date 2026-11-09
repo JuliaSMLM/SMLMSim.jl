@@ -11,7 +11,7 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `diff_dimer_rot::Float64`: dimer rotational diffusion coefficient (rad²/s)
 - `k_off::Float64`: dimer dissociation rate (s⁻¹)
 - `r_react::Float64`: reaction radius (μm): two monomers closer than this at the start of a step form a pair
-  in that step (so it shows from the next record), by their distance in
+  in that step (it exists from the next step on), by their distance in
   Float64 from the stored coordinates, to the minimum image under periodic boundaries (0.7.1 took the plain
   difference, so no pair formed across a periodic edge). `0` turns binding off: no pair forms, and molecules
   pass through each other (pairs given in `starting_conditions` still dissociate at `k_off`)
@@ -501,8 +501,10 @@ function _pair_velocity(v1, v2)
     v1 === nothing && v2 === nothing && return nothing
     v1 === nothing && return map(x -> x / 2, v2)
     v2 === nothing && return map(x -> x / 2, v1)
-    # Halved before the sum, so two finite velocities never overflow (the same value as (v1 + v2)/2 otherwise)
-    return ntuple(k -> v1[k] / 2 + v2[k] / 2, length(v1))
+    # (a + b)/2, or a/2 + b/2 where the sum overflows (halving values that large is exact): finite and correctly
+    # rounded for any two finite velocities, subnormal ones included
+    mid(a, b) = (m = (a + b) / 2; isfinite(m) ? m : a / 2 + b / 2)
+    return ntuple(k -> mid(v1[k], v2[k]), length(v1))
 end
 
 # One monomer step: `diffuse` (the Gaussian step of variance 2·D·dt per axis, same draws as without a velocity),
@@ -987,6 +989,8 @@ function simulate(params::DiffusionSMLMConfig;
     end
     for e in emitters
         id = e.track_id
+        # A track that track_velocity names takes the keyword's velocity (below); its saved one is not read
+        v_keyword !== nothing && haskey(v_keyword, id) && continue
         if prior_v !== nothing && haskey(prior_v, id)
             what = "the saved velocity of track $id (starting_conditions metadata \"monomer_velocity\")"
             mol_v[id] = _velocity_ndims(prior_v[id], params.ndims, what)

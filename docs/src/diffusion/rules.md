@@ -38,7 +38,8 @@ no random draw of its own.
 
 **Range.** Coordinates are micrometres. Displacements, positions and box sizes beyond about
 `1e150` in magnitude are outside the model (their squares overflow Float64), and these rules
-promise nothing there.
+promise nothing there. With Float32 coordinates the limit is Float32's range, about `3e38`: a
+diffusion step beyond it overflows the coordinate.
 
 ### A bound pair and the box
 
@@ -135,11 +136,13 @@ one to single molecules.
   velocity is not reversed, so a molecule driven into a wall stays within one step's displacement of it. A step longer
   than the box folds back as often as it crosses a wall (before 0.7.4 such a step stopped at the wall, with or without
   a velocity). Under periodic boundaries it wraps. The drift and the boundary are applied in Float64 and the position
-  is converted to its coordinate type once, so any finite `v·dt` (each component of `v·dt` must be finite) leaves the
-  molecule finite and inside the box.
+  is converted to its coordinate type once, so a drift within the model's range (Range, above) leaves the molecule
+  finite and inside the box, with Float32 coordinates too. Each component of `v·dt` must be finite (`ArgumentError`
+  otherwise).
 - **Binding.** The pair search runs at the start of each step, on the positions the previous step left, as without a
   velocity: two monomers closer than `r_react` there form a pair in that step instead of moving. So molecules that
-  come within `r_react` at time `t` are recorded at `t` as monomers and as a pair from `t + dt`. Two molecules whose
+  come within `r_react` at time `t` are still monomers at `t` and a pair from `t + dt`; a record shows the pair only
+  if one is taken while it lasts (a pair that forms and dissociates between records never shows). Two molecules whose
   relative step `|v1 - v2|·dt` exceeds `2·r_react` can pass through each other without binding.
   `r_react = 0` turns binding off: no pair forms, so molecules pass through each other even at one point, while
   pairs given in `starting_conditions` still dissociate at `k_off`.
