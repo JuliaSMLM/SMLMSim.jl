@@ -259,9 +259,16 @@ end
         for b in ("periodic", "reflecting")
             @test DM.apply_boundary(eb(BigFloat(1) - BigFloat(2)^-60), 1.0, b).x == BigFloat(1) - BigFloat(2)^-60
         end
-        # -0.0 stays -0.0, as on main; Float32 and Float64 coordinates inside are unchanged
+        # -0.0 as on main: kept when nothing else moves; wrapped to +0.0 under periodic boundaries when another
+        # coordinate moves (Codex review r9); reflecting keeps -0.0; a zero diffusion step gives +0.0
         for b in ("periodic", "reflecting")
             @test DM.apply_boundary(mono(-0.0), 1.0, b).x === -0.0
+        end
+        for T in (Float32, Float64)
+            z = DM.DiffusingEmitter2D{T}(T(-0.0), T(1.0), 10.0, 0.0, 1, 1, 1, :monomer, nothing)
+            @test DM.apply_boundary(z, 1.0, "periodic").x === zero(T)
+            @test DM.apply_boundary(z, 1.0, "reflecting").x === -zero(T)
+            @test DM.diffuse(z, 0.0, 0.01).x === zero(T)
         end
         for T in (Float32, Float64), b in ("periodic", "reflecting"), x in (0.0, 0.3, 0.1, 0.999)
             @test DM.apply_boundary(mono(x; T), 1.0, b).x === T(x)
@@ -475,6 +482,25 @@ end
                 m = DM.update_system(m, q, 0.01; track_D=Dict(1 => 0.0))
             end
             @test only(m).x == x0
+        end
+        # a BigFloat stored with more bits than the current precision keeps them while it does not move (Codex review
+        # r9): a D = 0 step, the boundary, and an anchored split followed by steps
+        xh = setprecision(() -> BigFloat(0.5) + BigFloat(2)^-400, 512)
+        @test xh != BigFloat(0.5)
+        # built without BigFloat(x), which would round to the current precision
+        hb(id, st, pid) = DM.DiffusingEmitter2D{BigFloat}(xh, BigFloat(0.5), BigFloat(10), BigFloat(0), 1, 1, id, st, pid)
+        @test precision(hb(1, :monomer, nothing).x) == 512
+        for b in ("periodic", "reflecting")
+            p = DiffusionSMLMConfig(box_size=1.0, boundary=b, diff_monomer=0.0, r_react=0.0, dt=0.01, t_max=0.03,
+                                    camera_framerate=100.0, camera_exposure=0.01)
+            s, _ = simulate(p; starting_conditions=[hb(1, :monomer, nothing)])
+            @test length(s.emitters) == 3 && all(r -> r.x == xh, s.emitters)
+            p = dm_config(box_size=1.0, boundary=b, pair_mobility=:min, r_react=0.01, d_dimer=0.004, k_off=Inf)
+            out = DM.AbstractDiffusingEmitter[hb(1, :dimer, 2), b2(Float64, 2, 0.501, :dimer, 1)]
+            for _ in 1:3
+                out = DM.update_system(out, p, 0.01; track_D=D0)
+            end
+            @test only(o for o in out if o.track_id == 1).x == xh
         end
         # every starting position must lie in [0, box_size] (Codex's anchored pair formed at x = 2 stayed outside)
         e2(T, id, x) = DM.DiffusingEmitter2D{T}(T(x), T(0.5), T(10), T(0), 1, 1, id, :monomer, nothing)

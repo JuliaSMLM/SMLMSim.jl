@@ -59,9 +59,10 @@ restamp gives does not fit Float32 (about `3e38`); photons kept from the source,
 deprecated `photons` keyword, are not checked, as in 0.7. A diffusion step beyond that range overflows
 the coordinate. Molecules of different types may pair: a pair forms, moves and dissociates with each partner
 placed in Float64 and stored in its own type, and partners split closer than `r_react` are spaced with the
-margin of the coarser type. A coordinate that nothing moves keeps its stored value: the boundary leaves a
-coordinate inside the box as it is, and an anchor keeps its position, so an immobile molecule of a type wider
-than Float64 (BigFloat) is not rounded.
+margin of the coarser type. A coordinate that nothing moves keeps its stored value: a diffusion step with
+D = 0 and the boundary leave a coordinate inside the box as it is, and an anchor keeps its position, so an
+immobile BigFloat molecule keeps every bit, even beyond the current `setprecision`. A step that moves a BigFloat
+coordinate computes it at the current precision.
 
 ### A bound pair and the box
 

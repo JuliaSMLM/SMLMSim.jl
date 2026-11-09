@@ -465,6 +465,11 @@ function _unbind(m1::AbstractDiffusingEmitter, m2::AbstractDiffusingEmitter, par
 end
 
 # Diffusion functions
+# The coordinate x moved by the step d, in x's type. A zero step (D = 0) leaves a nonzero x as stored, so a BigFloat
+# is not rounded to the current precision; for Float32 and Float64, x + 0.0 is x for a nonzero x, and a zero x still
+# takes the sum (its sign rule), so the value is that of before. Internal.
+_add(x::T, d::Real) where {T<:AbstractFloat} = iszero(d) && !iszero(x) ? x : convert(T, x + d)
+
 """
     diffuse(e::DiffusingEmitter2D, diff_coef::Float64, dt::Float64)
 
@@ -482,8 +487,8 @@ function diffuse(e::DiffusingEmitter2D{T}, diff_coef::Float64, dt::Float64) wher
     σ = sqrt(2 * diff_coef * dt)
     
     # Apply Brownian motion
-    new_x = e.x + rand(Normal(0, σ))
-    new_y = e.y + rand(Normal(0, σ))
+    new_x = _add(e.x, rand(Normal(0, σ)))
+    new_y = _add(e.y, rand(Normal(0, σ)))
     
     # Create new emitter with updated position
     DiffusingEmitter2D{T}(
@@ -515,9 +520,9 @@ function diffuse(e::DiffusingEmitter3D{T}, diff_coef::Float64, dt::Float64) wher
     σ = sqrt(2 * diff_coef * dt)
     
     # Apply Brownian motion
-    new_x = e.x + rand(Normal(0, σ))
-    new_y = e.y + rand(Normal(0, σ))
-    new_z = e.z + rand(Normal(0, σ))
+    new_x = _add(e.x, rand(Normal(0, σ)))
+    new_y = _add(e.y, rand(Normal(0, σ)))
+    new_z = _add(e.z, rand(Normal(0, σ)))
     
     # Create new emitter with updated position
     DiffusingEmitter3D{T}(
@@ -663,11 +668,11 @@ end
 _wall(x::Real, box::Float64, reflecting::Bool) = reflecting ? _reflect(x, box) : Float64(mod(x, box))
 
 # One coordinate of type T after the boundary. One the boundary leaves where it is (reflecting: in [0, box];
-# periodic: in [0, box)) keeps its stored value, so a type wider than Float64 (BigFloat) is not rounded; for Float32
-# and Float64 that is the value the conversion gives. Any other is moved by `_wall` and converted once into [0, box]
-# in T. Internal.
+# periodic: in [0, box) without a sign bit, as mod turns -0.0 into 0.0) keeps its stored value, so a BigFloat is not
+# rounded, even past the current precision; for Float32 and Float64 that is the value the conversion gives. Any
+# other is moved by `_wall` and converted once into [0, box] in T. Internal.
 _bounded(::Type{T}, x::Real, box::Float64, reflecting::Bool) where {T<:AbstractFloat} =
-    (reflecting ? 0 <= x <= box : 0 <= x < box) ? T(x) : _inbox(T, _wall(x, box, reflecting), box)
+    (reflecting ? 0 <= x <= box : !signbit(x) && x < box) ? convert(T, x) : _inbox(T, _wall(x, box, reflecting), box)
 
 # Unit vector from p to q (their plain difference, through _disp); (1, 0, ...) when they coincide
 _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N} = _dir(_dispv(p, q, nothing))
