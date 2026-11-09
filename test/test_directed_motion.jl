@@ -251,9 +251,21 @@ end
         @test DM._pair_velocity((1.0, 3.0), (2.0, -1.0)) == (1.5, 1.0)
         u = nextfloat(0.0)  # nor does it underflow (Codex review r3)
         @test DM._pair_velocity((u, 0.0), (u, 0.0)) == (u, 0.0)
-        # the boundary is computed as on main for any coordinate type, BigFloat included (Codex review r3)
-        eb = DM.DiffusingEmitter2D{BigFloat}(BigFloat(1) - BigFloat(2)^-60, BigFloat(0.5), 10.0, 0.0, 1, 1, 1, :monomer, nothing)
-        @test DM.apply_boundary(eb, 1.0, "periodic").x == 1
+        # a coordinate past the wall is wrapped or reflected in its own type before the conversion, as on main, BigFloat
+        # included (Codex review r3); one the boundary leaves in place keeps its stored value, so a BigFloat is not
+        # rounded through Float64 (Codex review r8; main rounded 1 - 2^-60 to 1)
+        eb(x) = DM.DiffusingEmitter2D{BigFloat}(x, BigFloat(0.5), 10.0, 0.0, 1, 1, 1, :monomer, nothing)
+        @test DM.apply_boundary(eb(BigFloat(1) + BigFloat(2)^-60), 1.0, "periodic").x == BigFloat(2)^-60
+        for b in ("periodic", "reflecting")
+            @test DM.apply_boundary(eb(BigFloat(1) - BigFloat(2)^-60), 1.0, b).x == BigFloat(1) - BigFloat(2)^-60
+        end
+        # -0.0 stays -0.0, as on main; Float32 and Float64 coordinates inside are unchanged
+        for b in ("periodic", "reflecting")
+            @test DM.apply_boundary(mono(-0.0), 1.0, b).x === -0.0
+        end
+        for T in (Float32, Float64), b in ("periodic", "reflecting"), x in (0.0, 0.3, 0.1, 0.999)
+            @test DM.apply_boundary(mono(x; T), 1.0, b).x === T(x)
+        end
         pr = [DM.DiffusingEmitter2D{Float64}(0.5, 0.5, 10.0, 0.0, 1, 1, 1, :dimer, 2),
               DM.DiffusingEmitter2D{Float64}(0.55, 0.5, 10.0, 0.0, 1, 1, 2, :dimer, 1)]
         pp = dm_config(box_size=1.0, diff_dimer=0.0, diff_dimer_rot=0.0, k_off=0.0, d_dimer=0.05)
@@ -441,6 +453,41 @@ end
                         starting_conditions=[e(Float64, 1, 0.5), e(Float32, 2, 0.501)], γ=1000.0)
         @test any(r -> r.state == :dimer, s.emitters)
         @test all(r -> typeof(r.x) == (r.track_id == 1 ? Float64 : Float32), s.emitters)
+    end
+
+    @testset "an immobile molecule keeps its stored coordinates; starts lie inside the box (Codex review r8)" begin
+        x0 = BigFloat(0.5) + BigFloat(2)^-60   # not a Float64
+        b2(T, id, x, st, pid) = DM.DiffusingEmitter2D{T}(T(x), T(0.5), T(10), T(0), 1, 1, id, st, pid)
+        b3(T, id, x, st, pid) = DM.DiffusingEmitter3D{T}(T(x), T(0.5), T(0.5), T(10), T(0), 1, 1, id, st, pid)
+        D0 = Dict(1 => 0.0, 2 => 0.0)
+        for (mk, nd) in ((b2, 2), (b3, 3)), b in ("periodic", "reflecting")
+            # an anchored pair closer than r_react splits: the BigFloat anchor (track 1) stays exactly where it was
+            p = dm_config(ndims=nd, box_size=1.0, boundary=b, pair_mobility=:min, r_react=0.01, d_dimer=0.004, k_off=Inf)
+            out = DM.update_system(DM.AbstractDiffusingEmitter[mk(BigFloat, 1, x0, :dimer, 2), mk(Float64, 2, 0.501, :dimer, 1)],
+                                   p, 0.01; track_D=D0)
+            a = only(o for o in out if o.track_id == 1)
+            @test a.state == :monomer && a.x == x0
+            @test abs(Float64(only(o for o in out if o.track_id == 2).x) - 0.5) >= 0.01
+            # no binding: an immobile BigFloat monomer keeps its coordinates step after step
+            q = dm_config(ndims=nd, box_size=1.0, boundary=b, r_react=0.0)
+            m = DM.AbstractDiffusingEmitter[mk(BigFloat, 1, x0, :monomer, nothing)]
+            for _ in 1:3
+                m = DM.update_system(m, q, 0.01; track_D=Dict(1 => 0.0))
+            end
+            @test only(m).x == x0
+        end
+        # every starting position must lie in [0, box_size] (Codex's anchored pair formed at x = 2 stayed outside)
+        e2(T, id, x) = DM.DiffusingEmitter2D{T}(T(x), T(0.5), T(10), T(0), 1, 1, id, :monomer, nothing)
+        p = DiffusionSMLMConfig(box_size=1.0, pair_mobility=:min, r_react=0.01, d_dimer=0.02, k_off=0.0, t_max=0.02)
+        for bad in (2.0, -0.1, NaN, nextfloat(1.0))
+            @test_throws ArgumentError simulate(p; starting_conditions=[e2(Float64, 1, bad), e2(Float32, 2, 0.5)],
+                                                track_D=D0)
+        end
+        err = try simulate(p; starting_conditions=[e2(Float64, 1, 2.0), e2(Float32, 2, 2.005)]); nothing catch x x end
+        @test err isa ArgumentError && occursin("outside the box", err.msg)
+        # the walls themselves are inside
+        s, _ = simulate(p; starting_conditions=[e2(Float64, 1, 0.0), e2(Float32, 2, 1.0)], track_D=D0)
+        @test !isempty(s.emitters)
     end
 
     @testset "validation" begin

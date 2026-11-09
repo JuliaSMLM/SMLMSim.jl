@@ -759,7 +759,8 @@ with emitters that have both frame number and timestamp information.
 - `starting_conditions::Union{Nothing, SMLD, Vector{<:AbstractDiffusingEmitter}}=nothing`: Optional starting emitters.
   An SMLD resumes at its exact end state (`extract_end_state`) and carries each track's D, velocity and γ
   forward. A Vector keeps each emitter's own `photons`, gets fresh D draws, and is deduplicated
-  to the latest record per track_id (with a warning) if track_ids repeat.
+  to the latest record per track_id (with a warning) if track_ids repeat. Every starting position must lie
+  inside the box, in `[0, box_size]` on every axis (`ArgumentError` otherwise).
 - `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (0, or 1e-50 to 1e50: the model's range); each of the
   n_sub records in a frame carries γ·dt, so a frame holds γ·n_sub·dt photons (γ·camera_exposure
   when the exposure is a whole number of steps and not capped at the frame period).
@@ -990,6 +991,11 @@ function simulate(params::DiffusionSMLMConfig;
     for CT in unique(typeof(e.x) for e in emitters)
         (params.box_size <= floatmax(CT) && t_run <= floatmax(CT) && restamped <= floatmax(CT)) ||
             throw(ArgumentError("with $CT coordinates the box (box_size = $(params.box_size) μm), the run's duration ($t_run s) and the photons per record γ·dt ($restamped) must fit $CT (at most $(floatmax(CT)))"))
+    end
+    # Every starting position lies inside the box, [0, box_size] on every axis (NaN fails)
+    for e in emitters
+        all(c -> 0 <= c <= params.box_size, _coords(e)) ||
+            throw(ArgumentError("starting_conditions: molecule $(e.track_id) is at $(_coords(e)), outside the box [0, $(params.box_size)] μm; every starting position must lie inside it"))
     end
 
     # Monomer diffusion coefficient and velocity per track, drawn once per molecule

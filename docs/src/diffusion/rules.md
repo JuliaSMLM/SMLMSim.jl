@@ -51,15 +51,17 @@ range the products, squares and step scales the simulation computes, such as `sq
 scaled against underflow; a dissociation spacing it makes too large to place (infinite included)
 fails the fit test, and the partners stay where they are (Dissociation, below).
 
-Positions given in `starting_conditions` beyond about `1e150` in magnitude are outside the model
-(their squares overflow Float64), and these rules promise nothing there. Coordinates, photons and
+Positions given in `starting_conditions` must lie inside the box, in `[0, box_size]` on every axis;
+`simulate` throws `ArgumentError` otherwise. Coordinates, photons and
 timestamps are stored in each emitter's own type: with Float32 starting conditions (all or some),
 `simulate` throws `ArgumentError` when the box, the run's duration or the photons per record a `γ`
 restamp gives does not fit Float32 (about `3e38`); photons kept from the source, or set by the
 deprecated `photons` keyword, are not checked, as in 0.7. A diffusion step beyond that range overflows
 the coordinate. Molecules of different types may pair: a pair forms, moves and dissociates with each partner
 placed in Float64 and stored in its own type, and partners split closer than `r_react` are spaced with the
-margin of the coarser type.
+margin of the coarser type. A coordinate that nothing moves keeps its stored value: the boundary leaves a
+coordinate inside the box as it is, and an anchor keeps its position, so an immobile molecule of a type wider
+than Float64 (BigFloat) is not rounded.
 
 ### A bound pair and the box
 

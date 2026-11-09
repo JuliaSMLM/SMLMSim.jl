@@ -456,9 +456,10 @@ function _unbind(m1::AbstractDiffusingEmitter, m2::AbstractDiffusingEmitter, par
     p1, p2 = _pos(m1), _pos(m2)
     _sep(p1, p2, _period(params)) >= params.r_react && return (m1, m2)
     T1, T2 = typeof(m1.x), typeof(m2.x)
-    ok, q1, q2 = _unbind_positions(p1, p2, params, _anchor(params, m1, m2, s1, s2), m1.track_id,
-                                   _unbind_spacing(params, _coarser(T1, T2)), T1, T2)
-    ok && return (_at(m1, q1), _at(m2, q2))
+    a = _anchor(params, m1, m2, s1, s2)
+    ok, q1, q2 = _unbind_positions(p1, p2, params, a, m1.track_id, _unbind_spacing(params, _coarser(T1, T2)), T1, T2)
+    # the anchor keeps its stored coordinates (a type wider than Float64 is not rounded)
+    ok && return (a == m1.track_id ? m1 : _at(m1, q1), a == m2.track_id ? m2 : _at(m2, q2))
     unfit === nothing || (unfit[] = true)
     return (m1, m2)
 end
@@ -661,6 +662,13 @@ end
 # computed as in 0.7 (x's type promoted with box) before the conversion. Internal.
 _wall(x::Real, box::Float64, reflecting::Bool) = reflecting ? _reflect(x, box) : Float64(mod(x, box))
 
+# One coordinate of type T after the boundary. One the boundary leaves where it is (reflecting: in [0, box];
+# periodic: in [0, box)) keeps its stored value, so a type wider than Float64 (BigFloat) is not rounded; for Float32
+# and Float64 that is the value the conversion gives. Any other is moved by `_wall` and converted once into [0, box]
+# in T. Internal.
+_bounded(::Type{T}, x::Real, box::Float64, reflecting::Bool) where {T<:AbstractFloat} =
+    (reflecting ? 0 <= x <= box : 0 <= x < box) ? T(x) : _inbox(T, _wall(x, box, reflecting), box)
+
 # Unit vector from p to q (their plain difference, through _disp); (1, 0, ...) when they coincide
 _axis(p::NTuple{N,Float64}, q::NTuple{N,Float64}) where {N} = _dir(_dispv(p, q, nothing))
 
@@ -792,10 +800,10 @@ Apply boundary conditions to a 2D emitter.
 """
 function apply_boundary(e::DiffusingEmitter2D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
     # Wrapped (periodic), or reflected, folding a step longer than the box as often as it crosses a wall; then inside
-    # [0, box_size] in T, since a Float32 coordinate can round past the wall
+    # [0, box_size] in T, since a Float32 coordinate can round past the wall; a coordinate left in place is kept
     reflecting = boundary != "periodic"
-    new_x = _inbox(T, _wall(e.x, box_size, reflecting), box_size)
-    new_y = _inbox(T, _wall(e.y, box_size, reflecting), box_size)
+    new_x = _bounded(T, e.x, box_size, reflecting)
+    new_y = _bounded(T, e.y, box_size, reflecting)
 
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y
@@ -829,11 +837,11 @@ Apply boundary conditions to a 3D emitter.
 """
 function apply_boundary(e::DiffusingEmitter3D{T}, box_size::Float64, boundary::String) where T <: AbstractFloat
     # Wrapped (periodic), or reflected, folding a step longer than the box as often as it crosses a wall; then inside
-    # [0, box_size] in T, since a Float32 coordinate can round past the wall
+    # [0, box_size] in T, since a Float32 coordinate can round past the wall; a coordinate left in place is kept
     reflecting = boundary != "periodic"
-    new_x = _inbox(T, _wall(e.x, box_size, reflecting), box_size)
-    new_y = _inbox(T, _wall(e.y, box_size, reflecting), box_size)
-    new_z = _inbox(T, _wall(e.z, box_size, reflecting), box_size)
+    new_x = _bounded(T, e.x, box_size, reflecting)
+    new_y = _bounded(T, e.y, box_size, reflecting)
+    new_z = _bounded(T, e.z, box_size, reflecting)
 
     # Only create a new emitter if the position changed
     if new_x != e.x || new_y != e.y || new_z != e.z
