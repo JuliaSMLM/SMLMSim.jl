@@ -427,6 +427,32 @@ end
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(0.5, 1e-60), (0.5, 0.1)])
         @test_throws ArgumentError DM._check_track_velocity(Dict(1 => (1e60, 0.0)), 2)
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => 1e60))
+        # (Codex review r5) checked as given, before conversion; mixture fractions too
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1e-60, 0.0), (1.0, 0.1)])
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[(big"1e-400", 0)])
+        @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => -big"1e-400"))
+        # simulate checks the whole config again, on its fields as they are
+        for change! in (q -> q.diff_monomer = 1e308, q -> q.monomer_mobility = [(1.0, 1e308)], q -> q.dt = 1e308)
+            q = dm_config(t_max=0.02)
+            change!(q)
+            @test_throws ArgumentError simulate(q; override_count=1)
+        end
+        # γ in the model's range, so γ·dt stays normal
+        @test_throws ArgumentError simulate(p; override_count=1, γ=1e308)
+        @test_throws ArgumentError simulate(p; override_count=1, γ=1e-300)
+        # an exposure far longer than the frame is capped before it is counted; a run beyond 2^53 steps throws
+        long_exposure = dm_config(dt=0.1, camera_framerate=10.0, camera_exposure=1e50, t_max=0.1)
+        s_long, _ = @test_logs (:warn, r"capping the exposure") match_mode=:any simulate(long_exposure; override_count=1)
+        @test length(s_long.emitters) == 1
+        @test_throws ArgumentError simulate(dm_config(dt=1e-50, t_max=1.0, camera_framerate=1.0, camera_exposure=1.0);
+                                           override_count=1)
+        @test_throws ArgumentError simulate(dm_config(dt=1.0, t_max=1e50, camera_framerate=1.0, camera_exposure=1.0);
+                                           override_count=1)
+        # Float32 starting conditions: the box, a record's photons and the run's duration must fit Float32
+        f32 = [DM.DiffusingEmitter2D{Float32}(0.5f0, 0.5f0, 10f0, 0f0, 1, 1, 1, :monomer, nothing)]
+        long32 = dm_config(box_size=1.0, diff_monomer=0.0, r_react=0.0, k_off=0.0, dt=1e40, camera_exposure=1e40,
+                           t_max=2e40, camera_framerate=1e-40)
+        @test_throws ArgumentError simulate(long32; starting_conditions=f32)
         # the config is mutable: simulate checks its velocities again
         p.monomer_velocity = [(1.0, 0.0), (0.0, 1.0)]
         @test_throws ArgumentError simulate(p; override_count=3)

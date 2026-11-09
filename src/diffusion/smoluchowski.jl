@@ -83,11 +83,13 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   `v·dt` plus the diffusion step. `simulate`'s `track_velocity` and `track_D` set single molecules.
   Rules for pairs, walls and continuation: docs/src/diffusion/rules.md, Directed motion.
 
-The model's range: every number of the config but `r_react`, every velocity component and every
-per-molecule `D` is 0 or has a magnitude from `1e-50` to `1e50` (`k_off` may also be infinite), so the
-products, squares and step scales the simulation computes stay normal `Float64` numbers. `r_react` may
-be any value `>= 0`, `Inf` included. Construction and `simulate` throw `ArgumentError` for anything
-outside the range, NaN included, and for a negative value where the field says so.
+The model's range: every number of the config but `r_react` (mixture fractions included), every
+velocity component, every per-molecule `D` and `simulate`'s `γ` is 0 or has a magnitude from `1e-50` to
+`1e50` as given (`k_off` may also be infinite), and a run has at most `2^53` steps, so the products,
+squares and step scales the simulation computes stay normal `Float64` numbers. `r_react` may be any
+value `>= 0`, `Inf` included. Construction and `simulate` (again, on the fields as they are when it
+runs) throw `ArgumentError` for anything outside the range, NaN included, and for a negative value
+where the field says so. Rules: docs/src/diffusion/rules.md, Range.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
 `n_sub` records of a frame (`substeps_per_frame`) carries `γ·dt`, so a frame holds `γ·n_sub·dt`
@@ -211,8 +213,8 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         end
         # Monomer mobility mixture validation
         if !isempty(monomer_mobility)
-            if any(m -> !(m[1] > 0), monomer_mobility)
-                throw(ArgumentError("Monomer mobility fractions must be positive"))
+            if any(m -> !(m[1] > 0 && _in_model(m[1])), monomer_mobility)
+                throw(ArgumentError("Monomer mobility fractions must be positive and in the model's range: 1e-50 to 1e50"))
             end
             if any(m -> !(m[2] >= 0 && _in_model(m[2])), monomer_mobility)
                 throw(ArgumentError("Monomer mobility diffusion coefficients must be non-negative and in the model's range: 0, or 1e-50 to 1e50"))
@@ -252,11 +254,12 @@ _velocity_tuple(v) = Tuple(Float64(x) for x in v)
 function _velocity_ndims(v, ndims::Union{Int,Nothing}, what::AbstractString="velocity")
     (v isa Union{Tuple,AbstractVector} && all(x -> x isa Real, v)) ||
         throw(ArgumentError("$what must be a tuple or vector of $(something(ndims, "ndims")) numbers (μm/s); got $(repr(v))"))
+    ndims === nothing || length(v) == ndims ||
+        throw(ArgumentError("$what must have ndims = $ndims components (μm/s); got $(length(v))"))
+    # Checked as given, before the conversion (which could round a value outside the range to 0 or Inf)
+    all(_in_model, v) ||
+        throw(ArgumentError("$what components must be in the model's range: 0, or a magnitude from 1e-50 to 1e50 μm/s; got $(repr(v))"))
     t = _velocity_tuple(v)
-    ndims === nothing || length(t) == ndims ||
-        throw(ArgumentError("$what must have ndims = $ndims components (μm/s); got $(length(t))"))
-    all(_in_model, t) ||
-        throw(ArgumentError("$what components must be in the model's range: 0, or a magnitude from 1e-50 to 1e50 μm/s; got $t"))
     return ndims === nothing ? t : ntuple(k -> t[k], ndims)
 end
 
@@ -282,11 +285,10 @@ function _check_track_D(given)
     out = Dict{Int,Float64}()
     for (id, D) in given
         _track_key(id, "track_D")
-        # Checked as the Float64 it is stored as, so a value that converts to Inf is caught
-        d = D isa Real ? Float64(D) : NaN
-        (d >= 0 && _in_model(d)) ||
+        # Checked as given, before the conversion (which could round a value outside the range to 0 or -0.0)
+        (D isa Real && D >= 0 && _in_model(D)) ||
             throw(ArgumentError("track_D[$id] must be a diffusion coefficient >= 0 in the model's range, 0 or 1e-50 to 1e50 μm²/s; got $D"))
-        out[Int(id)] = d
+        out[Int(id)] = Float64(D)
     end
     return out
 end
@@ -342,19 +344,24 @@ frame period; each case warns (once) with the rule applied.
 function substeps_per_frame(params::DiffusionSMLMConfig)
     r_sub = params.camera_exposure / params.dt
     r_frame = 1 / (params.camera_framerate * params.dt)
-    n_sub = max(1, round(Int, r_sub))
+    # Step counts are rounded in Float64 and converted once they are known to fit: the frame period must be at most
+    # 2^53 steps, and a longer exposure is capped at the frame period before any conversion
+    r_frame <= 2.0^53 ||
+        throw(ArgumentError("the frame period 1/camera_framerate = $(1 / params.camera_framerate) s is $r_frame steps of dt = $(params.dt) s, more than a run counts (2^53)"))
+    s_sub = max(1.0, round(r_sub))
     steps_per_frame = max(1, round(Int, r_frame))
-    if abs(r_sub - n_sub) > 1e-9 * max(1, r_sub)
-        @warn "camera_exposure=$(params.camera_exposure) is not an integer multiple of dt=$(params.dt); using n_sub=$n_sub sub-steps per frame (effective exposure $(n_sub * params.dt) s)" maxlog=1
+    if abs(r_sub - s_sub) > 1e-9 * max(1, r_sub)
+        ns = s_sub <= 2.0^53 ? Int(s_sub) : s_sub  # the rounded count, as before the cap below
+        @warn "camera_exposure=$(params.camera_exposure) is not an integer multiple of dt=$(params.dt); using n_sub=$ns sub-steps per frame (effective exposure $(ns * params.dt) s)" maxlog=1
     end
     if abs(r_frame - steps_per_frame) > 1e-9 * max(1, r_frame)
         @warn "the frame period 1/camera_framerate=$(1 / params.camera_framerate) is not an integer multiple of dt=$(params.dt); using $steps_per_frame steps per frame (effective frame period $(steps_per_frame * params.dt) s)" maxlog=1
     end
-    if n_sub > steps_per_frame
+    if s_sub > steps_per_frame
         @warn "camera_exposure=$(params.camera_exposure) is longer than the frame period 1/camera_framerate=$(1 / params.camera_framerate); capping the exposure at the frame period ($steps_per_frame sub-steps); use camera_exposure ≤ 1/camera_framerate" maxlog=1
-        n_sub = steps_per_frame
+        return steps_per_frame, steps_per_frame
     end
-    return n_sub, steps_per_frame
+    return Int(s_sub), steps_per_frame
 end
 
 """
@@ -740,7 +747,7 @@ with emitters that have both frame number and timestamp information.
   An SMLD resumes at its exact end state (`extract_end_state`) and carries each track's D, velocity and γ
   forward. A Vector keeps each emitter's own `photons`, gets fresh D draws, and is deduplicated
   to the latest record per track_id (with a warning) if track_ids repeat.
-- `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (finite, ≥ 0); each of the
+- `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (0, or 1e-50 to 1e50: the model's range); each of the
   n_sub records in a frame carries γ·dt, so a frame holds γ·n_sub·dt photons (γ·camera_exposure
   when the exposure is a whole number of steps and not capped at the frame period).
   An explicit γ restamps starting emitters to γ·dt. Default for new emitters: 1000 photons
@@ -821,8 +828,8 @@ function simulate(params::DiffusionSMLMConfig;
 
     start_time = time_ns()
 
-    # The config is mutable: check its velocities again against the mixture and ndims as they are now
-    _check_monomer_velocity(params.monomer_velocity, params.monomer_mobility, params.ndims)
+    # The config is mutable: every check of the constructor runs again on its fields as they are now
+    DiffusionSMLMConfig((getfield(params, k) for k in fieldnames(DiffusionSMLMConfig))...)
     v_keyword = _check_track_velocity(track_velocity, params.ndims)
     D_keyword = _check_track_D(track_D)
 
@@ -836,8 +843,10 @@ function simulate(params::DiffusionSMLMConfig;
 
     photons !== nothing && γ !== nothing &&
         throw(ArgumentError("pass γ or the deprecated photons, not both"))
-    γ === nothing || (isfinite(γ) && γ >= 0) ||
-        throw(ArgumentError("γ must be finite and >= 0 (photons/s), got $γ"))
+    # The model's range (docs/src/diffusion/rules.md, Range), so photons per record γ·dt stay normal Float64. The
+    # deprecated photons keyword is not checked, as in 0.7, until it is removed in 0.8.0
+    γ === nothing || (γ >= 0 && _in_model(γ)) ||
+        throw(ArgumentError("γ must be >= 0 and in the model's range, 0 or 1e-50 to 1e50 photons/s; got $γ"))
     if photons !== nothing
         Base.depwarn("the photons keyword is deprecated and will be removed in 0.8.0; pass γ, the emission rate in photons/s (for new emitters γ = photons/dt gives identical output; with starting_conditions photons is ignored, as in 0.7, while γ restamps every molecule to γ·dt)", :simulate; force=true)
     end
@@ -851,7 +860,10 @@ function simulate(params::DiffusionSMLMConfig;
 
     # Sub-steps per exposure and per frame (warns and rounds if dt does not divide the camera timing)
     n_sub, steps_per_frame = substeps_per_frame(params)
-    n_frames = floor(Int, params.t_max * params.camera_framerate + 1e-9)
+    nf = floor(params.t_max * params.camera_framerate + 1e-9)
+    nf * steps_per_frame <= 2.0^53 ||
+        throw(ArgumentError("t_max = $(params.t_max) s is $(nf * steps_per_frame) steps of dt = $(params.dt) s, more than a run counts (2^53)"))
+    n_frames = Int(nf)
     if n_frames < 1
         @warn "t_max ($(params.t_max) s) is shorter than one frame period (1/camera_framerate = $(1 / params.camera_framerate) s); simulating one frame" maxlog=1
         n_frames = 1
@@ -958,6 +970,15 @@ function simulate(params::DiffusionSMLMConfig;
         n_initial_emitters = length(emitters)
     end
 
+    # Coordinates, photons and timestamps are stored in the emitters' type (Float32 from Float32 starting
+    # conditions): the box, each record's photons and the run's duration must fit it
+    if !isempty(emitters)
+        CT = typeof(emitters[1].x)
+        t_run = n_frames * steps_per_frame * params.dt
+        (params.box_size <= floatmax(CT) && t_run <= floatmax(CT) && all(e -> isfinite(e.photons), emitters)) ||
+            throw(ArgumentError("with $CT coordinates the box (box_size = $(params.box_size) μm), each record's photons and the run's duration ($t_run s) must fit $CT (at most $(floatmax(CT)))"))
+    end
+
     # Monomer diffusion coefficient and velocity per track, drawn once per molecule
     mol_D = Dict{Int,Float64}()
     mol_v = Dict{Int,NTuple{params.ndims,Float64}}()
@@ -971,10 +992,10 @@ function simulate(params::DiffusionSMLMConfig;
     for e in emitters
         id = e.track_id
         if prior_D !== nothing && haskey(prior_D, id)
-            d = prior_D[id] isa Real ? Float64(prior_D[id]) : NaN
-            (d >= 0 && _in_model(d)) ||
-                throw(ArgumentError("the saved D of track $id (starting_conditions metadata \"monomer_D\") must be >= 0 in the model's range, 0 or 1e-50 to 1e50 μm²/s; got $(repr(prior_D[id]))"))
-            mol_D[id] = d
+            d = prior_D[id]  # checked as saved, before the conversion
+            (d isa Real && d >= 0 && _in_model(d)) ||
+                throw(ArgumentError("the saved D of track $id (starting_conditions metadata \"monomer_D\") must be >= 0 in the model's range, 0 or 1e-50 to 1e50 μm²/s; got $(repr(d))"))
+            mol_D[id] = Float64(d)
             k = prior_class !== nothing && haskey(prior_class, id) ? Int(prior_class[id]) :
                 findfirst(c -> c[2] == mol_D[id], src_mix)
             k === nothing || (track_class[id] = k)

@@ -37,16 +37,24 @@ acceptable. A zero displacement (partners at exactly the same position) is taken
 no random draw of its own.
 
 **Range.** Coordinates are micrometres and times seconds. Every number of a `DiffusionSMLMConfig`
-but `r_react`, every velocity component (the config's, `track_velocity` or a saved one) and every
-per-molecule D (`track_D` or a saved one) is 0 or has a magnitude from `1e-50` to `1e50`; `k_off`
-may also be infinite, and `r_react` may be any value `>= 0`, infinite included (it is only compared
-with a distance, which is scaled against underflow). Construction and `simulate` throw
-`ArgumentError` otherwise. In that range the products, squares and step scales the simulation
-computes, such as `sqrt(2·D·dt)`, `v·dt` and the `:min` pair coefficient, are normal Float64
-numbers. Positions given in `starting_conditions` beyond about `1e150` in magnitude are outside the
-model (their squares overflow Float64), and these rules promise nothing there. With Float32
-coordinates the limit is Float32's range, about `3e38`: a diffusion step beyond it overflows the
-coordinate.
+but `r_react` (mixture fractions included), every velocity component (the config's, `track_velocity`
+or a saved one), every per-molecule D (`track_D` or a saved one) and `simulate`'s `γ` is 0 or has a
+magnitude from `1e-50` to `1e50`, as given, before any conversion (the deprecated `photons` keyword is
+not checked, as in 0.7, until its removal in 0.8.0); `k_off` may also be
+infinite. A run has at most `2^53` steps. Construction and `simulate` check all of this, the config
+again on its fields as they are when `simulate` runs, and throw `ArgumentError` otherwise. In that
+range the products, squares and step scales the simulation computes, such as `sqrt(2·D·dt)`, `v·dt`,
+`γ·dt` and the `:min` pair coefficient, are normal Float64 numbers.
+
+`r_react` may be any value `>= 0`, infinite included. Binding compares it with a distance that is
+scaled against underflow; a dissociation spacing it makes too large to place (infinite included)
+fails the fit test, and the partners stay where they are (Dissociation, below).
+
+Positions given in `starting_conditions` beyond about `1e150` in magnitude are outside the model
+(their squares overflow Float64), and these rules promise nothing there. Coordinates, photons and
+timestamps are stored in the emitters' type: with Float32 starting conditions, `simulate` throws
+`ArgumentError` when the box, a record's photons or the run's duration does not fit Float32 (about
+`3e38`), and a diffusion step beyond that range overflows the coordinate.
 
 ### A bound pair and the box
 
