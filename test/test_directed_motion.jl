@@ -302,7 +302,12 @@ end
         md["monomer_velocity"] = merge(copy(k1.metadata["monomer_velocity"]), Dict(2 => (1.0, 0.0, 0.0)))
         bad = BasicSMLD(k1.emitters, k1.camera, k1.n_frames, k1.n_datasets, md)
         @test_throws r"saved velocity of track 2" simulate(k; starting_conditions=bad)
-        # a saved velocity that track_velocity replaces is not read (Codex review r3): v·dt overflows at dt = 10
+        # a saved D outside the model's range is an ArgumentError naming its source
+        mdD = copy(k1.metadata)
+        mdD["monomer_D"] = merge(copy(k1.metadata["monomer_D"]), Dict(2 => 1e60))
+        @test_throws r"saved D of track 2" simulate(k; starting_conditions=BasicSMLD(k1.emitters, k1.camera,
+                                                                                    k1.n_frames, k1.n_datasets, mdD))
+        # a saved velocity that track_velocity replaces is not read (Codex review r3)
         md2 = copy(k1.metadata)
         md2["monomer_velocity"] = merge(copy(k1.metadata["monomer_velocity"]), Dict(2 => (1e308, 0.0)))
         huge = BasicSMLD(k1.emitters, k1.camera, k1.n_frames, k1.n_datasets, md2)
@@ -409,10 +414,19 @@ end
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[nothing])
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[(1.0, "a")])
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=(1.0, 0.0))  # one tuple, not a vector of them
-        # a step v·dt that is not finite
-        @test_throws ArgumentError DiffusionSMLMConfig(dt=10.0, t_max=100.0, camera_framerate=0.1, camera_exposure=10.0,
-                                                       monomer_velocity=[(1e308, 0.0)])
-        @test_throws ArgumentError DM._check_track_velocity(Dict(1 => (1e308, 0.0)), 2, 10.0)
+        # the model's range: 0, or a magnitude from 1e-50 to 1e50, for every number but r_react (Codex review r4:
+        # sqrt(2·D·dt) overflowed at D = 1e308 and underflowed at D = 1e-300 within the old wording)
+        for f in (:density, :box_size, :diff_monomer, :diff_dimer, :diff_dimer_rot, :k_off, :d_dimer, :dt, :t_max,
+                  :camera_framerate, :camera_exposure), x in (1e60, 1e-60)
+            @test_throws ArgumentError DiffusionSMLMConfig(; f => x)
+        end
+        @test DiffusionSMLMConfig(r_react=1e-201).r_react == 1e-201  # compared with a scaled distance only
+        @test DiffusionSMLMConfig(diff_monomer=0.0, diff_dimer=0.0, diff_dimer_rot=0.0, k_off=0.0).k_off == 0.0
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[(1e-60, 0.0)])
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[(1e308, 0.0)])
+        @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(0.5, 1e-60), (0.5, 0.1)])
+        @test_throws ArgumentError DM._check_track_velocity(Dict(1 => (1e60, 0.0)), 2)
+        @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => 1e60))
         # the config is mutable: simulate checks its velocities again
         p.monomer_velocity = [(1.0, 0.0), (0.0, 1.0)]
         @test_throws ArgumentError simulate(p; override_count=3)

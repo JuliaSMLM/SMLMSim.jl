@@ -297,7 +297,8 @@ one row per (frame, track_id) present, sorted by (frame, track_id).
   immobile ones, are not mixed.
 
 This is sub-step resolution. With exposure shorter than the frame period, a change that
-happens during the gap between exposures shows at the next frame's first record.
+happens during the gap between exposures shows at the next frame's first record, unless it is
+undone before then: a pair that forms and dissociates within one gap never shows.
 The result does not depend on simulation record order: tracks are sorted stably by
 `(frame, timestamp)`, with equal sort keys retaining their input order.
 """

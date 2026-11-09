@@ -80,12 +80,14 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   `ndims` components each (tuples or vectors accepted). Empty (default): no drift. With an empty
   `monomer_mobility`, exactly one entry, the velocity of every monomer; with a mixture, one entry per
   population in the same order, drawn with the population's `D`. A monomer step is the displacement
-  `v·dt` plus the diffusion step; each component and its `v·dt` must be finite. `simulate`'s
-  `track_velocity` and `track_D` set single molecules.
+  `v·dt` plus the diffusion step. `simulate`'s `track_velocity` and `track_D` set single molecules.
   Rules for pairs, walls and continuation: docs/src/diffusion/rules.md, Directed motion.
 
-Construction throws `ArgumentError` for a field out of range, NaN included; only `k_off` and `r_react` may
-be infinite.
+The model's range: every number of the config but `r_react`, every velocity component and every
+per-molecule `D` is 0 or has a magnitude from `1e-50` to `1e50` (`k_off` may also be infinite), so the
+products, squares and step scales the simulation computes stay normal `Float64` numbers. `r_react` may
+be any value `>= 0`, `Inf` included. Construction and `simulate` throw `ArgumentError` for anything
+outside the range, NaN included, and for a negative value where the field says so.
 
 Photons: `simulate` takes `γ`, the emission rate in photons/s. Each of the
 `n_sub` records of a frame (`substeps_per_frame`) carries `γ·dt`, so a frame holds `γ·n_sub·dt`
@@ -153,44 +155,36 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
         camera_framerate, camera_exposure, monomer_mobility, pair_mobility, monomer_velocity
     )
-        # Input validation, on the values the fields will hold (so NaN, and a value that converts to Inf, is caught).
-        # k_off and r_react may be Inf (dissociation at every step; binding at any distance)
-        density, box_size, diff_monomer, diff_dimer, diff_dimer_rot, k_off, r_react, d_dimer, dt, t_max,
-            camera_framerate, camera_exposure =
-            map(Float64, (density, box_size, diff_monomer, diff_dimer, diff_dimer_rot, k_off, r_react, d_dimer, dt,
-                          t_max, camera_framerate, camera_exposure))
-        monomer_mobility = convert(Vector{Tuple{Float64,Float64}}, monomer_mobility)
-        positive(x) = isfinite(x) && x > 0
-        nonnegative(x) = isfinite(x) && x >= 0
-        if !positive(density)
-            throw(ArgumentError("Density must be positive and finite"))
+        # Input validation (NaN, Inf and other magnitudes outside the model fail the range check below)
+        if density <= 0
+            throw(ArgumentError("Density must be positive"))
         end
-        if !positive(box_size)
-            throw(ArgumentError("Box size must be positive and finite"))
+        if box_size <= 0
+            throw(ArgumentError("Box size must be positive"))
         end
-        if !nonnegative(diff_monomer)
-            throw(ArgumentError("Monomer diffusion coefficient must be non-negative and finite"))
+        if diff_monomer < 0
+            throw(ArgumentError("Monomer diffusion coefficient must be non-negative"))
         end
-        if !nonnegative(diff_dimer)
-            throw(ArgumentError("Dimer diffusion coefficient must be non-negative and finite"))
+        if diff_dimer < 0
+            throw(ArgumentError("Dimer diffusion coefficient must be non-negative"))
         end
-        if !nonnegative(diff_dimer_rot)
-            throw(ArgumentError("Dimer rotational diffusion coefficient must be non-negative and finite"))
+        if diff_dimer_rot < 0
+            throw(ArgumentError("Dimer rotational diffusion coefficient must be non-negative"))
         end
-        if !(k_off >= 0)
+        if k_off < 0
             throw(ArgumentError("Dissociation rate must be non-negative"))
         end
         if !(r_react >= 0)
             throw(ArgumentError("Reaction radius must be non-negative (0 turns binding off)"))
         end
-        if !positive(d_dimer)
-            throw(ArgumentError("Dimer separation must be positive and finite"))
+        if d_dimer <= 0
+            throw(ArgumentError("Dimer separation must be positive"))
         end
-        if !positive(dt)
-            throw(ArgumentError("Time step must be positive and finite"))
+        if dt <= 0
+            throw(ArgumentError("Time step must be positive"))
         end
-        if !positive(t_max)
-            throw(ArgumentError("Maximum simulation time must be positive and finite"))
+        if t_max <= 0
+            throw(ArgumentError("Maximum simulation time must be positive"))
         end
         if ndims != 2 && ndims != 3
             throw(ArgumentError("Number of dimensions must be 2 or 3"))
@@ -199,19 +193,29 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
             throw(ArgumentError("Boundary condition must be 'periodic' or 'reflecting'"))
         end
         # Camera parameter validation
-        if !positive(camera_framerate)
-            throw(ArgumentError("Camera framerate must be positive and finite"))
+        if camera_framerate <= 0
+            throw(ArgumentError("Camera framerate must be positive"))
         end
-        if !positive(camera_exposure)
-            throw(ArgumentError("Camera exposure time must be positive and finite"))
+        if camera_exposure <= 0
+            throw(ArgumentError("Camera exposure time must be positive"))
+        end
+        # The model's range (docs/src/diffusion/rules.md, Range): every number but r_react is 0 or a magnitude from
+        # 1e-50 to 1e50 (k_off may also be Inf), so the steps' products, squares and scales stay normal Float64.
+        # r_react is only compared with a distance that is scaled against underflow, so any r_react >= 0 is valid
+        for (name, x) in (("density", density), ("box_size", box_size), ("diff_monomer", diff_monomer),
+                          ("diff_dimer", diff_dimer), ("diff_dimer_rot", diff_dimer_rot), ("k_off", k_off),
+                          ("d_dimer", d_dimer), ("dt", dt), ("t_max", t_max),
+                          ("camera_framerate", camera_framerate), ("camera_exposure", camera_exposure))
+            (name == "k_off" && isinf(x)) || _in_model(x) ||
+                throw(ArgumentError("$name = $x is outside the model's range: 0, or a magnitude from 1e-50 to 1e50"))
         end
         # Monomer mobility mixture validation
         if !isempty(monomer_mobility)
             if any(m -> !(m[1] > 0), monomer_mobility)
                 throw(ArgumentError("Monomer mobility fractions must be positive"))
             end
-            if any(m -> !(isfinite(m[2]) && m[2] >= 0), monomer_mobility)
-                throw(ArgumentError("Monomer mobility diffusion coefficients must be non-negative"))
+            if any(m -> !(m[2] >= 0 && _in_model(m[2])), monomer_mobility)
+                throw(ArgumentError("Monomer mobility diffusion coefficients must be non-negative and in the model's range: 0, or 1e-50 to 1e50"))
             end
             if !(abs(sum(m -> m[1], monomer_mobility) - 1) <= 1e-9)
                 throw(ArgumentError("Monomer mobility fractions must sum to 1"))
@@ -226,7 +230,7 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
         end
         velocities = Tuple{Vararg{Float64}}[_velocity_ndims(v, nothing, "each monomer_velocity entry")
                                             for v in monomer_velocity]
-        _check_monomer_velocity(velocities, monomer_mobility, ndims, dt)
+        _check_monomer_velocity(velocities, monomer_mobility, ndims)
 
         new(density, box_size, diff_monomer, diff_dimer, diff_dimer_rot,
             k_off, r_react, d_dimer, dt, t_max, ndims, boundary,
@@ -234,34 +238,35 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     end
 end
 
+# The model's range (docs/src/diffusion/rules.md, Range): 0, or a magnitude from 1e-50 to 1e50, so that the
+# products, squares and step scales the simulation computes from these numbers (up to sqrt(2·D_pair·dt) with the
+# :min pair coefficient, three of them multiplied) stay normal Float64. Internal.
+_in_model(x::Real) = iszero(x) || 1e-50 <= abs(x) <= 1e50
+
 # A velocity given as a tuple or vector, as a tuple of Float64. Internal.
 _velocity_tuple(v) = Tuple(Float64(x) for x in v)
 
 # A velocity as a tuple of Float64, of `ndims` components (any number when `ndims` is nothing), or ArgumentError:
-# not a tuple or vector of numbers, the wrong length, or a component not finite in Float64. Internal.
+# not a tuple or vector of numbers, the wrong length, or a component outside the model's range as a Float64 (NaN and
+# Inf included). Internal.
 function _velocity_ndims(v, ndims::Union{Int,Nothing}, what::AbstractString="velocity")
     (v isa Union{Tuple,AbstractVector} && all(x -> x isa Real, v)) ||
         throw(ArgumentError("$what must be a tuple or vector of $(something(ndims, "ndims")) numbers (μm/s); got $(repr(v))"))
     t = _velocity_tuple(v)
     ndims === nothing || length(t) == ndims ||
         throw(ArgumentError("$what must have ndims = $ndims components (μm/s); got $(length(t))"))
-    all(isfinite, t) || throw(ArgumentError("$what components must be finite; got $t"))
+    all(_in_model, t) ||
+        throw(ArgumentError("$what components must be in the model's range: 0, or a magnitude from 1e-50 to 1e50 μm/s; got $t"))
     return ndims === nothing ? t : ntuple(k -> t[k], ndims)
 end
 
-# A velocity whose step v·dt is finite on every axis, else ArgumentError (so a position stays finite). Internal.
-_check_step(v, dt::Float64, what::AbstractString) =
-    all(x -> isfinite(x * dt), v) ||
-    throw(ArgumentError("$what times dt = $dt must be finite on every axis; got $v μm/s"))
-
 # `simulate`'s `track_velocity` as Dict{Int,NTuple{ndims,Float64}} (nothing when not given). Internal.
-function _check_track_velocity(given, ndims::Int, dt::Float64)
+function _check_track_velocity(given, ndims::Int)
     given === nothing && return nothing
     out = Dict{Int,NTuple{ndims,Float64}}()
     for (id, v) in given
         _track_key(id, "track_velocity")
         out[Int(id)] = _velocity_ndims(v, ndims, "track_velocity[$id]")
-        _check_step(out[Int(id)], dt, "track_velocity[$id]")
     end
     return out
 end
@@ -271,7 +276,7 @@ _track_key(id, name) =
     (id isa Real && !(id isa Bool) && isfinite(id) && isinteger(id) && typemin(Int) <= id <= typemax(Int)) ||
     throw(ArgumentError("$name keys must be track_id integers; got $(repr(id))"))
 
-# `simulate`'s `track_D` as Dict{Int,Float64}, each finite and >= 0 (nothing when not given). Internal.
+# `simulate`'s `track_D` as Dict{Int,Float64}, each >= 0 and in the model's range (nothing when not given). Internal.
 function _check_track_D(given)
     given === nothing && return nothing
     out = Dict{Int,Float64}()
@@ -279,25 +284,24 @@ function _check_track_D(given)
         _track_key(id, "track_D")
         # Checked as the Float64 it is stored as, so a value that converts to Inf is caught
         d = D isa Real ? Float64(D) : NaN
-        (isfinite(d) && d >= 0) ||
-            throw(ArgumentError("track_D[$id] must be a finite diffusion coefficient >= 0 (μm²/s); got $D"))
+        (d >= 0 && _in_model(d)) ||
+            throw(ArgumentError("track_D[$id] must be a diffusion coefficient >= 0 in the model's range, 0 or 1e-50 to 1e50 μm²/s; got $D"))
         out[Int(id)] = d
     end
     return out
 end
 
-# `monomer_velocity` against the mixture, ndims and dt: one entry with no mixture, one per population with one,
-# each with ndims finite components and a finite step v·dt. Called by the constructor and again by `simulate`
-# (the config is mutable). Internal.
-function _check_monomer_velocity(velocities, mixture, ndims, dt)
+# `monomer_velocity` against the mixture and ndims: one entry with no mixture, one per population with one, each
+# with ndims components in the model's range. Called by the constructor and again by `simulate` (the config is
+# mutable). Internal.
+function _check_monomer_velocity(velocities, mixture, ndims)
     isempty(velocities) && return nothing
     n = isempty(mixture) ? 1 : length(mixture)
     length(velocities) == n || throw(ArgumentError(isempty(mixture) ?
         "monomer_velocity must have exactly one entry (the velocity of every monomer) when monomer_mobility is empty; got $(length(velocities))" :
         "monomer_velocity must have one entry per monomer_mobility population ($n); got $(length(velocities))"))
     for v in velocities
-        _check_step(_velocity_ndims(v, ndims, "each monomer_velocity entry"), Float64(dt),
-                    "each monomer_velocity entry")
+        _velocity_ndims(v, ndims, "each monomer_velocity entry")
     end
     return nothing
 end
@@ -817,9 +821,9 @@ function simulate(params::DiffusionSMLMConfig;
 
     start_time = time_ns()
 
-    # The config is mutable: check its velocities again against the mixture, ndims and dt as they are now
-    _check_monomer_velocity(params.monomer_velocity, params.monomer_mobility, params.ndims, params.dt)
-    v_keyword = _check_track_velocity(track_velocity, params.ndims, params.dt)
+    # The config is mutable: check its velocities again against the mixture and ndims as they are now
+    _check_monomer_velocity(params.monomer_velocity, params.monomer_mobility, params.ndims)
+    v_keyword = _check_track_velocity(track_velocity, params.ndims)
     D_keyword = _check_track_D(track_D)
 
     if !isempty(kwargs)
@@ -967,7 +971,10 @@ function simulate(params::DiffusionSMLMConfig;
     for e in emitters
         id = e.track_id
         if prior_D !== nothing && haskey(prior_D, id)
-            mol_D[id] = Float64(prior_D[id])
+            d = prior_D[id] isa Real ? Float64(prior_D[id]) : NaN
+            (d >= 0 && _in_model(d)) ||
+                throw(ArgumentError("the saved D of track $id (starting_conditions metadata \"monomer_D\") must be >= 0 in the model's range, 0 or 1e-50 to 1e50 μm²/s; got $(repr(prior_D[id]))"))
+            mol_D[id] = d
             k = prior_class !== nothing && haskey(prior_class, id) ? Int(prior_class[id]) :
                 findfirst(c -> c[2] == mol_D[id], src_mix)
             k === nothing || (track_class[id] = k)
@@ -992,9 +999,8 @@ function simulate(params::DiffusionSMLMConfig;
         # A track that track_velocity names takes the keyword's velocity (below); its saved one is not read
         v_keyword !== nothing && haskey(v_keyword, id) && continue
         if prior_v !== nothing && haskey(prior_v, id)
-            what = "the saved velocity of track $id (starting_conditions metadata \"monomer_velocity\")"
-            mol_v[id] = _velocity_ndims(prior_v[id], params.ndims, what)
-            _check_step(mol_v[id], params.dt, what)
+            mol_v[id] = _velocity_ndims(prior_v[id], params.ndims,
+                                        "the saved velocity of track $id (starting_conditions metadata \"monomer_velocity\")")
         else
             cv = config_velocity(id)
             cv === nothing || (mol_v[id] = cv)

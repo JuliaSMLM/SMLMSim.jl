@@ -36,10 +36,17 @@ numbers of the coordinate type; for a subnormal displacement any finite unit dir
 acceptable. A zero displacement (partners at exactly the same position) is taken as +x, with
 no random draw of its own.
 
-**Range.** Coordinates are micrometres. Displacements, positions and box sizes beyond about
-`1e150` in magnitude are outside the model (their squares overflow Float64), and these rules
-promise nothing there. With Float32 coordinates the limit is Float32's range, about `3e38`: a
-diffusion step beyond it overflows the coordinate.
+**Range.** Coordinates are micrometres and times seconds. Every number of a `DiffusionSMLMConfig`
+but `r_react`, every velocity component (the config's, `track_velocity` or a saved one) and every
+per-molecule D (`track_D` or a saved one) is 0 or has a magnitude from `1e-50` to `1e50`; `k_off`
+may also be infinite, and `r_react` may be any value `>= 0`, infinite included (it is only compared
+with a distance, which is scaled against underflow). Construction and `simulate` throw
+`ArgumentError` otherwise. In that range the products, squares and step scales the simulation
+computes, such as `sqrt(2·D·dt)`, `v·dt` and the `:min` pair coefficient, are normal Float64
+numbers. Positions given in `starting_conditions` beyond about `1e150` in magnitude are outside the
+model (their squares overflow Float64), and these rules promise nothing there. With Float32
+coordinates the limit is Float32's range, about `3e38`: a diffusion step beyond it overflows the
+coordinate.
 
 ### A bound pair and the box
 
@@ -137,8 +144,7 @@ one to single molecules.
   than the box folds back as often as it crosses a wall (before 0.7.4 such a step stopped at the wall, with or without
   a velocity). Under periodic boundaries it wraps. The drift and the boundary are applied in Float64 and the position
   is converted to its coordinate type once, so a drift within the model's range (Range, above) leaves the molecule
-  finite and inside the box, with Float32 coordinates too. Each component of `v·dt` must be finite (`ArgumentError`
-  otherwise).
+  finite and inside the box, with Float32 coordinates too.
 - **Binding.** The pair search runs at the start of each step, on the positions the previous step left, as without a
   velocity: two monomers closer than `r_react` there form a pair in that step instead of moving. So molecules that
   come within `r_react` at time `t` are still monomers at `t` and a pair from `t + dt`; a record shows the pair only
