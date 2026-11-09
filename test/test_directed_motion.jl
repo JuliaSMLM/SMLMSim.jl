@@ -123,10 +123,11 @@ end
     end
 
     @testset "no velocity: main's output and random stream (golden values)" begin
-        # Recorded by running main b016876 with dev/record_golden_diffusion.jl (keep its cases identical to these),
-        # identical on Julia 1.10, 1.11, 1.12 and 1.13. Julia does not promise its random streams across versions, and a
-        # few rare randn draws differ between them, so these cases are ones that agree on all four. The next rand()
-        # after each run pins the random stream: an extra draw fails it.
+        # Recorded by running these three cases, as written (with this file's coords and DM), on main b016876: a
+        # `git archive` of it developed in a temporary environment that adds Random. Identical on Julia 1.10, 1.11,
+        # 1.12 and 1.13. Julia does not promise its random streams across versions, and a few rare randn draws differ
+        # between them, so these cases are ones that agree on all four. The next rand() after each run pins the
+        # random stream: an extra draw fails it. Re-record only when a toolchain change moves the random numbers.
         fingerprint(s) = (n = length(s.emitters);
             (n, count(e -> e.state == :dimer, s.emitters), [coords(s.emitters[i]) for i in (1, n ÷ 2, n)],
              sum(Float64(e.x) for e in s.emitters), rand()))
