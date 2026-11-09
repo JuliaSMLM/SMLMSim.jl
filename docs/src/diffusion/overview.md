@@ -163,8 +163,9 @@ smld, info = simulate(params; override_count = 10,
 
 Each molecule's velocity is saved in `smld.metadata["monomer_velocity"]` and kept by continuation of a
 single run (not of a concatenation or merge), with a warning when the new config's `monomer_velocity`
-differs from the run's. A bound pair drifts at the
-mean of its partners' velocities, a molecule with a velocity is not immobile for the pair rules below,
+differs from the run's. A bound pair drifts at its partners' velocities weighted by drag (`1/D`) under
+`pair_mobility = :min`, so a partner with D 0 carries it and a still one holds it, and at their plain mean under
+`:fixed`; a molecule with a velocity is not immobile for the pair rules below,
 and in a reflecting box a molecule driven into a wall stays within one step's displacement of it (its
 velocity is not reversed); a step longer than the box folds back off the walls as often as it crosses
 them, with or without a velocity (before 0.7.4 it stopped at the wall).

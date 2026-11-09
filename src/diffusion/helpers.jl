@@ -769,6 +769,22 @@ function _move_pair(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, 
     return _put(e1, map(x -> _reflect(x, box), q1), box), _put(e2, map(x -> _reflect(x, box), q2), box)
 end
 
+# A starting molecule brought into the box (docs/src/diffusion/rules.md, Range). Every coordinate must be finite. A
+# coordinate in [0, box] keeps its stored value. Under periodic boundaries one outside is wrapped to its image in the
+# box (`_bounded`), as the first step would wrap it. Under reflecting boundaries one beyond a wall throws, except a
+# coordinate up to the box written in its own type (a Float32 box can round above box_size), which is clamped
+# inside. Internal.
+function _enter(e::AbstractDiffusingEmitter, params)
+    box, T, c = params.box_size, typeof(e.x), _coords(e)
+    all(isfinite, c) ||
+        throw(ArgumentError("starting_conditions: molecule $(e.track_id) is at $c; a starting position must be finite"))
+    all(x -> 0 <= x <= box, c) && return e
+    params.boundary == "periodic" && return _at(e, map(x -> 0 <= x <= box ? x : _bounded(T, x, box, false), c))
+    all(x -> 0 <= x <= T(box), c) ||
+        throw(ArgumentError("starting_conditions: molecule $(e.track_id) is at $c, outside the box [0, $box] μm; with reflecting boundaries every starting position must lie inside it"))
+    return _at(e, map(x -> x <= box ? x : _top(T, box), c))
+end
+
 # `e` at the Float64 point `q`, converted to its coordinate type once and clamped into [0, box]
 _put(e::AbstractDiffusingEmitter, q::NTuple{N,Float64}, box::Float64) where {N} =
     _at(e, map(x -> _inbox(typeof(e.x), x, box), q))

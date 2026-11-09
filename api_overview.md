@@ -97,7 +97,7 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
 end
 ```
 
-Directed motion: each monomer step is `v·dt` plus the Gaussian diffusion step (variance `2·D·dt` per axis). `simulate`'s keywords `track_velocity` (`track_id => velocity`) and `track_D` (`track_id => D`) set single molecules; velocities are saved in `smld.metadata["monomer_velocity"]` and kept by continuation of a single run (not of a concatenation or merge). A bound pair drifts at the mean of its partners' velocities; a molecule with a velocity is not immobile.
+Directed motion: each monomer step is `v·dt` plus the Gaussian diffusion step (variance `2·D·dt` per axis). `simulate`'s keywords `track_velocity` (`track_id => velocity`) and `track_D` (`track_id => D`) set single molecules; velocities are saved in `smld.metadata["monomer_velocity"]` and kept by continuation of a single run (not of a concatenation or merge). A bound pair drifts at its partners' velocities weighted by drag (`1/D`) under `pair_mobility = :min` (a partner with D 0 carries it, a still one holds it) and at their mean under `:fixed`; a molecule with a velocity is not immobile.
 
 camera_exposure and 1/camera_framerate should be integer multiples of dt (otherwise `simulate` rounds to the nearest step count and warns). The `γ` passed to `simulate` is the emission rate in photons/s; each of the n_sub = camera_exposure/dt records in a frame carries γ·dt. The deprecated `photons` keyword (removed in 0.8.0) is photons per record, equal to `γ = photons/dt`; without either, records carry 1000 photons.
 

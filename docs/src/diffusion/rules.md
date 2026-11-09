@@ -51,8 +51,11 @@ range the products, squares and step scales the simulation computes, such as `sq
 scaled against underflow; a dissociation spacing it makes too large to place (infinite included)
 fails the fit test, and the partners stay where they are (Dissociation, below).
 
-Positions given in `starting_conditions` must lie inside the box, in `[0, box_size]` on every axis;
-`simulate` throws `ArgumentError` otherwise. Coordinates, photons and
+Positions given in `starting_conditions` must be finite (`ArgumentError` otherwise), and a coordinate in
+`[0, box_size]` is used as given. Under periodic boundaries a position outside the box names its image in the
+box: each coordinate outside is wrapped at entry, as the first step would wrap it, so no record lies outside the
+box. Under reflecting boundaries a position beyond a wall throws `ArgumentError`, except a coordinate up to the box
+written in its own type (`Float32(box_size)` can round above `box_size`), which is clamped inside. Coordinates, photons and
 timestamps are stored in each emitter's own type: with Float32 starting conditions (all or some),
 `simulate` throws `ArgumentError` when the box, the run's duration or the photons per record a `γ`
 restamp gives does not fit Float32 (about `3e38`); photons kept from the source, or set by the
@@ -156,11 +159,14 @@ one to single molecules.
   velocity), then the displacement `v·dt`, then the boundary. A zero velocity takes exactly the step without one, so
   the output and the random stream are unchanged.
 - **A wall.** In a reflecting box the position is reflected off the wall it crossed, as for any monomer step, and the
-  velocity is not reversed, so a molecule driven into a wall stays within one step's displacement of it. A step longer
-  than the box folds back as often as it crosses a wall (before 0.7.4 such a step stopped at the wall, with or without
-  a velocity). Under periodic boundaries it wraps. The drift and the boundary are applied in Float64 and the position
-  is converted to its coordinate type once, so a drift within the model's range (Range, above) leaves the molecule
-  finite and inside the box, with Float32 coordinates too.
+  velocity is not reversed, so a molecule driven into a wall stays within one step's displacement of it: it piles up
+  at the wall, as a constant force against a wall that passes nothing does. Near a wall the drift is resolved to about
+  `sqrt(2·D·dt)`, so the layer at the wall is resolved better at smaller `dt`. A step longer than the box folds back as
+  often as it crosses a wall (before 0.7.4 such a step stopped at the wall, with or without a velocity). Under
+  periodic boundaries it wraps. The drift and the boundary are applied in Float64 to the stored position after the
+  diffusion step, which is converted once more to its coordinate type (so a Float32 molecule with D > 0 and a
+  velocity is rounded twice, by at most one unit in the last place), and a drift within the model's range (Range,
+  above) leaves the molecule finite and inside the box, with Float32 coordinates too.
 - **Binding.** The pair search runs at the start of each step, on the positions the previous step left, as without a
   velocity: two monomers closer than `r_react` there form a pair in that step instead of moving. So molecules that
   come within `r_react` at time `t` are still monomers at `t` and a pair from `t + dt`; a record shows the pair only
@@ -170,12 +176,19 @@ one to single molecules.
   pairs given in `starting_conditions` still dissociate at `k_off`.
 - **Float32 coordinates** move in whole units of their precision: a drift step `v·dt` below the coordinate's
   resolution is rounded, and a molecule with D 0 and a very small velocity can move slower than `v`, or not at all.
-- **A bound pair** drifts at the mean of its partners' velocities (overdamped force balance with equal drag; a partner
-  without a velocity counts as zero). The drift is added to the pair's center after its diffusion and rotation draws.
-  The formation step places the pair without drift, as it does without diffusion. An anchored pair does not move.
+- **A bound pair** drifts at the pair velocity, from overdamped force balance (a partner without a velocity counts as
+  zero). Under `:min`, where the pair's diffusion follows the slower partner, the partners' velocities are weighted
+  by their drag `1/D`: `v = (v1·D2 + v2·D1)/(D1 + D2)`. So a partner with D 0 carries the pair at its own velocity,
+  a still partner holds it (the anchor), and a partner of very small D nearly does; with both at D 0, the plain
+  mean. Under `:fixed`, whose pair diffusion does not depend on the partners, the plain mean (equal drag). The
+  velocities move only the pair's center and apply no torque: partners moving in opposite directions across the bond
+  neither move nor turn the pair. The drift is added to the pair's center after its diffusion and rotation draws. On
+  the formation step a mobile pair with a velocity is placed about its partners' midpoint moved by `v·dt` (no
+  diffusion on that step), so re-binding does not cost the pair its drift. An anchored pair does not move.
 - **Immobile** means monomer D 0 and no velocity, everywhere these rules or `pair_mobility` say immobile: the `:min`
   anchor at formation, while bound and at dissociation, the `:fixed` warning, and `frame_dimer_truth`'s `mixed`. A
-  molecule with D 0 and a velocity is mobile. Under `:min` its pair has D 0 (the pair rule is by D) and only drifts.
+  molecule with D 0 and a velocity is mobile. Under `:min` its pair has D 0 (the pair rule is by D) and moves at its
+  velocity.
 - **Single molecules.** `track_velocity` and `track_D` replace the velocity and D of the molecules they name.
   Populations are still drawn for every molecule, so the other molecules' draws are unchanged.
 - **Saved.** When the run has any velocity (the config's, a keyword's or a continued run's),

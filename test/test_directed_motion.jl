@@ -123,7 +123,7 @@ end
     end
 
     @testset "no velocity: main's output and random stream (golden values)" begin
-        # Recorded by running these three cases, as written (with this file's coords and DM), on main b016876: a
+        # Recorded by running these four cases, as written (with this file's coords and DM), on main b016876: a
         # `git archive` of it developed in a temporary environment that adds Random. Identical on Julia 1.10, 1.11,
         # 1.12 and 1.13. Julia does not promise its random streams across versions, and a few rare randn draws differ
         # between them, so these cases are ones that agree on all four. The next rand() after each run pins the
@@ -153,6 +153,14 @@ end
                                             diff_monomer=0.2, k_off=4.0); starting_conditions=start, γ=1000.0)
         @test fingerprint(s) == (270, 88, [(0.1f0, 0.05f0), (0.96876913f0, 0.75858253f0), (0.8480124f0, 0.7458643f0)],
                                  145.99921490997076, 0.8814223011579213)
+        # pairs under :min, with an immobile population that anchors them
+        Random.seed!(4720)
+        s, _ = simulate(DiffusionSMLMConfig(density=20.0, box_size=1.0, t_max=0.3, r_react=0.03, d_dimer=0.04, k_off=5.0,
+                                            pair_mobility=:min, monomer_mobility=[(0.5, 0.0), (0.5, 0.1)]); γ=1000.0)
+        @test fingerprint(s) == (600, 138, [(0.16784893727491557, 0.5166214411013826),
+                                            (0.7344727069854331, 0.7657460848550725),
+                                            (0.3765372003785822, 0.9434560436483502)],
+                                 278.86499107241286, 0.22744500809952528)
     end
 
     @testset "bound pair" begin
@@ -169,10 +177,17 @@ end
             @test all(d -> isapprox(d[1], 0.005; atol=1e-12) && isapprox(d[2], 0.002; atol=1e-12), disp(s, id))
         end
         @test all(isapprox(hypot(a.x - b.x, a.y - b.y), 0.05; atol=1e-12) for (a, b) in zip(track(s, 1), track(s, 2)))
-        # :min, a directed member with D = 0 is not immobile: the pair (D_pair = 0) only drifts
+        # :min weights the partners' velocities by drag 1/D: a directed member with D = 0 (not immobile) carries the
+        # pair at its own velocity, and the pair (D_pair = 0) only drifts
         s = run(:min; track_velocity=Dict(1 => (1.0, 0.0)), track_D=Dict(1 => 0.0))
-        @test all(d -> isapprox(d[1], 0.005; atol=1e-12) && d[2] == 0, disp(s, 2))
+        @test all(d -> isapprox(d[1], 0.01; atol=1e-12) && d[2] == 0, disp(s, 2))
         @test !any(r -> r.mixed, frame_dimer_truth(s))
+        # a partner of D 0.3 bound to a directed one of D 0.1: (v1·D2 + v2·D1)/(D1 + D2) = 0.75 μm/s
+        s = run(:min; track_velocity=Dict(1 => (1.0, 0.0)), track_D=Dict(1 => 0.1, 2 => 0.3))
+        @test all(d -> isapprox(d[1], 0.0075; atol=1e-12) && d[2] == 0, disp(s, 2))
+        # a still partner at D = 1e-50 nearly holds the pair, as one at D = 0 anchors it (no jump at D = 0)
+        s = run(:min; track_velocity=Dict(1 => (1.0, 0.0)), track_D=Dict(2 => 1e-50))
+        @test all(d -> abs(d[1]) < 1e-12 && abs(d[2]) < 1e-12, disp(s, 1))
         # :min, an immobile member (D = 0, no velocity) anchors the pair: its partner's velocity does not move it
         s = run(:min; track_velocity=Dict(1 => (1.0, 0.0)), track_D=Dict(2 => 0.0))
         @test all(d -> d == (0.0, 0.0), disp(s, 1)) && all(d -> d == (0.0, 0.0), disp(s, 2))
@@ -215,7 +230,7 @@ end
         last_x = [e.x for e in smld.emitters if e.frame == smld.n_frames]
         @test all(x -> x >= p.box_size - 2.0 * p.dt - 1e-12, last_x)  # held within one step of the wall
 
-        # A step longer than the box folds back off the walls as often as it crosses them (Codex review r2: one
+        # A step longer than the box folds back off the walls as often as it crosses them (before, one
         # reflection then a clamp left such a step at the wall), with drift and boundary in Float64
         mono(x; T=Float64) = DM.DiffusingEmitter2D{T}(T(x), T(0.5), 10.0, 0.0, 1, 1, 1, :monomer, nothing)
         box1(b) = dm_config(diff_monomer=0.0, box_size=1.0, boundary=b, r_react=0.0)
@@ -237,7 +252,7 @@ end
         lp = [DM.DiffusingEmitter2D{Float64}(0.2, 0.5, 10.0, 0.0, 1, 1, 1, :dimer, 2),
               DM.DiffusingEmitter2D{Float64}(0.8, 0.5, 10.0, 0.0, 1, 1, 2, :dimer, 1)]
         @test [e.x for e in DM.update_system(lp, long, 0.01)] == [0.0, 1.0]
-        # a drift beyond Float32's range leaves a Float32 coordinate finite and inside the box (Codex review r2)
+        # a drift beyond Float32's range leaves a Float32 coordinate finite and inside the box
         for b in ("periodic", "reflecting")
             x = step1(b, 0.25, 1e41; T=Float32).x
             @test isfinite(x) && 0 <= x <= 1
@@ -246,21 +261,25 @@ end
         p3 = dm_config(ndims=3, diff_monomer=0.0, box_size=1.0, r_react=0.0)
         @test all(c -> isfinite(c) && 0 <= c <= 1,
                   coords(only(DM.update_system([e3f], p3, 0.01; track_v=Dict(1 => (1e41, 0.0, -1e41))))))
-        # the mean of two finite velocities never overflows, and a pair moving at it stays finite (Codex review r2)
-        @test DM._pair_velocity((1e308, -1e308), (1e308, -1e308)) == (1e308, -1e308)
-        @test DM._pair_velocity((1.0, 3.0), (2.0, -1.0)) == (1.5, 1.0)
-        u = nextfloat(0.0)  # nor does it underflow (Codex review r3)
-        @test DM._pair_velocity((u, 0.0), (u, 0.0)) == (u, 0.0)
+        # a pair's velocity: under :fixed the plain mean (a partner without one counts as zero); under :min weighted
+        # by drag 1/D, so a partner with D 0 carries the pair, a still partner holds it, and both at D 0 give the mean
+        @test DM._pair_velocity((1.0, 3.0), (2.0, -1.0), 0.1, 0.3, :fixed) == (1.5, 1.0)
+        @test DM._pair_velocity((1.0, 0.0), nothing, 0.2, 0.2, :fixed) == (0.5, 0.0)
+        @test DM._pair_velocity((1.0, 0.0), nothing, 0.0, 0.2, :min) == (1.0, 0.0)
+        @test DM._pair_velocity((1.0, 0.0), nothing, 0.2, 0.0, :min) == (0.0, 0.0)
+        @test all(isapprox.(DM._pair_velocity((1.0, 0.0), (0.0, 1.0), 0.1, 0.3, :min), (0.75, 0.25)))
+        @test DM._pair_velocity((1.0, 0.0), (0.0, 1.0), 0.0, 0.0, :min) == (0.5, 0.5)
+        @test DM._pair_velocity(nothing, nothing, 0.1, 0.1, :min) === nothing
         # a coordinate past the wall is wrapped or reflected in its own type before the conversion, as on main, BigFloat
-        # included (Codex review r3); one the boundary leaves in place keeps its stored value, so a BigFloat is not
-        # rounded through Float64 (Codex review r8; main rounded 1 - 2^-60 to 1)
+        # included; one the boundary leaves in place keeps its stored value, so a BigFloat is not
+        # rounded through Float64 (main rounded 1 - 2^-60 to 1)
         eb(x) = DM.DiffusingEmitter2D{BigFloat}(x, BigFloat(0.5), 10.0, 0.0, 1, 1, 1, :monomer, nothing)
         @test DM.apply_boundary(eb(BigFloat(1) + BigFloat(2)^-60), 1.0, "periodic").x == BigFloat(2)^-60
         for b in ("periodic", "reflecting")
             @test DM.apply_boundary(eb(BigFloat(1) - BigFloat(2)^-60), 1.0, b).x == BigFloat(1) - BigFloat(2)^-60
         end
         # -0.0 as on main: kept when nothing else moves; wrapped to +0.0 under periodic boundaries when another
-        # coordinate moves (Codex review r9); reflecting keeps -0.0; a zero diffusion step gives +0.0
+        # coordinate moves; reflecting keeps -0.0; a zero diffusion step gives +0.0
         for b in ("periodic", "reflecting")
             @test DM.apply_boundary(mono(-0.0), 1.0, b).x === -0.0
         end
@@ -273,11 +292,24 @@ end
         for T in (Float32, Float64), b in ("periodic", "reflecting"), x in (0.0, 0.3, 0.1, 0.999)
             @test DM.apply_boundary(mono(x; T), 1.0, b).x === T(x)
         end
-        pr = [DM.DiffusingEmitter2D{Float64}(0.5, 0.5, 10.0, 0.0, 1, 1, 1, :dimer, 2),
-              DM.DiffusingEmitter2D{Float64}(0.55, 0.5, 10.0, 0.0, 1, 1, 2, :dimer, 1)]
-        pp = dm_config(box_size=1.0, diff_dimer=0.0, diff_dimer_rot=0.0, k_off=0.0, d_dimer=0.05)
-        out = DM.update_system(pr, pp, 1e-308; track_v=Dict(1 => (1e308, 0.0), 2 => (1e308, 0.0)))
-        @test length(out) == 2 && all(e -> all(c -> isfinite(c) && 0 <= c <= 1, coords(e)), out)
+    end
+
+    @testset "the step is type stable, with or without a velocity" begin
+        # The config's velocity enters the step as a concrete tuple, and no local of the step is boxed: an abstract
+        # velocity or a boxed local compiles the step to dynamic calls, about 55% slower even with no velocity set
+        for nd in (2, 3), pm in (:fixed, :min)
+            p = dm_config(ndims=nd, pair_mobility=pm)
+            @test DM._uniform_velocity(p, Val(nd)) === nothing
+            @test only(Base.return_types(DM._uniform_velocity, (typeof(p), Val{nd}))) <: Union{Nothing,NTuple{nd,Float64}}
+            pv = dm_config(ndims=nd, pair_mobility=pm, monomer_velocity=[ntuple(_ -> 0.5, nd)])
+            @test DM._uniform_velocity(pv, Val(nd)) === ntuple(_ -> 0.5, nd)
+            E = nd == 2 ? DM.DiffusingEmitter2D{Float64} : DM.DiffusingEmitter3D{Float64}
+            for tv in (Nothing, Dict{Int,NTuple{nd,Float64}}), tD in (Nothing, Dict{Int,Float64})
+                ci = only(code_typed(DM._update_system, (Vector{E}, typeof(p), Float64,
+                                                         Union{Nothing,NTuple{nd,Float64}}, tD, tv, Nothing, Nothing)))
+                @test !occursin("Core.Box", sprint(show, ci))
+            end
+        end
     end
 
     @testset "continuation" begin
@@ -301,7 +333,7 @@ end
         p2 = dm_config(monomer_mobility=mix, monomer_velocity=[(2.0, 0.0), (0.0, 2.0)], t_max=0.1)
         cont2, _ = @test_logs (:warn, r"keep their saved velocity") match_mode=:any simulate(p2; starting_conditions=smld)
         @test cont2.metadata["monomer_velocity"] == smld.metadata["monomer_velocity"]
-        # the same config: kept, no warning; a molecule whose D was set with track_D keeps moving (review r1, M1)
+        # the same config: kept, no warning; a molecule whose D was set with track_D keeps moving
         u = dm_config(monomer_velocity=[(0.5, 0.0)], t_max=0.3)
         s1, _ = simulate(u; override_count=5, γ=1000.0, track_D=Dict(1 => 0.0))
         s2, _ = @test_logs simulate(u; starting_conditions=s1)
@@ -311,7 +343,7 @@ end
                         merge(copy(smld.metadata), Dict{String,Any}("concatenated_from" => 2)))
         ext2 = @test_logs (:warn, r"concatenation") match_mode=:any extract_end_state(tie)
         @test !haskey(ext2.metadata, "monomer_velocity")
-        # the identical config after a run that named a track: kept, no warning (review r2, S1)
+        # the identical config after a run that named a track: kept, no warning
         k = dm_config(t_max=0.3)
         k1, _ = simulate(k; override_count=5, γ=1000.0, track_velocity=Dict(1 => (0.5, 0.0)), track_D=Dict(1 => 0.0))
         @test k1.metadata["monomer_velocity_config"] == []
@@ -327,7 +359,7 @@ end
         mdD["monomer_D"] = merge(copy(k1.metadata["monomer_D"]), Dict(2 => 1e60))
         @test_throws r"saved D of track 2" simulate(k; starting_conditions=BasicSMLD(k1.emitters, k1.camera,
                                                                                     k1.n_frames, k1.n_datasets, mdD))
-        # a saved velocity that track_velocity replaces is not read (Codex review r3)
+        # a saved velocity that track_velocity replaces is not read
         md2 = copy(k1.metadata)
         md2["monomer_velocity"] = merge(copy(k1.metadata["monomer_velocity"]), Dict(2 => (1e308, 0.0)))
         huge = BasicSMLD(k1.emitters, k1.camera, k1.n_frames, k1.n_datasets, md2)
@@ -343,8 +375,8 @@ end
         cls3, mv3 = src3.metadata["monomer_class"], c3.metadata["monomer_velocity"]
         @test any(==(3), values(cls3))
         @test all(mv3[id] == (cls3[id] == 3 ? (0.0, 0.0) : two.monomer_velocity[cls3[id]]) for id in keys(cls3))
-        # a kept D that is no population's gives no class, so no population's velocity (Codex review r2: class 1
-        # was invented, and with it population 1's velocity)
+        # a kept D that is no population's gives no class, so no population's velocity (before,
+        # class 1 was invented, and with it population 1's velocity)
         s0, _ = simulate(dm_config(t_max=0.02); override_count=1, γ=1000.0, track_D=Dict(1 => 0.0))
         pops = dm_config(monomer_mobility=[(0.5, 0.1), (0.5, 0.2)], monomer_velocity=[(1.0, 0.0), (0.0, 1.0)], t_max=0.05)
         c0, _ = @test_logs (:warn, r"monomer_mobility differs") match_mode=:any simulate(pops; starting_conditions=s0)
@@ -353,7 +385,6 @@ end
         c1, _ = @test_logs simulate(pops; starting_conditions=c0)
         @test !haskey(c1.metadata["monomer_class"], 1) && allequal(coords(e) for e in c1.emitters)
         # the two warnings count only tracks that keep their saved velocity or D: none when the keywords name them all
-        # (Codex review r2)
         allv = Dict(id => (3.0, 0.0) for id in keys(smld.metadata["monomer_velocity"]))
         c4, _ = @test_logs simulate(p2; starting_conditions=smld, track_velocity=allv)
         @test all(==((3.0, 0.0)), values(c4.metadata["monomer_velocity"]))
@@ -372,13 +403,14 @@ end
         sim(p, start; kw...) = (Random.seed!(9180); simulate(p; starting_conditions=start, γ=1000.0, kw...)[1])
         D0 = Dict(1 => 0.0, 2 => 0.0)
         # two directed molecules with D 0 form a pair: neither is immobile, so under :min they are placed about
-        # their midpoint (not anchored), with no drift on the formation step; under :fixed there is no warning
+        # their midpoint (not anchored), and on the formation step the pair drifts at its velocity, here the mean
+        # (0.5, 0.25) μm/s as both have D 0: midpoint 1.002 + 0.005; under :fixed there is no warning
         for pm in (:min, :fixed)
             s = @test_logs sim(cfg(pm), [mono(1, 1.0), mono(2, 1.004)]; track_D=D0,
                                track_velocity=Dict(1 => (1.0, 0.0), 2 => (0.0, 0.5)))
             a, b = at(s, 1, 0.01), at(s, 2, 0.01)
-            @test a.state == :dimer && isapprox(a.x, 0.992; atol=1e-12) && isapprox(b.x, 1.012; atol=1e-12)
-            @test a.y == 1.0 && b.y == 1.0
+            @test a.state == :dimer && isapprox(a.x, 0.997; atol=1e-12) && isapprox(b.x, 1.017; atol=1e-12)
+            @test isapprox(a.y, 1.0025; atol=1e-12) && isapprox(b.y, 1.0025; atol=1e-12)
         end
         # a directed D 0 molecule meets an immobile one under :min: the immobile one anchors
         s = sim(cfg(:min), [mono(1, 1.0), mono(2, 1.004)]; track_D=D0, track_velocity=Dict(1 => (1.0, 0.0)))
@@ -400,7 +432,7 @@ end
         @test at(s, 2, 0.01).x == 1.05 && isapprox(at(s, 2, 0.01).y, 1.01; atol=1e-12)
     end
 
-    @testset "partners of different coordinate types each keep their own (Codex review r7)" begin
+    @testset "partners of different coordinate types each keep their own" begin
         # main threw MethodError when a Float64 and a Float32 molecule formed or kept a pair, and dissociation
         # converted the partner to the first molecule's type
         e(T, id, x; state=:monomer, partner=nothing, ph=10.0) =
@@ -443,7 +475,7 @@ end
             # the center 0.005 folds off 0.01 (the wall moved in by the half-bond) to 0.015
             @test isapprox(Float64(o1.x), 0.005; atol=1e-7) && isapprox(Float64(o2.x), 0.025; atol=1e-7)
         end
-        # Codex's case: a Float64 partner keeps its coordinates and photons when its Float32 partner dissociates
+        # a Float64 partner keeps its coordinates and photons when its Float32 partner dissociates
         p = dm_config(box_size=1.0, diff_monomer=0.0, r_react=0.0, k_off=Inf)
         out = DM.update_system(DM.AbstractDiffusingEmitter[e(Float32, 1, 0.5; state=:dimer, partner=2),
                                                          e(Float64, 2, 0.50000001; state=:dimer, partner=1, ph=1e40)], p, 0.01)
@@ -462,7 +494,7 @@ end
         @test all(r -> typeof(r.x) == (r.track_id == 1 ? Float64 : Float32), s.emitters)
     end
 
-    @testset "an immobile molecule keeps its stored coordinates; starts lie inside the box (Codex review r8)" begin
+    @testset "an immobile molecule keeps its stored coordinates; starts are brought into the box" begin
         x0 = BigFloat(0.5) + BigFloat(2)^-60   # not a Float64
         b2(T, id, x, st, pid) = DM.DiffusingEmitter2D{T}(T(x), T(0.5), T(10), T(0), 1, 1, id, st, pid)
         b3(T, id, x, st, pid) = DM.DiffusingEmitter3D{T}(T(x), T(0.5), T(0.5), T(10), T(0), 1, 1, id, st, pid)
@@ -483,8 +515,8 @@ end
             end
             @test only(m).x == x0
         end
-        # a BigFloat stored with more bits than the current precision keeps them while it does not move (Codex review
-        # r9): a D = 0 step, the boundary, and an anchored split followed by steps
+        # a BigFloat stored with more bits than the current precision keeps them while it does not move: a
+        # D = 0 step, the boundary, and an anchored split followed by steps
         xh = setprecision(() -> BigFloat(0.5) + BigFloat(2)^-400, 512)
         @test xh != BigFloat(0.5)
         # built without BigFloat(x), which would round to the current precision
@@ -502,18 +534,44 @@ end
             end
             @test only(o for o in out if o.track_id == 1).x == xh
         end
-        # every starting position must lie in [0, box_size] (Codex's anchored pair formed at x = 2 stayed outside)
-        e2(T, id, x) = DM.DiffusingEmitter2D{T}(T(x), T(0.5), T(10), T(0), 1, 1, id, :monomer, nothing)
-        p = DiffusionSMLMConfig(box_size=1.0, pair_mobility=:min, r_react=0.01, d_dimer=0.02, k_off=0.0, t_max=0.02)
-        for bad in (2.0, -0.1, NaN, nextfloat(1.0))
-            @test_throws ArgumentError simulate(p; starting_conditions=[e2(Float64, 1, bad), e2(Float32, 2, 0.5)],
-                                                track_D=D0)
+        # Starting positions are brought into the box. A position inside is unchanged (-0.0 and the walls included).
+        e2(T, id, x; y=0.5) = DM.DiffusingEmitter2D{T}(T(x), T(y), T(10), T(0), 1, 1, id, :monomer, nothing)
+        still(box, b) = DiffusionSMLMConfig(box_size=box, boundary=b, diff_monomer=0.0, r_react=0.0, t_max=0.02)
+        for b in ("periodic", "reflecting"), x in (0.0, -0.0, 0.3, 1.0)
+            @test DM._enter(e2(Float64, 1, x), still(1.0, b)) === e2(Float64, 1, x)
         end
-        err = try simulate(p; starting_conditions=[e2(Float64, 1, 2.0), e2(Float32, 2, 2.005)]); nothing catch x x end
+        # ... also when another coordinate of the molecule is wrapped
+        for y in (1.0, -0.0)
+            @test DM._enter(e2(Float64, 1, 1.25; y), still(1.0, "periodic")) === e2(Float64, 1, 0.25; y)
+        end
+        # Periodic: a position outside is its image, wrapped at entry as the first step would wrap it, so it is never
+        # recorded outside, and an anchored pair formed from such starts is inside (it stayed outside on main)
+        for x in (1.2, -0.1, 7.5)
+            s, _ = simulate(still(1.0, "periodic"); starting_conditions=[e2(Float64, 1, x)])
+            @test !isempty(s.emitters) && all(r -> r.x == mod(x, 1.0), s.emitters)
+        end
+        p = DiffusionSMLMConfig(box_size=1.0, pair_mobility=:min, r_react=0.01, d_dimer=0.02, k_off=0.0, t_max=0.02)
+        s, _ = simulate(p; starting_conditions=[e2(Float64, 1, 2.0), e2(Float32, 2, 2.005)], track_D=D0)
+        @test any(r -> r.state == :dimer, s.emitters) && all(r -> 0 <= r.x <= 1 && 0 <= r.y <= 1, s.emitters)
+        # a Float32 molecule on the wall, where Float32(box) rounds above box_size: wrapped (periodic) or clamped
+        # inside (reflecting)
+        s, _ = simulate(still(0.1, "periodic"); starting_conditions=[e2(Float32, 1, 0.1; y=0.05)])
+        @test all(r -> 0 <= r.x <= 0.1, s.emitters)
+        s, _ = simulate(still(0.1, "reflecting"); starting_conditions=[e2(Float32, 1, 0.1; y=0.05)])
+        @test all(r -> r.x == prevfloat(Float32(0.1)) && r.x <= 0.1, s.emitters)
+        # a periodic run continued into a smaller periodic box
+        Random.seed!(9200)
+        s4, _ = simulate(DiffusionSMLMConfig(box_size=4.0, density=2.0, t_max=0.02); γ=1000.0)
+        s2, _ = simulate(DiffusionSMLMConfig(box_size=2.0, density=2.0, t_max=0.02); starting_conditions=s4)
+        @test any(r -> r.x > 2, s4.emitters) && all(r -> 0 <= r.x <= 2 && 0 <= r.y <= 2, s2.emitters)
+        # Reflecting: a position beyond a wall throws by name; a non-finite position throws under both boundaries
+        err = try simulate(still(1.0, "reflecting"); starting_conditions=[e2(Float64, 1, 1.2)]); nothing catch x x end
         @test err isa ArgumentError && occursin("outside the box", err.msg)
-        # the walls themselves are inside
-        s, _ = simulate(p; starting_conditions=[e2(Float64, 1, 0.0), e2(Float32, 2, 1.0)], track_D=D0)
-        @test !isempty(s.emitters)
+        @test_throws ArgumentError simulate(still(1.0, "reflecting"); starting_conditions=[e2(Float64, 1, -0.1)])
+        for b in ("periodic", "reflecting"), bad in (NaN, Inf, -Inf)
+            err = try simulate(still(1.0, b); starting_conditions=[e2(Float64, 1, bad)]); nothing catch x x end
+            @test err isa ArgumentError && occursin("must be finite", err.msg)
+        end
     end
 
     @testset "validation" begin
@@ -536,7 +594,7 @@ end
         @test_throws ArgumentError simulate(p; override_count=3, track_velocity=Dict(1 => nothing))
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict("1" => 0.1))
         # every scalar field: NaN throws, Inf throws except for k_off and r_react, and so does a value that converts
-        # to Inf (Codex review r2)
+        # to Inf
         for f in (:density, :box_size, :diff_monomer, :diff_dimer, :diff_dimer_rot, :k_off, :r_react, :d_dimer, :dt,
                   :t_max, :camera_framerate, :camera_exposure)
             @test_throws ArgumentError DiffusionSMLMConfig(; f => NaN)
@@ -546,12 +604,12 @@ end
         @test_throws ArgumentError DiffusionSMLMConfig(diff_monomer=big"1e400")
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(0.5, big"1e400"), (0.5, 0.1)])
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => big"1e400"))
-        # a malformed velocity entry is an ArgumentError, not a MethodError (Codex review r2)
+        # a malformed velocity entry is an ArgumentError, not a MethodError
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[nothing])
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[(1.0, "a")])
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=(1.0, 0.0))  # one tuple, not a vector of them
-        # the model's range: 0, or a magnitude from 1e-50 to 1e50, for every number but r_react (Codex review r4:
-        # sqrt(2·D·dt) overflowed at D = 1e308 and underflowed at D = 1e-300 within the old wording)
+        # the model's range: 0, or a magnitude from 1e-50 to 1e50, for every number but r_react (before,
+        # sqrt(2·D·dt) overflowed at D = 1e308 and underflowed at D = 1e-300)
         for f in (:density, :box_size, :diff_monomer, :diff_dimer, :diff_dimer_rot, :k_off, :d_dimer, :dt, :t_max,
                   :camera_framerate, :camera_exposure), x in (1e60, 1e-60)
             @test_throws ArgumentError DiffusionSMLMConfig(; f => x)
@@ -563,7 +621,7 @@ end
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(0.5, 1e-60), (0.5, 0.1)])
         @test_throws ArgumentError DM._check_track_velocity(Dict(1 => (1e60, 0.0)), 2)
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => 1e60))
-        # (Codex review r5) checked as given, before conversion; mixture fractions too
+        # checked as given, before conversion; mixture fractions too
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_mobility=[(1e-60, 0.0), (1.0, 0.1)])
         @test_throws ArgumentError DiffusionSMLMConfig(monomer_velocity=[(big"1e-400", 0)])
         @test_throws ArgumentError simulate(p; override_count=3, track_D=Dict(1 => -big"1e-400"))
@@ -589,7 +647,7 @@ end
         long32 = dm_config(box_size=1.0, diff_monomer=0.0, r_react=0.0, k_off=0.0, dt=1e40, camera_exposure=1e40,
                            t_max=2e40, camera_framerate=1e-40)
         @test_throws ArgumentError simulate(long32; starting_conditions=f32)
-        # (Codex review r6) every starting molecule's type is checked, in either order
+        # every starting molecule's type is checked, in either order
         e64 = DM.DiffusingEmitter2D{Float64}(0.5, 0.5, 10.0, 0.0, 1, 1, 1, :monomer, nothing)
         e32 = DM.DiffusingEmitter2D{Float32}(0.5f0, 0.5f0, 10f0, 0f0, 1, 1, 2, :monomer, nothing)
         for mixed in (DM.AbstractDiffusingEmitter[e64, e32], DM.AbstractDiffusingEmitter[e32, e64])
