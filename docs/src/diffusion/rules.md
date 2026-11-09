@@ -41,7 +41,8 @@ but `r_react` (mixture fractions included), every velocity component (the config
 or a saved one), every per-molecule D (`track_D` or a saved one) and `simulate`'s `γ` is 0 or has a
 magnitude from `1e-50` to `1e50`, as given, before any conversion (the deprecated `photons` keyword is
 not checked, as in 0.7, until its removal in 0.8.0); `k_off` may also be
-infinite. A run has at most `2^53` steps. Construction and `simulate` check all of this, the config
+infinite. A run has at most `2^53` steps and `2^53` molecules, and the default camera at most `2^53` pixels
+per side (counts compared exactly). Construction and `simulate` check all of this, the config
 again on its fields as they are when `simulate` runs, and throw `ArgumentError` otherwise. In that
 range the products, squares and step scales the simulation computes, such as `sqrt(2·D·dt)`, `v·dt`,
 `γ·dt` and the `:min` pair coefficient, are normal Float64 numbers.
@@ -52,9 +53,11 @@ fails the fit test, and the partners stay where they are (Dissociation, below).
 
 Positions given in `starting_conditions` beyond about `1e150` in magnitude are outside the model
 (their squares overflow Float64), and these rules promise nothing there. Coordinates, photons and
-timestamps are stored in the emitters' type: with Float32 starting conditions, `simulate` throws
-`ArgumentError` when the box, a record's photons or the run's duration does not fit Float32 (about
-`3e38`), and a diffusion step beyond that range overflows the coordinate.
+timestamps are stored in each emitter's own type: with Float32 starting conditions (all or some),
+`simulate` throws `ArgumentError` when the box, the run's duration or the photons per record a `γ`
+restamp gives does not fit Float32 (about `3e38`); photons kept from the source, or set by the
+deprecated `photons` keyword, are not checked, as in 0.7. A diffusion step beyond that range overflows
+the coordinate.
 
 ### A bound pair and the box
 

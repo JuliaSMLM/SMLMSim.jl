@@ -453,6 +453,28 @@ end
         long32 = dm_config(box_size=1.0, diff_monomer=0.0, r_react=0.0, k_off=0.0, dt=1e40, camera_exposure=1e40,
                            t_max=2e40, camera_framerate=1e-40)
         @test_throws ArgumentError simulate(long32; starting_conditions=f32)
+        # (Codex review r6) every starting molecule's type is checked, in either order
+        e64 = DM.DiffusingEmitter2D{Float64}(0.5, 0.5, 10.0, 0.0, 1, 1, 1, :monomer, nothing)
+        e32 = DM.DiffusingEmitter2D{Float32}(0.5f0, 0.5f0, 10f0, 0f0, 1, 1, 2, :monomer, nothing)
+        for mixed in (DM.AbstractDiffusingEmitter[e64, e32], DM.AbstractDiffusingEmitter[e32, e64])
+            @test_throws ArgumentError simulate(long32; starting_conditions=mixed, camera=IdealCamera(1:1, 1:1, 1.0))
+        end
+        # the deprecated photons keyword stays unchecked, Inf included, as in 0.7
+        s_inf, _ = @test_logs (:warn, r"photons keyword is deprecated") match_mode=:any simulate(
+            DiffusionSMLMConfig(t_max=0.1); override_count=1, photons=Inf)
+        @test all(e -> e.photons == Inf, s_inf.emitters)
+        # a velocity that is the smallest integer of its type is in the range (abs would overflow)
+        @test DiffusionSMLMConfig(monomer_velocity=[(Int8(-128), 0)]).monomer_velocity == [(-128.0, 0.0)]
+        # counts compared exactly: 3 frames × 3002399751580331 steps is 2^53 + 1, which Float64 rounds to 2^53 (checked
+        # on the frame count directly, so a regression fails here instead of starting that run)
+        dtx = 1 / 3002399751580331
+        cx = dm_config(dt=dtx, camera_exposure=dtx, camera_framerate=1.0, t_max=3.0)
+        @test DM.substeps_per_frame(cx) == (1, 3002399751580331)
+        @test_throws ArgumentError DM._frame_count(cx, 3002399751580331)
+        @test DM._frame_count(cx, 3002399751580330) == 3  # 2^53 - 2 steps
+        # a default camera or a molecule count beyond 2^53 is an ArgumentError, not an InexactError
+        @test_throws ArgumentError simulate(DiffusionSMLMConfig(box_size=1e20, t_max=0.1); override_count=1)
+        @test_throws ArgumentError simulate(DiffusionSMLMConfig(density=1e20, box_size=1.0, t_max=0.1))
         # the config is mutable: simulate checks its velocities again
         p.monomer_velocity = [(1.0, 0.0), (0.0, 1.0)]
         @test_throws ArgumentError simulate(p; override_count=3)

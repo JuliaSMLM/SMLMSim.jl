@@ -85,7 +85,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 
 The model's range: every number of the config but `r_react` (mixture fractions included), every
 velocity component, every per-molecule `D` and `simulate`'s `γ` is 0 or has a magnitude from `1e-50` to
-`1e50` as given (`k_off` may also be infinite), and a run has at most `2^53` steps, so the products,
+`1e50` as given (`k_off` may also be infinite), and a run has at most `2^53` steps and molecules (the
+default camera at most `2^53` pixels per side), so the products,
 squares and step scales the simulation computes stay normal `Float64` numbers. `r_react` may be any
 value `>= 0`, `Inf` included. Construction and `simulate` (again, on the fields as they are when it
 runs) throw `ArgumentError` for anything outside the range, NaN included, and for a negative value
@@ -243,7 +244,7 @@ end
 # The model's range (docs/src/diffusion/rules.md, Range): 0, or a magnitude from 1e-50 to 1e50, so that the
 # products, squares and step scales the simulation computes from these numbers (up to sqrt(2·D_pair·dt) with the
 # :min pair coefficient, three of them multiplied) stay normal Float64. Internal.
-_in_model(x::Real) = iszero(x) || 1e-50 <= abs(x) <= 1e50
+_in_model(x::Real) = iszero(x) || 1e-50 <= abs(float(x)) <= 1e50  # float first: abs(typemin(Int8)) overflows
 
 # A velocity given as a tuple or vector, as a tuple of Float64. Internal.
 _velocity_tuple(v) = Tuple(Float64(x) for x in v)
@@ -364,6 +365,15 @@ function substeps_per_frame(params::DiffusionSMLMConfig)
     return Int(s_sub), steps_per_frame
 end
 
+# The run's frame count (t_max in whole frame periods; 0 when shorter than one, which `simulate` raises to 1),
+# after checking the run's step count exactly, in integers, against 2^53. Internal.
+function _frame_count(params::DiffusionSMLMConfig, steps_per_frame::Int)
+    nf = floor(params.t_max * params.camera_framerate + 1e-9)
+    (nf <= 2.0^53 && widemul(max(Int(nf), 1), steps_per_frame) <= 2^53) ||
+        throw(ArgumentError("t_max = $(params.t_max) s is $(nf * steps_per_frame) steps of dt = $(params.dt) s, more than a run counts (2^53)"))
+    return Int(nf)
+end
+
 """
     draw_monomer_class(params::DiffusionSMLMConfig) -> Int
 
@@ -440,7 +450,10 @@ function build_emitters(params::DiffusionSMLMConfig, photons::Float64, override_
     n_molecules = if override_count !== nothing
         override_count
     else
-        round(Int, params.density * params.box_size^params.ndims)
+        c = params.density * params.box_size^params.ndims
+        c <= 2.0^53 ||
+            throw(ArgumentError("density × box_size^ndims = $c molecules, more than a run holds (2^53); use override_count or a smaller box"))
+        round(Int, c)
     end
     
     # Create array for emitters
@@ -860,10 +873,7 @@ function simulate(params::DiffusionSMLMConfig;
 
     # Sub-steps per exposure and per frame (warns and rounds if dt does not divide the camera timing)
     n_sub, steps_per_frame = substeps_per_frame(params)
-    nf = floor(params.t_max * params.camera_framerate + 1e-9)
-    nf * steps_per_frame <= 2.0^53 ||
-        throw(ArgumentError("t_max = $(params.t_max) s is $(nf * steps_per_frame) steps of dt = $(params.dt) s, more than a run counts (2^53)"))
-    n_frames = Int(nf)
+    n_frames = _frame_count(params, steps_per_frame)
     if n_frames < 1
         @warn "t_max ($(params.t_max) s) is shorter than one frame period (1/camera_framerate = $(1 / params.camera_framerate) s); simulating one frame" maxlog=1
         n_frames = 1
@@ -876,6 +886,8 @@ function simulate(params::DiffusionSMLMConfig;
     if camera === nothing
         pixel_size = 0.1  # 100nm pixels
         r = params.box_size / pixel_size
+        r <= 2.0^53 ||
+            throw(ArgumentError("box_size = $(params.box_size) μm needs $(ceil(r)) pixels of 0.1 μm per side for the default camera, more than a camera counts (2^53); pass a camera"))
         n_pixels = isapprox(r, round(r); rtol=1e-6) ? round(Int, r) : ceil(Int, r)
         camera = IdealCamera(1:n_pixels, 1:n_pixels, pixel_size)
     else
@@ -970,13 +982,14 @@ function simulate(params::DiffusionSMLMConfig;
         n_initial_emitters = length(emitters)
     end
 
-    # Coordinates, photons and timestamps are stored in the emitters' type (Float32 from Float32 starting
-    # conditions): the box, each record's photons and the run's duration must fit it
-    if !isempty(emitters)
-        CT = typeof(emitters[1].x)
-        t_run = n_frames * steps_per_frame * params.dt
-        (params.box_size <= floatmax(CT) && t_run <= floatmax(CT) && all(e -> isfinite(e.photons), emitters)) ||
-            throw(ArgumentError("with $CT coordinates the box (box_size = $(params.box_size) μm), each record's photons and the run's duration ($t_run s) must fit $CT (at most $(floatmax(CT)))"))
+    # Coordinates, photons and timestamps are stored in each emitter's own type (Float32 from Float32 starting
+    # conditions): the box, the run's duration and the photons a γ restamp gives must fit every type present. Photons
+    # kept from the source, or set by the deprecated photons keyword, are not checked, as in 0.7
+    t_run = n_frames * steps_per_frame * params.dt
+    restamped = γ_restamp === nothing ? 0.0 : γ_restamp * params.dt
+    for CT in unique(typeof(e.x) for e in emitters)
+        (params.box_size <= floatmax(CT) && t_run <= floatmax(CT) && restamped <= floatmax(CT)) ||
+            throw(ArgumentError("with $CT coordinates the box (box_size = $(params.box_size) μm), the run's duration ($t_run s) and the photons per record γ·dt ($restamped) must fit $CT (at most $(floatmax(CT)))"))
     end
 
     # Monomer diffusion coefficient and velocity per track, drawn once per molecule
