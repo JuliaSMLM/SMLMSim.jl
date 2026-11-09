@@ -285,31 +285,36 @@ Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
         @test occursin("drew the factor -0.5", err.msg)
     end
 
-    @testset "P6d: a factor whose photons overflow is rejected" begin
-        # Checked on the molecule's photon counts as stored: the rate b·γ overflowing (1e305 × 1e4),
-        # a frame time that rounds a full frame past the largest Float64, a later frame boundary,
-        # and a BigFloat model whose finite count overflows as a Float64
+    @testset "P6d: a factor whose rate or photons leave Float64 is rejected" begin
+        # When drawn: the rate b·γ must be 0 or a normal Float64 (1e305 × 1e4 overflows, also for a
+        # BigFloat model; 1e-200 × 1e-200 underflows). After the trace: a photon count that still
+        # overflows (a frame time that rounds a full frame past the largest Float64; a later frame).
         on = zeros(2, 2)  # a molecule that stays in state 1
-        overflows(f, b; nframes=1, framerate=BR_FRAMERATE) = try
+        rejected(f, b; nframes=1, framerate=BR_FRAMERATE) = try
             kinetic_model(br_start(1), f, nframes, framerate; state1=1, minphotons=0.0, brightness=Dirac(b))
-            false
+            ""
         catch e
-            e isa ArgumentError && occursin("not finite as a Float64", e.msg)
+            e isa ArgumentError ? e.msg : "not an ArgumentError: $e"
         end
-        @test overflows(GenericFluor(1e4, on), 1e305)
-        @test overflows(GenericFluor(1e4, on), 1.6179238213760842e304; framerate=0.9)
-        @test overflows(GenericFluor(1e4, on), 5.3930794045869466e303; nframes=4, framerate=0.3)
-        @test overflows(GenericFluor(big"1e4", on), 1e305; framerate=1.0)
-        Random.seed!(3)
-        err = try
-            simulate(StaticSMLMConfig(nframes=1, minphotons=0); starting_conditions=br_start(1),
-                     camera=IdealCamera(32, 32, 0.1), molecule=GenericFluor(1e4, on), state1=1,
-                     brightness=Dirac(1e305))
-            nothing
+        at_draw, in_trace = "must be 0 or a normal Float64", "not finite as a Float64"
+        @test occursin(at_draw, rejected(GenericFluor(1e4, on), 1e305))
+        @test occursin(at_draw, rejected(GenericFluor(big"1e4", on), 1e305; framerate=1.0))
+        @test occursin(at_draw, rejected(GenericFluor(1e-200, on), 1e-200))
+        @test occursin(at_draw, rejected(GenericFluor(1e-200, on), 1e-200; framerate=big"1e-400"))
+        @test occursin(in_trace, rejected(GenericFluor(1e4, on), 1.6179238213760842e304; framerate=0.9))
+        @test occursin(in_trace, rejected(GenericFluor(1e4, on), 5.3930794045869466e303; nframes=4, framerate=0.3))
+        @test rejected(GenericFluor(1e4, on), 0.0) == ""  # b = 0: a rate of 0 is allowed
+        # the same through static simulate
+        sim_rejected(b; framerate=50.0) = try
+            Random.seed!(3)
+            simulate(StaticSMLMConfig(nframes=1, minphotons=0, framerate=framerate); starting_conditions=br_start(1),
+                     camera=IdealCamera(32, 32, 0.1), molecule=GenericFluor(1e4, on), state1=1, brightness=Dirac(b))
+            ""
         catch e
-            e
+            e isa ArgumentError ? e.msg : "not an ArgumentError: $e"
         end
-        @test err isa ArgumentError && occursin("not finite as a Float64", err.msg)
+        @test occursin(at_draw, sim_rejected(1e305))
+        @test occursin(in_trace, sim_rejected(1.6179238213760842e304; framerate=0.9))
         @test length(br_run(br_start(1), Dirac(1e300)).emitters) == 1  # a large factor that fits is accepted
     end
 end

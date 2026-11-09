@@ -124,11 +124,12 @@ Generate kinetic blinking model from existing localization data.
   brightness between datasets. The factor must be finite and not negative. Before any random
   draw, `ArgumentError` is thrown when `minimum(brightness)` is negative or NaN, or when
   `brightness` is given with a model that is not a `GenericFluor`. Every drawn factor is also
-  checked: a draw that is NaN, infinite or negative throws `ArgumentError` naming the value and
-  the distribution (a support can hold such a value above a valid minimum, as in
-  `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`). A factor so large that one of the
-  molecule's photon counts is not finite as a `Float64` throws `ArgumentError` once its trace
-  is simulated. To keep a normal distribution at or above
+  checked when it is drawn: a factor that is NaN, infinite or negative, or one that makes the
+  molecule's rate `b * f.γ` overflow or underflow (the rate must be 0 or a normal `Float64`),
+  throws `ArgumentError` naming the value and the distribution (a support can hold such a value
+  above a valid minimum, as in `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`). A factor whose
+  photon counts still overflow throws `ArgumentError` after the molecule's blinking is
+  simulated. To keep a normal distribution at or above
   a floor, use either `truncated(d; lower=floor)` (cut at the floor and renormalized; no draw
   lies at the floor) or `censored(d; lower=floor)` (draws below the floor are set to it).
   `nothing` (default) gives every molecule the rate `f.γ`, with no extra random draw.
@@ -279,7 +280,7 @@ function kinetic_model(smld::BasicSMLD, f::Molecule, nframes::Int, framerate::Re
         # One brightness factor per molecule and dataset, drawn before the initial state
         fm = f
         if brightness !== nothing
-            b = _draw_brightness(brightness)
+            b = _draw_brightness(brightness, f)
             brightness_factors[(dd, track_id)] = b
             fm = GenericFluor(b * f.γ, f.q)
         end
@@ -363,15 +364,20 @@ function _check_brightness(brightness, f::Molecule)
     return nothing
 end
 
-# One brightness factor, drawn and checked. The check above sees only the distribution's
-# minimum, so a support that also holds NaN or Inf (DiscreteNonParametric([1.0, NaN], ...))
-# passes it. One random draw, as an unchecked draw makes. A finite factor whose photons
-# overflow is caught on the molecule's trace, in kinetic_model. Internal.
-function _draw_brightness(brightness)
+# One brightness factor, drawn and checked with the rate it gives the model `f`. The check
+# above sees only the distribution's minimum, so a support that also holds NaN or Inf
+# (DiscreteNonParametric([1.0, NaN], ...)) passes it. The rate b·γ must be 0 (b or γ is 0) or a
+# normal Float64, so it neither overflows nor underflows to a wrong rate. One random draw, as an
+# unchecked draw makes. A photon count that still overflows is caught on the molecule's trace, in
+# kinetic_model. Internal.
+function _draw_brightness(brightness, f::GenericFluor)
     x = rand(brightness)
     b = Float64(x)
     isfinite(b) && b >= 0 ||
         throw(ArgumentError("brightness drew the factor $(repr(x)) from $brightness; every drawn factor must be finite and non-negative as a Float64"))
+    r = Float64(b * f.γ)
+    (iszero(b) || iszero(f.γ) || (isfinite(r) && abs(r) >= floatmin(Float64))) ||
+        throw(ArgumentError("brightness drew the factor $(repr(x)) from $brightness; the molecule's rate b·γ = $(b * f.γ) photons/s must be 0 or a normal Float64 (it overflows or underflows)"))
     return b
 end
 

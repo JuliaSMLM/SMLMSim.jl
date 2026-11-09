@@ -223,9 +223,10 @@ distribution from 64-bit values.
 
 A distribution with negative values (such as a plain `Normal`) throws `ArgumentError` before any
 random number is drawn. That check sees only the distribution's minimum, so every drawn factor is
-checked too: a factor that is NaN, infinite or negative throws `ArgumentError` naming the value
-and the distribution, when it is drawn, and so does one so large that a photon count of the
-molecule is not finite as a `Float64`. `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`, for
+checked too, when it is drawn: a factor that is NaN, infinite or negative, or that makes the
+molecule's rate `b * γ` overflow or underflow, throws `ArgumentError` naming the value and the
+distribution. A factor whose photon counts still overflow throws once the molecule's blinking is
+simulated. `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`, for
 example, has minimum 1.0 and throws at its first draw of NaN. With `brightness` given,
 `metadata["brightness"]` holds the distribution and `metadata["brightness_factors"]` the factor
 drawn for each `(dataset, track_id)`; without it no random number is drawn for brightness and

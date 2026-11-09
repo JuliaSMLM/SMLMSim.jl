@@ -484,9 +484,10 @@ The `brightness` keyword (also a keyword of static `simulate`) takes any univari
 distribution of a dimensionless factor `b`; a molecule emits at `b * γ` for all its frames,
 with one draw per molecule and dataset. With it, the output metadata holds `"brightness"`
 and `"brightness_factors"`, a `Dict{Tuple{Int,Int},Float64}` from `(dataset, track_id)` to `b`.
-A distribution whose minimum is negative throws `ArgumentError` before any random draw, and so
-does a drawn factor that is NaN, infinite or negative, or so large that a photon count of the
-molecule is not finite as a `Float64`.
+A distribution whose minimum is negative throws `ArgumentError` before any random draw; a drawn
+factor that is NaN, infinite or negative, or that makes the rate `b * γ` overflow or underflow,
+throws when it is drawn; and one whose photon counts overflow throws once the molecule's blinking
+is simulated.
 
 #### apply_noise
 
