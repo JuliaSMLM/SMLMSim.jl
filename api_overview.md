@@ -485,7 +485,8 @@ distribution of a dimensionless factor `b`; a molecule emits at `b * γ` for all
 with one draw per molecule and dataset. With it, the output metadata holds `"brightness"`
 and `"brightness_factors"`, a `Dict{Tuple{Int,Int},Float64}` from `(dataset, track_id)` to `b`.
 A distribution whose minimum is negative throws `ArgumentError` before any random draw, and so
-does a drawn factor that is NaN, infinite or negative, when it is drawn.
+does a drawn factor that is NaN, infinite or negative, or so large that the molecule's photons per
+frame overflow, when it is drawn.
 
 #### apply_noise
 

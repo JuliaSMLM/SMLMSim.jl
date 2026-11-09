@@ -43,7 +43,8 @@ and localization uncertainty.
   `truncated(Normal(1, 0.3); lower=0.7)` (cut at the floor and renormalized) or
   `censored(Normal(1, 0.3); lower=0.7)` (draws below the floor set to it); otherwise
   `ArgumentError` is thrown before any random draw. A drawn factor that is NaN, infinite or
-  negative also throws `ArgumentError`, when it is drawn. The distribution and
+  negative, or so large that the molecule's photons per frame overflow, also throws
+  `ArgumentError`, when it is drawn. The distribution and
   the drawn factors are recorded in `info.smld_model.metadata["brightness"]` and
   `["brightness_factors"]` (`(dataset, track_id)` to factor). `nothing` (default) leaves every
   molecule at the model's rate and the output unchanged.

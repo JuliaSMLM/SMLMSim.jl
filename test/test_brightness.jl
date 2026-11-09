@@ -284,4 +284,19 @@ Random.rand(::AbstractRNG, ::NegativeDraw) = -0.5
         @test err isa ArgumentError
         @test occursin("drew the factor -0.5", err.msg)
     end
+
+    @testset "P6d: a factor whose photons would overflow is rejected" begin
+        # BR_γ = 1e4: b·γ = 1e309 overflows; at framerate 0.1 a full frame's 1e309 photons overflow
+        # although b·γ = 1e308 does not
+        err = try br_run(br_start(1), Dirac(1e305)); nothing catch e e end
+        @test err isa ArgumentError && occursin("must be finite", err.msg)
+        err = try
+            kinetic_model(br_start(1), BR_FLUOR, 1, 0.1; state1=1, minphotons=0.0, brightness=Dirac(1e304))
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("must be finite", err.msg)
+        @test length(br_run(br_start(1), Dirac(1e300)).emitters) == 1  # a large factor that fits is accepted
+    end
 end
