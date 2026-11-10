@@ -54,8 +54,9 @@ fails the fit test, and the partners stay where they are (Dissociation, below).
 Positions given in `starting_conditions` must be finite (`ArgumentError` otherwise), and a coordinate in
 `[0, box_size]` is used as given. Under periodic boundaries a position outside the box names its image in the
 box: each coordinate outside is wrapped at entry, as the first step would wrap it, so no record lies outside the
-box. Under reflecting boundaries a position beyond a wall throws `ArgumentError`, except a coordinate up to the box
-written in its own type (`Float32(box_size)` can round above `box_size`), which is clamped inside. Coordinates, photons and
+box. Under reflecting boundaries a coordinate within a rounding margin of a wall, `8·eps(T)·max(1, box_size)` for
+coordinate type `T` (the wall written with rounding error: `3*0.1` in a box of 0.3, or `Float32(box_size)` rounded
+above `box_size`), is clamped inside, and a position farther beyond a wall throws `ArgumentError`. Coordinates, photons and
 timestamps are stored in each emitter's own type: with Float32 starting conditions (all or some),
 `simulate` throws `ArgumentError` when the box, the run's duration or the photons per record a `γ`
 restamp gives does not fit Float32 (about `3e38`); photons kept from the source, or set by the
@@ -183,8 +184,11 @@ one to single molecules.
   mean. Under `:fixed`, whose pair diffusion does not depend on the partners, the plain mean (equal drag). The
   velocities move only the pair's center and apply no torque: partners moving in opposite directions across the bond
   neither move nor turn the pair. The drift is added to the pair's center after its diffusion and rotation draws. On
-  the formation step a mobile pair with a velocity is placed about its partners' midpoint moved by `v·dt` (no
-  diffusion on that step), so re-binding does not cost the pair its drift. An anchored pair does not move.
+  the formation step the pair is placed by the placement rule (A bound pair and the box), then drifts by `v·dt` as a
+  bound step drifts it (no diffusion on that step), so re-binding does not cost the pair its drift. Under `:min` a
+  partner with D 0 keeps its position at formation whether or not it has a velocity (its drag is infinite), and the
+  other is placed from it as from an immobile anchor; with both at D 0, the lower `track_id` stays. An anchored pair
+  does not move.
 - **Immobile** means monomer D 0 and no velocity, everywhere these rules or `pair_mobility` say immobile: the `:min`
   anchor at formation, while bound and at dissociation, the `:fixed` warning, and `frame_dimer_truth`'s `mixed`. A
   molecule with D 0 and a velocity is mobile. Under `:min` its pair has D 0 (the pair rule is by D) and moves at its

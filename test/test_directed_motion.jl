@@ -270,6 +270,13 @@ end
         @test all(isapprox.(DM._pair_velocity((1.0, 0.0), (0.0, 1.0), 0.1, 0.3, :min), (0.75, 0.25)))
         @test DM._pair_velocity((1.0, 0.0), (0.0, 1.0), 0.0, 0.0, :min) == (0.5, 0.5)
         @test DM._pair_velocity(nothing, nothing, 0.1, 0.1, :min) === nothing
+        # exact for equal velocities and at either limit, whatever the velocities' sizes
+        for k in 1:200
+            D1, D2 = 0.01 + mod(0.37 * k, 1.0), 0.01 + mod(0.61 * k^2, 1.0)
+            @test DM._pair_velocity((0.7, -1.3), (0.7, -1.3), D1, D2, :min) == (0.7, -1.3)
+        end
+        @test DM._pair_velocity((1e20, 0.0), (1.0, 0.0), 0.2, 0.0, :min) == (1.0, 0.0)
+        @test DM._pair_velocity((1.0, 0.0), (1e20, 0.0), 0.0, 0.2, :min) == (1.0, 0.0)
         # a coordinate past the wall is wrapped or reflected in its own type before the conversion, as on main, BigFloat
         # included; one the boundary leaves in place keeps its stored value, so a BigFloat is not
         # rounded through Float64 (main rounded 1 - 2^-60 to 1)
@@ -402,16 +409,36 @@ end
         at(s, id, t) = only(e for e in s.emitters if e.track_id == id && isapprox(e.timestamp, t; atol=1e-12))
         sim(p, start; kw...) = (Random.seed!(9180); simulate(p; starting_conditions=start, γ=1000.0, kw...)[1])
         D0 = Dict(1 => 0.0, 2 => 0.0)
-        # two directed molecules with D 0 form a pair: neither is immobile, so under :min they are placed about
-        # their midpoint (not anchored), and on the formation step the pair drifts at its velocity, here the mean
-        # (0.5, 0.25) μm/s as both have D 0: midpoint 1.002 + 0.005; under :fixed there is no warning
-        for pm in (:min, :fixed)
+        # two directed molecules with D 0 form a pair, and on the formation step the pair drifts at its velocity, here
+        # the mean (0.5, 0.25) μm/s as both have D 0. Under :fixed they are placed about their midpoint (1.002 ∓ 0.01);
+        # under :min each has infinite drag, so the lower track_id keeps its place (1.0, 1.02), as two immobile
+        # partners do; no warning under either
+        for (pm, x1) in ((:min, 1.0), (:fixed, 0.992))
             s = @test_logs sim(cfg(pm), [mono(1, 1.0), mono(2, 1.004)]; track_D=D0,
                                track_velocity=Dict(1 => (1.0, 0.0), 2 => (0.0, 0.5)))
             a, b = at(s, 1, 0.01), at(s, 2, 0.01)
-            @test a.state == :dimer && isapprox(a.x, 0.997; atol=1e-12) && isapprox(b.x, 1.017; atol=1e-12)
+            @test a.state == :dimer && isapprox(a.x, x1 + 0.005; atol=1e-12) && isapprox(b.x, x1 + 0.025; atol=1e-12)
             @test isapprox(a.y, 1.0025; atol=1e-12) && isapprox(b.y, 1.0025; atol=1e-12)
         end
+        # at a reflecting wall the pair is placed by the formation rule, then drifts as a bound step does: a velocity
+        # of 1e-50 places it as none does ([0, 0.04]), and drift toward the wall ends no farther from it than away
+        mw(id, x) = DM.DiffusingEmitter2D{Float64}(x, 0.5, 10.0, 0.0, 1, 1, id, :monomer, nothing)
+        for pm in (:fixed, :min)
+            pw = dm_config(box_size=1.0, boundary="reflecting", r_react=0.01, d_dimer=0.04, k_off=0.0, pair_mobility=pm)
+            atwall(vx) = sort([o.x for o in DM.update_system(DM.AbstractDiffusingEmitter[mw(1, 0.001), mw(2, 0.003)], pw,
+                                                             0.01; track_D=Dict(1 => 0.1, 2 => 0.1),
+                                                             track_v=Dict(1 => (vx, 0.0), 2 => (vx, 0.0)))])
+            @test atwall(0.0) == [0.0, 0.04] && atwall(1e-50) == atwall(0.0)
+            toward, away = atwall(-0.01), atwall(0.01)
+            @test toward[1] <= away[1] && isapprox(away, [0.0001, 0.0401]; atol=1e-12)
+        end
+        # under :min a partner with D 0 and a velocity keeps its place at formation (its drag is infinite), the other is
+        # placed d_dimer from it, and the pair then drifts at its velocity: 1.0 and 1.02, each moved by 0.01
+        pa = dm_config(box_size=10.0, r_react=0.01, d_dimer=0.02, k_off=0.0, pair_mobility=:min)
+        o = Dict(x.track_id => x for x in DM.update_system(DM.AbstractDiffusingEmitter[mono(1, 1.0), mono(2, 1.005)], pa,
+                                                            0.01; track_D=Dict(1 => 0.0, 2 => 0.1),
+                                                            track_v=Dict(1 => (1.0, 0.0))))
+        @test isapprox(o[1].x, 1.01; atol=1e-12) && isapprox(o[2].x, 1.03; atol=1e-12) && o[1].y == o[2].y == 1.0
         # a directed D 0 molecule meets an immobile one under :min: the immobile one anchors
         s = sim(cfg(:min), [mono(1, 1.0), mono(2, 1.004)]; track_D=D0, track_velocity=Dict(1 => (1.0, 0.0)))
         @test at(s, 2, 0.01).x == 1.004 && isapprox(at(s, 1, 0.01).x, 0.984; atol=1e-12)
@@ -564,6 +591,13 @@ end
         s4, _ = simulate(DiffusionSMLMConfig(box_size=4.0, density=2.0, t_max=0.02); γ=1000.0)
         s2, _ = simulate(DiffusionSMLMConfig(box_size=2.0, density=2.0, t_max=0.02); starting_conditions=s4)
         @test any(r -> r.x > 2, s4.emitters) && all(r -> 0 <= r.x <= 2 && 0 <= r.y <= 2, s2.emitters)
+        # Reflecting: a start within rounding of a wall, the wall written with rounding error, is clamped inside (3·0.1
+        # in a box of 0.3, nextfloat(3.0) in a box of 3, 0.3 - 3·0.1 below 0, Float32(0.1) above a box of 0.1)
+        for (box, x, T) in ((0.3, 3 * 0.1, Float64), (3.0, nextfloat(3.0), Float64), (0.3, 0.3 - 3 * 0.1, Float64),
+                            (0.1, 0.1, Float32))
+            @test 0 <= DM._enter(e2(T, 1, x; y=box / 2), still(box, "reflecting")).x <= box
+        end
+        @test_throws ArgumentError DM._enter(e2(Float64, 1, 3.6), still(3.0, "reflecting"))
         # Reflecting: a position beyond a wall throws by name; a non-finite position throws under both boundaries
         err = try simulate(still(1.0, "reflecting"); starting_conditions=[e2(Float64, 1, 1.2)]); nothing catch x x end
         @test err isa ArgumentError && occursin("outside the box", err.msg)

@@ -77,7 +77,7 @@ placement cannot fit (the partners then stay where they are).
 # Returns
 - `Bool`: True if emitters can form a dimer
 """
-function can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64,
+@inline function can_dimerize(e1::AbstractDiffusingEmitter, e2::AbstractDiffusingEmitter, r_react::Float64,
                       period::Union{Nothing,Float64}=nothing)
     e1.state == :monomer &&
     e2.state == :monomer &&
@@ -372,7 +372,7 @@ end
 # size (the minimum image). The subtraction's rounding error is carried (TwoSum), so the result is the exact
 # displacement of the stored coordinates rounded once, exactly negated when p and q swap, and the plain difference
 # when no image is taken (docs/src/diffusion/rules.md, Distance)
-function _disp(p::Float64, q::Float64, L::Union{Nothing,Float64})
+@inline function _disp(p::Float64, q::Float64, L::Union{Nothing,Float64})
     d = q - p
     L === nothing && return d
     t = d - q
@@ -385,11 +385,11 @@ _nimg(p::Float64, q::Float64, L::Float64) = round((q - p) / L)
 
 # `_disp` on each axis, and the one distance of formation and dissociation (its Euclidean norm), to the minimum
 # image when `L` is `_period(params)` under periodic boundaries (`nothing`: the plain difference)
-_dispv(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} =
+@inline _dispv(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N} =
     ntuple(k -> _disp(p[k], q[k], L), Val(N))
 # (scaled by its largest component first when squaring could underflow, below 2^-500, so no normal displacement
 # measures as zero; the same value otherwise)
-function _sep(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N}
+@inline function _sep(p::NTuple{N,Float64}, q::NTuple{N,Float64}, L::Union{Nothing,Float64}) where {N}
     v = _dispv(p, q, L)
     m = maximum(abs, v)
     (m == 0 || m >= 0x1p-500) && return sqrt(sum(abs2, v))
@@ -771,18 +771,28 @@ end
 
 # A starting molecule brought into the box (docs/src/diffusion/rules.md, Range). Every coordinate must be finite. A
 # coordinate in [0, box] keeps its stored value. Under periodic boundaries one outside is wrapped to its image in the
-# box (`_bounded`), as the first step would wrap it. Under reflecting boundaries one beyond a wall throws, except a
-# coordinate up to the box written in its own type (a Float32 box can round above box_size), which is clamped
-# inside. Internal.
+# box (`_bounded`), as the first step would wrap it. Under reflecting boundaries one within a rounding margin of a
+# wall, 8·eps(T)·max(1, box) (the wall written with rounding error: 3·0.1 in a box of 0.3, or Float32(box) above
+# box), is clamped inside, and one farther out throws. Internal.
 function _enter(e::AbstractDiffusingEmitter, params)
     box, T, c = params.box_size, typeof(e.x), _coords(e)
     all(isfinite, c) ||
         throw(ArgumentError("starting_conditions: molecule $(e.track_id) is at $c; a starting position must be finite"))
     all(x -> 0 <= x <= box, c) && return e
     params.boundary == "periodic" && return _at(e, map(x -> 0 <= x <= box ? x : _bounded(T, x, box, false), c))
-    all(x -> 0 <= x <= T(box), c) ||
-        throw(ArgumentError("starting_conditions: molecule $(e.track_id) is at $c, outside the box [0, $box] μm; with reflecting boundaries every starting position must lie inside it"))
-    return _at(e, map(x -> x <= box ? x : _top(T, box), c))
+    m = 8 * Float64(eps(T)) * max(1.0, box)
+    all(x -> -m <= x <= box + m, c) ||
+        throw(ArgumentError("starting_conditions: molecule $(e.track_id) is at $c, outside the box [0, $box] μm by more than rounding; with reflecting boundaries every starting position must lie inside it"))
+    return _at(e, map(x -> 0 <= x <= box ? x : _inbox(T, Float64(x), box), c))
+end
+
+# A placed pair moved by the drift `vp·dt` as a bound step moves it: center and half-bond from the placed partners
+# (the second at its minimum image), the center drifted, then the pair's boundary (`_move_pair`). Internal.
+function _drift_pair(d1::AbstractDiffusingEmitter, d2::AbstractDiffusingEmitter, vp::NTuple{N,Float64}, dt::Float64,
+                     params) where {N}
+    q1 = _pos(d1)
+    q2 = _image(_pos(d2), q1, params)
+    return _move_pair(d1, d2, _drift((q1 .+ q2) ./ 2, vp, dt), (q2 .- q1) ./ 2, params.d_dimer, params)
 end
 
 # `e` at the Float64 point `q`, converted to its coordinate type once and clamped into [0, box]

@@ -61,11 +61,11 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   pair's drift weights its partners' velocities by drag `1/D`, under `:fixed` it is their mean, see
   docs/src/diffusion/rules.md, Directed motion); the rotation scales the same way
   (`diff_dimer_rot × D_pair/diff_dimer`; with `diff_dimer = 0` a `:min` pair does not rotate, while a
-  `:fixed` pair still rotates with `diff_dimer_rot`). On formation an immobile partner keeps its
-  position and the other is placed `d_dimer` from it (in a reflecting box, mirrored across the immobile
-  partner on each axis it would leave, so the bond stays `d_dimer` long; if some axis fits neither way,
-  possible only when `box_size < 2·d_dimer`, it keeps its position); if both are immobile the lower
-  `track_id` stays. `:min` requires `diff_monomer > 0`. Stored in `smld.metadata["pair_mobility"]`.
+  `:fixed` pair still rotates with `diff_dimer_rot`). On formation a partner with D 0 keeps its
+  position (an immobile one, or one with a velocity, whose drag is infinite) and the other is placed
+  `d_dimer` from it (in a reflecting box, mirrored across the fixed partner on each axis it would leave,
+  so the bond stays `d_dimer` long; if some axis fits neither way, possible only when
+  `box_size < 2·d_dimer`, it keeps its position); if both have D 0 the lower `track_id` stays. `:min` requires `diff_monomer > 0`. Stored in `smld.metadata["pair_mobility"]`.
   Under either setting a mobile pair in a reflecting box is rigid: at formation, if an end is outside
   the box, both partners move to `d_dimer/2` either side of their midpoint, shifted inward just enough
   to fit, and while bound the pair's center folds off the walls moved in by each end's half-extent as
@@ -540,8 +540,11 @@ function _pair_velocity(v1, v2, D1::Float64, D2::Float64, pair_mobility::Symbol)
     z = ntuple(_ -> 0.0, length(something(v1, v2)))
     a, b = something(v1, z), something(v2, z)
     if pair_mobility == :min && D1 + D2 > 0
-        w1, w2 = D2 / (D1 + D2), D1 / (D1 + D2)
-        return ntuple(k -> a[k] * w1 + b[k] * w2, length(a))
+        # a·w1 + b·w2 with w1 + w2 = 1, interpolated from the nearer end: exact for equal velocities and at either
+        # limit (D1 = 0 gives a, D2 = 0 gives b), whatever the velocities' sizes
+        w2 = D1 / (D1 + D2)
+        return w2 <= 0.5 ? ntuple(k -> a[k] + (b[k] - a[k]) * w2, length(a)) :
+                           ntuple(k -> b[k] + (a[k] - b[k]) * (D2 / (D1 + D2)), length(a))
     end
     return ntuple(k -> (a[k] + b[k]) / 2, length(a))
 end
@@ -622,25 +625,21 @@ function _update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Di
                 if can_dimerize(e1, e2, params.r_react, _period(params))
                     # Create new dimer pair
                     s1, s2 = still(e1.track_id), still(e2.track_id)
-                    # Under :min an immobile partner keeps its position (both immobile: the lower track_id)
+                    D1, D2 = monomer_D(e1.track_id), monomer_D(e2.track_id)
+                    # Under :min an immobile partner keeps its position and holds the pair (both immobile: the lower
+                    # track_id); a partner with D 0 and a velocity also keeps its position at formation (its drag is
+                    # infinite) and then carries the pair
                     anchor = _anchor(params, e1, e2, s1, s2)
+                    placer = anchor === nothing ? _anchor(params, e1, e2, D1 == 0, D2 == 0) : anchor
                     # The placement rule, once in Float64, oriented along the Float64
                     # minimum-image displacement (+x only when it is exactly zero)
                     v = _dispv(_pos(e1), _pos(e2), _period(params))
-                    vp = anchor === nothing ? _pair_velocity(velocity(e1.track_id), velocity(e2.track_id),
-                                                             monomer_D(e1.track_id), monomer_D(e2.track_id),
-                                                             params.pair_mobility) : nothing
-                    if _moving(vp)
-                        # A mobile pair with a velocity is placed about its partners' midpoint moved by the drift
-                        # v·dt, as a bound step moves it (no diffusion on the formation step); then the boundary
-                        q1 = _pos(e1)
-                        d1, d2 = _move_pair(restamp(e1; state=:dimer, partner_id=e2.track_id),
-                                            restamp(e2; state=:dimer, partner_id=e1.track_id),
-                                            _drift((q1 .+ _image(_pos(e2), q1, params)) ./ 2, vp, dt),
-                                            _half_bond(v, params.d_dimer / 2), params.d_dimer, params)
-                    else
-                        d1, d2 = _place_pair(e1, e2, anchor, v, params)
-                    end
+                    d1, d2 = _place_pair(e1, e2, placer, v, params)
+                    vp = anchor === nothing ?
+                        _pair_velocity(velocity(e1.track_id), velocity(e2.track_id), D1, D2, params.pair_mobility) :
+                        nothing
+                    # then the placed pair drifts by v·dt, as a bound step drifts it (no diffusion on this step)
+                    _moving(vp) && ((d1, d2) = _drift_pair(d1, d2, vp, dt, params))
                     _note_immobile!(moved_immobile, params, s1, s2, e1, e2, d1, d2)
                     push!(new_emitters, d1, d2)
                     push!(processed, e1.track_id, e2.track_id)
@@ -798,7 +797,8 @@ with emitters that have both frame number and timestamp information.
   forward. A Vector keeps each emitter's own `photons`, gets fresh D draws, and is deduplicated
   to the latest record per track_id (with a warning) if track_ids repeat. Every starting position must be
   finite; under periodic boundaries one outside the box is wrapped to its image at entry, and under
-  reflecting boundaries one beyond a wall throws `ArgumentError` (docs/src/diffusion/rules.md, Range).
+  reflecting boundaries one within rounding of a wall is clamped inside and one farther beyond a wall
+  throws `ArgumentError` (docs/src/diffusion/rules.md, Range).
 - `γ::Union{Nothing, Real}=nothing`: emission rate, photons/s (0, or 1e-50 to 1e50: the model's range); each of the
   n_sub records in a frame carries γ·dt, so a frame holds γ·n_sub·dt photons (γ·camera_exposure
   when the exposure is a whole number of steps and not capped at the frame period).
