@@ -131,8 +131,8 @@ Continuation assumes the SMLD comes from one simulation run, or a filtered subse
 concatenation of different runs is unsupported, and the γ check cannot detect a molecule from another
 run that happens to carry γ·dt. A concatenation or merge (SMLMData's `cat_smld` and `merge_smld` mark
 it in the metadata) or, as a backstop, a last frame holding two records of one track at the same
-timestamp, which no single run produces, is taken as unknown provenance: no γ, rate source or saved D
-is carried, with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
+timestamp, which no single run produces, is taken as unknown provenance: no γ, rate source, saved D,
+mobility class or saved velocity is carried, with one warning. One limitation: an SMLD that was filtered or edited resumes from each track's latest record in
 its last frame, which is not the exact end state and carries no per-molecule history beyond that record
 (blinking, bleaching or brightness-jitter state is not rebuilt). `extract_final_state` is deprecated.
 The full continuation rule is in [Placement and Continuation Rules](rules.md).
@@ -142,13 +142,44 @@ Monomers can be given a mixture of mobility populations with
 `(fraction, D)`); the drawn coefficient per molecule is stored in
 `smld.metadata["monomer_D"]`. `frame_dimer_truth(smld)` returns per-frame, per-molecule
 dimer ground truth; its `mixed` field is `true` when exactly one of a molecule and its partner is
-immobile (monomer D = 0).
+immobile (monomer D = 0 and no velocity).
+
+Directed motion: `monomer_velocity` gives monomers a constant velocity in μm/s, with their diffusion on
+top, so each step is `v·dt` plus a Gaussian step of variance `2·D·dt` per axis. Give one entry for
+every monomer, or with a mixture one entry per population:
+
+```julia
+# every monomer drifts at 0.5 μm/s along x, diffusing with diff_monomer
+params = DiffusionSMLMConfig(diff_monomer = 0.02, monomer_velocity = [(0.5, 0.0)])
+
+# 80% diffusing, 20% transported along y
+params = DiffusionSMLMConfig(monomer_mobility = [(0.8, 0.05), (0.2, 0.001)],
+                             monomer_velocity = [(0.0, 0.0), (0.0, 0.8)])
+
+# single molecules: molecule 1 moves in a straight line, molecule 2 diffuses fast
+smld, info = simulate(params; override_count = 10,
+                      track_velocity = Dict(1 => (0.6, 0.6)), track_D = Dict(1 => 0.0, 2 => 0.3))
+```
+
+Each molecule's velocity is saved in `smld.metadata["monomer_velocity"]` and kept by continuation of a
+single run (not of a concatenation or merge), with a warning when the new config's `monomer_velocity`
+differs from the run's. A bound pair drifts at its partners' velocities weighted by drag (`1/D`) under
+`pair_mobility = :min`, so a partner with D 0 carries it and a still one holds it, and at their plain mean under
+`:fixed`; a molecule with a velocity is not immobile for the pair rules below,
+and in a reflecting box a molecule driven into a wall stays within one step's displacement of it (its
+velocity is not reversed); a step longer than the box folds back off the walls as often as it crosses
+them, with or without a velocity (before 0.7.4 it stopped at the wall).
+Molecules still form a pair when they are closer than `r_react` at the start of a step (the pair exists
+from the next step on, and shows in the records taken while it lasts), so paths that cross can bind unless their relative step per `dt` exceeds `2·r_react`; `r_react = 0` turns binding off, so
+independent molecules pass through each other. See
+[Placement and Continuation Rules](rules.md), Directed motion.
 
 A bound pair diffuses with `diff_dimer` by default (`pair_mobility = :fixed`, the 0.7 behaviour).
 With `pair_mobility = :min` a pair moves at `min(D1, D2) × diff_dimer/diff_monomer`, where `D1`, `D2`
 are its partners' monomer D, so two partners at `diff_monomer` move at `diff_dimer` (as under `:fixed`)
-and a pair with an immobile partner (D = 0) does not move or rotate while bound: the immobile partner
-keeps its position when the pair forms, and the mobile partner is placed `d_dimer` from it (in a
+and a pair with an immobile partner (D = 0, no velocity) does not move or rotate while bound (with a D = 0
+partner that has a velocity it does not diffuse or rotate, and drifts): the immobile partner
+(else a D = 0 partner with a velocity) keeps its position when the pair forms, and the mobile partner is placed `d_dimer` from it (in a
 reflecting box, mirrored across the immobile partner on each axis it would leave, so the bond keeps its
 length; if some axis fits neither way, possible only when `box_size < 2·d_dimer`, it keeps its
 position). With `diff_dimer = 0` a `:min` pair does not rotate, while a `:fixed` pair still rotates
@@ -158,15 +189,15 @@ In a reflecting box a mobile pair (either setting) is a rigid body: when an end 
 formation, both partners move to `d_dimer/2` either side of their midpoint, shifted inward just enough
 to fit, and while bound the pair's center folds off the walls moved in by each end's half-extent as
 often as it crosses them, so both partners stay inside the box at `d_dimer` apart. When
-`box_size < d_dimer` each partner is reflected on its own, as in 0.7.1. Under periodic boundaries (the
+`box_size < d_dimer` each partner is reflected on its own, as a monomer is. Under periodic boundaries (the
 default) a bound pair moves from its partner's minimum image, so a pair straddling the boundary moves by
 one step, and a pair forms from its partner's minimum image too (two monomers within `r_react` across the edge form a pair, which 0.7.1 never did), with each partner wrapped into the box on the formation step. Under the default `:fixed`, forming a pair places both partners `d_dimer` apart about their
 midpoint and a bound pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member
-is immobile (a D = 0 population); `simulate` warns once per run when a step moves an immobile member,
+is immobile (a D = 0 population without velocity); `simulate` warns once per run when a step moves an immobile member,
 recorded by the camera or not, and `pair_mobility = :min` keeps such a pair in place.
 
-On dissociation the partners are placed at least `r_react` apart along the pair axis (the minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only because `d_dimer < r_react`; a mobile partner can still diffuse back and re-form (geminate re-encounter). Under `pair_mobility = :min` an immobile partner stays put and the other is placed from it, mirrored across it on each axis it would leave a reflecting box. Otherwise, including every pair under `:fixed`, both partners move apart about their midpoint, shifted inward just enough to fit a reflecting box or wrapped under periodic boundaries; under `:fixed` this moves an immobile partner, and `simulate` counts it toward its one warning per run. Partners already `r_react` or more apart (by minimum image, computed in Float64 from their stored coordinates) keep their positions. That is every pair bound at `d_dimer` when `d_dimer` exceeds `r_react` by more than coordinate rounding and the box is at least `2·d_dimer`; in a smaller box a pair can be closer than `d_dimer` (a reflecting anchored formation that kept its separation, or a periodic bond whose minimum image is shorter), and one closer than `r_react` moves at the split.
-The one exception to "an immobile partner stays put" under `:min`: when both partners are immobile, the one with the higher `track_id` is moved, because a pair closer than `r_react` must be separated to `r_react` and neither partner could otherwise ever move apart. When the placement cannot fit along the pair's axis (placed from an immobile partner, some axis fits neither way, possible only when `box_size` is under twice the separation; about their midpoint, some component of the separation along the axis exceeds `box_size`, or `box_size/2` under periodic boundaries), the partners stay where they are (the 0.7.1 behaviour), and `simulate` warns once per run. The separation is `r_react` plus a margin that survives rounding to the coordinate type. Each clause of pair placement, dissociation and continuation is stated in [Placement and Continuation Rules](rules.md).
+On dissociation the partners are placed at least `r_react` apart along the pair axis (the minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only because `d_dimer < r_react`; a mobile partner can still diffuse back and re-form (geminate re-encounter). Under `pair_mobility = :min` an immobile partner (else a D = 0 partner with a velocity) stays put and the other is placed from it, mirrored across it on each axis it would leave a reflecting box. Otherwise, including every pair under `:fixed`, both partners move apart about their midpoint, shifted inward just enough to fit a reflecting box or wrapped under periodic boundaries; under `:fixed` this moves an immobile partner, and `simulate` counts it toward its one warning per run. Partners already `r_react` or more apart (by minimum image, computed in Float64 from their stored coordinates) keep their positions. That is every pair bound at `d_dimer` when `d_dimer` exceeds `r_react` by more than coordinate rounding and the box is at least `2·d_dimer`; in a smaller box a pair can be closer than `d_dimer` (a reflecting anchored formation that kept its separation, or a periodic bond whose minimum image is shorter), and one closer than `r_react` moves at the split.
+The one exception to "an immobile partner stays put" under `:min`: when both partners are immobile (or both have D = 0 and a velocity), the one with the higher `track_id` is moved, because a pair closer than `r_react` must be separated to `r_react` and neither partner could otherwise ever move apart. When the placement cannot fit along the pair's axis (placed from an immobile partner, some axis fits neither way, possible only when `box_size` is under twice the separation; about their midpoint, some component of the separation along the axis exceeds `box_size`, or `box_size/2` under periodic boundaries), the partners stay where they are (the 0.7.1 behaviour), and `simulate` warns once per run. The separation is `r_react` plus a margin that survives rounding to the coordinate type. Each clause of pair placement, dissociation and continuation is stated in [Placement and Continuation Rules](rules.md).
 
 
 ## Microscope Image Generation

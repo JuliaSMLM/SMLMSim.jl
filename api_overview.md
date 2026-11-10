@@ -82,7 +82,7 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     diff_dimer::Float64 = 0.05      # dimer diffusion coefficient (μm²/s)
     diff_dimer_rot::Float64 = 0.5   # dimer rotational diffusion coefficient (rad²/s)
     k_off::Float64 = 0.2            # dimer dissociation rate (s⁻¹)
-    r_react::Float64 = 0.01         # reaction radius (μm)
+    r_react::Float64 = 0.01         # reaction radius (μm); 0 turns binding off
     d_dimer::Float64 = 0.05         # monomer separation in dimer (μm)
     dt::Float64 = 0.01              # physics step (s); also sets sub-steps per frame (motion blur)
     t_max::Float64 = 10.0           # total simulation time (s)
@@ -91,8 +91,13 @@ Base.@kwdef mutable struct DiffusionSMLMConfig <: SMLMSimParams
     camera_framerate::Float64 = 10.0 # camera frames per second (Hz)
     camera_exposure::Float64 = 0.1   # camera exposure time per frame (s)
     monomer_mobility::Vector{Tuple{Float64,Float64}} = Tuple{Float64,Float64}[]  # optional (fraction, D) mixture
+    pair_mobility::Symbol = :fixed  # bound-pair diffusion rule (:fixed or :min)
+    monomer_velocity::Vector{Tuple{Vararg{Float64}}} = Tuple{Vararg{Float64}}[]  # optional directed motion (μm/s):
+                                    # one entry for every monomer, or one per monomer_mobility population
 end
 ```
+
+Directed motion: each monomer step is `v·dt` plus the Gaussian diffusion step (variance `2·D·dt` per axis). `simulate`'s keywords `track_velocity` (`track_id => velocity`) and `track_D` (`track_id => D`) set single molecules; velocities are saved in `smld.metadata["monomer_velocity"]` and kept by continuation of a single run (not of a concatenation or merge). A bound pair drifts at its partners' velocities weighted by drag (`1/D`) under `pair_mobility = :min` (a partner with D 0 carries it, a still one holds it) and at their mean under `:fixed`; a molecule with a velocity is not immobile.
 
 camera_exposure and 1/camera_framerate should be integer multiples of dt (otherwise `simulate` rounds to the nearest step count and warns). The `γ` passed to `simulate` is the emission rate in photons/s; each of the n_sub = camera_exposure/dt records in a frame carries γ·dt. The deprecated `photons` keyword (removed in 0.8.0) is photons per record, equal to `γ = photons/dt`; without either, records carry 1000 photons.
 
@@ -639,6 +644,11 @@ truth = frame_dimer_truth(smld)
 
 # Continue a run from its exact end state (each track keeps its D)
 smld2, info2 = simulate(params; starting_conditions=smld)  # resumes at extract_end_state(smld)
+
+# Directed motion: 20% of molecules transported at 0.8 μm/s along y; molecule 1 on a straight line
+params_dm = DiffusionSMLMConfig(monomer_mobility=[(0.8, 0.05), (0.2, 0.001)],
+                                monomer_velocity=[(0.0, 0.0), (0.0, 0.8)])
+smld_dm, _ = simulate(params_dm; track_velocity=Dict(1 => (0.5, 0.5)), track_D=Dict(1 => 0.0))
 
 # Track state changes over time
 state_history = SMLMSim.InteractionDiffusion.track_state_changes(smld)

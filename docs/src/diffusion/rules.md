@@ -36,9 +36,37 @@ numbers of the coordinate type; for a subnormal displacement any finite unit dir
 acceptable. A zero displacement (partners at exactly the same position) is taken as +x, with
 no random draw of its own.
 
-**Range.** Coordinates are micrometres. Displacements, positions and box sizes beyond about
-`1e150` in magnitude are outside the model (their squares overflow Float64), and these rules
-promise nothing there.
+**Range.** Coordinates are micrometres and times seconds. Every number of a `DiffusionSMLMConfig`
+but `r_react` (mixture fractions included), every velocity component (the config's, `track_velocity`
+or a saved one), every per-molecule D (`track_D` or a saved one) and `simulate`'s `γ` is 0 or has a
+magnitude from `1e-50` to `1e50`, as given, before any conversion (the deprecated `photons` keyword is
+not checked, as in 0.7, until its removal in 0.8.0); `k_off` may also be
+infinite. A run has at most `2^53` steps and `2^53` molecules, and the default camera at most `2^53` pixels
+per side (counts compared exactly). Construction and `simulate` check all of this, the config
+again on its fields as they are when `simulate` runs, and throw `ArgumentError` otherwise. In that
+range the products, squares and step scales the simulation computes, such as `sqrt(2·D·dt)`, `v·dt`,
+`γ·dt` and the `:min` pair coefficient, are normal Float64 numbers.
+
+`r_react` may be any value `>= 0`, infinite included. Binding compares it with a distance that is
+scaled against underflow; a dissociation spacing it makes too large to place (infinite included)
+fails the fit test, and the partners stay where they are (Dissociation, below).
+
+Positions given in `starting_conditions` must be finite (`ArgumentError` otherwise), and a coordinate in
+`[0, box_size]` is used as given. Under periodic boundaries a position outside the box names its image in the
+box: each coordinate outside is wrapped at entry, as the first step would wrap it, so no record lies outside the
+box. Under reflecting boundaries a coordinate within a rounding margin of a wall, `8·eps(T)·max(1, box_size)` for
+coordinate type `T` (the wall written with rounding error: `3*0.1` in a box of 0.3, or `Float32(box_size)` rounded
+above `box_size`), is clamped inside, and a position farther beyond a wall throws `ArgumentError`. Coordinates, photons and
+timestamps are stored in each emitter's own type: with Float32 starting conditions (all or some),
+`simulate` throws `ArgumentError` when the box, the run's duration or the photons per record a `γ`
+restamp gives does not fit Float32 (about `3e38`); photons kept from the source, or set by the
+deprecated `photons` keyword, are not checked, as in 0.7. A diffusion step beyond that range overflows
+the coordinate. Molecules of different types may pair: a pair forms, moves and dissociates with each partner
+placed in Float64 and stored in its own type, and partners split closer than `r_react` are spaced with the
+margin of the coarser type. A coordinate that nothing moves keeps its stored value: a diffusion step with
+D = 0 and the boundary leave a coordinate inside the box as it is, and an anchor keeps its position, so an
+immobile BigFloat molecule keeps every bit, even beyond the current `setprecision`. A step that moves a BigFloat
+coordinate computes it at the current precision.
 
 ### A bound pair and the box
 
@@ -59,8 +87,8 @@ anchor):
   orientation and bond length. The center folds into its interval as many times as it crosses a wall (a triangle
   wave).
 - So both partners stay inside the box, `d_dimer` apart to within rounding.
-- When the pair cannot fit (possible only when `box_size < d_dimer`), each partner is reflected on its own, as in
-  0.7.1.
+- When the pair cannot fit (possible only when `box_size < d_dimer`), each partner is reflected on its own, as a
+  monomer is (Directed motion, A wall).
 
 **Every fit** is decided against the physical box `[0, box_size]`. Formation and a bound
 step compute positions in Float64 from the stored coordinates and the partner's Float64
@@ -79,7 +107,7 @@ pair keeps its 0.7.1 placement (`d_dimer/2` either side of its midpoint, the min
 **Every boundary step**, a monomer's included, ends inside the box in the coordinate type.
 
 **Under the default `:fixed`**, forming a pair places both partners `d_dimer` apart about their midpoint, and a bound
-pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member is immobile (monomer D = 0).
+pair moves with `diff_dimer` and rotates with `diff_dimer_rot`, even when a member is immobile (monomer D = 0 and no velocity).
 `simulate` warns once per run when any step moves an immobile member (at formation, while bound or at dissociation,
 recorded by the camera or not), pointing to `:min`, which keeps such a pair in place.
 
@@ -96,8 +124,10 @@ anchored formation that kept its current separation, or a periodic bond whose mi
 pair closer than `r_react` moves at the split.
 
 **Where they go.** The separation `s` is `r_react` plus a margin that survives rounding to the coordinate type.
-- Under `pair_mobility = :min`, an immobile partner never moves, and the other is placed `s` from it by the anchored
-  construction above. If both are immobile, the lower `track_id` stays and the higher one moves.
+- Under `pair_mobility = :min`, a partner with D 0 does not move: an immobile one, or else one with a velocity (its
+  drag is infinite; it then takes its own monomer step, so it stays on its line). The other is placed `s` from it by
+  the anchored construction above. If both have D 0, an immobile one stays; if both are immobile or both have a
+  velocity, the lower `track_id` stays and the higher one moves.
 - Otherwise, including every pair under the default `:fixed`, both move to `s/2` either side of their midpoint along
   their axis, with the midpoint shifted inward just enough to fit a reflecting box, or each end wrapped under
   periodic boundaries.
@@ -123,6 +153,56 @@ The construction cannot fit when its fit test fails:
   `s` is `8·eps(T)·max(1, box_size + r_react)`, and at least `1e-9·r_react`. It is larger than the rounding of both
   partners, so the separation after conversion is still at least `r_react`.
 
+## Directed motion
+
+A molecule can carry a constant velocity `v` in μm/s. The config's `monomer_velocity` gives one velocity to every
+monomer, or one per `monomer_mobility` population, drawn with the population's D. `simulate`'s `track_velocity` gives
+one to single molecules.
+- **A monomer step** is the diffusion step (Gaussian, variance `2·D·dt` per axis, the same draws as without a
+  velocity), then the displacement `v·dt`, then the boundary. A zero velocity takes exactly the step without one, so
+  the output and the random stream are unchanged.
+- **A wall.** In a reflecting box the position is reflected off the wall it crossed, as for any monomer step, and the
+  velocity is not reversed, so a molecule driven into a wall stays within one step's displacement of it: it piles up
+  at the wall, as a constant force against a wall that passes nothing does. Near a wall the drift is resolved to about
+  `sqrt(2·D·dt)`, so the layer at the wall is resolved better at smaller `dt`. A step longer than the box folds back as
+  often as it crosses a wall (before 0.7.4 such a step stopped at the wall, with or without a velocity). Under
+  periodic boundaries it wraps. The drift and the boundary are applied in Float64 to the stored position after the
+  diffusion step, which is converted once more to its coordinate type (so a Float32 molecule with D > 0 and a
+  velocity is rounded twice, by at most one unit in the last place), and a drift within the model's range (Range,
+  above) leaves the molecule finite and inside the box, with Float32 coordinates too.
+- **Binding.** The pair search runs at the start of each step, on the positions the previous step left, as without a
+  velocity: two monomers closer than `r_react` there form a pair in that step instead of moving. So molecules that
+  come within `r_react` at time `t` are still monomers at `t` and a pair from `t + dt`; a record shows the pair only
+  if one is taken while it lasts (a pair that forms and dissociates between records never shows). Two molecules whose
+  relative step `|v1 - v2|·dt` exceeds `2·r_react` can pass through each other without binding.
+  `r_react = 0` turns binding off: no pair forms, so molecules pass through each other even at one point, while
+  pairs given in `starting_conditions` still dissociate at `k_off`.
+- **Float32 coordinates** move in whole units of their precision: a drift step `v·dt` below the coordinate's
+  resolution is rounded, and a molecule with D 0 and a very small velocity can move slower than `v`, or not at all.
+- **A bound pair** drifts at the pair velocity, from overdamped force balance (a partner without a velocity counts as
+  zero). Under `:min`, where the pair's diffusion follows the slower partner, the partners' velocities are weighted
+  by their drag `1/D`: `v = (v1·D2 + v2·D1)/(D1 + D2)`. So a partner with D 0 carries the pair at its own velocity,
+  a still partner holds it (the anchor), and a partner of very small D nearly does; with both at D 0, the plain
+  mean. Under `:fixed`, whose pair diffusion does not depend on the partners, the plain mean (equal drag). The
+  velocities move only the pair's center and apply no torque: partners moving in opposite directions across the bond
+  neither move nor turn the pair. The drift is added to the pair's center after its diffusion and rotation draws. On
+  the formation step the pair is placed by the placement rule (A bound pair and the box), then drifts by `v·dt` as a
+  bound step drifts it (no diffusion on that step), so re-binding does not cost the pair its drift. Under `:min` a
+  partner with D 0 keeps its position at formation whether or not it has a velocity (its drag is infinite), and the
+  other is placed from it as from an immobile anchor; with both at D 0, an immobile partner stays, and if both are
+  immobile or both have a velocity, the lower `track_id` stays. The same holds when a pair closer than `r_react`
+  splits (Dissociation). An anchored pair does not move.
+- **Immobile** means monomer D 0 and no velocity, everywhere these rules or `pair_mobility` say immobile: the `:min`
+  anchor at formation, while bound and at dissociation, the `:fixed` warning, and `frame_dimer_truth`'s `mixed`. A
+  molecule with D 0 and a velocity is mobile. Under `:min` its pair has D 0 (the pair rule is by D) and moves at its
+  velocity.
+- **Single molecules.** `track_velocity` and `track_D` replace the velocity and D of the molecules they name.
+  Populations are still drawn for every molecule, so the other molecules' draws are unchanged.
+- **Saved.** When the run has any velocity (the config's, a keyword's or a continued run's),
+  `metadata["monomer_velocity"]` (`track_id => velocity`) holds the velocity every molecule moved with, zero included,
+  and `metadata["monomer_velocity_config"]` a copy of the config's `monomer_velocity`. A run without any velocity has
+  neither key, and its molecules moved with none.
+
 ## Continuation
 
 These rules apply when `starting_conditions` is an SMLD or the output of `extract_end_state`.
@@ -145,6 +225,15 @@ photon-edited subset of the run. Every other track takes the current setting at 
 A kept saved D warns once when this config's `monomer_mobility`, weights included, differs from the source run's saved
 copy.
 
+**Velocity.** A velocity is a property of the molecule, as a saved D is. A resumed track keeps its saved velocity, with
+one warning when this config's `monomer_velocity` differs from the source run's saved copy
+(`metadata["monomer_velocity_config"]`), as for D. A track without a saved velocity (its run had none) takes this
+config's: its population's entry, by the class it drew or kept with its saved D (none when that class is not one of
+this config's populations), or the one velocity of an empty mixture, else none. A kept D keeps its saved class, or
+takes the source run's population with that D; a D that is no population's (one set by `track_D`, or a source without
+a mixture) gives no class, so no population's velocity. `track_velocity` and `track_D`
+replace any of these for the molecules they name.
+
 **dt.** The source's saved `dt` is read only by the brightness check (`photons ≈ γ·dt_saved`, rtol 1e-6). A restamp
 uses the current `dt`, and a source that keeps its photons per record ignores both.
 
@@ -158,9 +247,9 @@ detect a molecule from another run that happens to carry `γ·dt_saved`.
   which no single run produces).
 
 Then `extract_end_state` resumes the latest record per track (the first of tied ones), carries no `γ`, `rate_source`,
-`monomer_D` or `monomer_class`, and warns once, so every molecule keeps its photons per record and takes the current D
-setting. The tie is only a backstop: in a Float32 SMLD from one run, timestamps `k·dt` can collide after about 8.4e6
-steps. Such a run then shows a false tie, which only drops its γ rate and saved D, with the warning.
+`monomer_D`, `monomer_class` or `monomer_velocity`, and warns once, so every molecule keeps its photons per record and
+takes the current D and velocity settings. The tie is only a backstop: in a Float32 SMLD from one run, timestamps `k·dt` can collide after about 8.4e6
+steps. Such a run then shows a false tie, which only drops its γ rate, saved D and saved velocity, with the warning.
 
 ### Definitions
 
@@ -168,7 +257,7 @@ steps. Such a run then shows a false tie, which only drops its γ rate and saved
   `simulate` from its own keywords. A continuation that does not restamp stores `"default"` for a default source and
   `"photons"` otherwise; any other or missing saved value, including a non-String, reads as `"photons"`.
 - **Unknown provenance** is decided once, in `extract_end_state`, which every SMLD `starting_conditions` passes
-  through. Its output then lacks the four keys above, so a second extraction and `simulate` take it at face value. Its
+  through. Its output then lacks the five keys above, so a second extraction and `simulate` take it at face value. Its
   output's metadata holds copies (including `simulation_parameters`), so editing the extract does not change the
   source.
 - **Saved mixture:** `create_smld` stores `metadata["monomer_mobility"]`, a copy of the config's mixture at run time,
