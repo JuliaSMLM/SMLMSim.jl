@@ -124,8 +124,10 @@ anchored formation that kept its current separation, or a periodic bond whose mi
 pair closer than `r_react` moves at the split.
 
 **Where they go.** The separation `s` is `r_react` plus a margin that survives rounding to the coordinate type.
-- Under `pair_mobility = :min`, an immobile partner never moves, and the other is placed `s` from it by the anchored
-  construction above. If both are immobile, the lower `track_id` stays and the higher one moves.
+- Under `pair_mobility = :min`, a partner with D 0 does not move: an immobile one, or else one with a velocity (its
+  drag is infinite; it then takes its own monomer step, so it stays on its line). The other is placed `s` from it by
+  the anchored construction above. If both have D 0, an immobile one stays; if both are immobile or both have a
+  velocity, the lower `track_id` stays and the higher one moves.
 - Otherwise, including every pair under the default `:fixed`, both move to `s/2` either side of their midpoint along
   their axis, with the midpoint shifted inward just enough to fit a reflecting box, or each end wrapped under
   periodic boundaries.
@@ -187,8 +189,9 @@ one to single molecules.
   the formation step the pair is placed by the placement rule (A bound pair and the box), then drifts by `v·dt` as a
   bound step drifts it (no diffusion on that step), so re-binding does not cost the pair its drift. Under `:min` a
   partner with D 0 keeps its position at formation whether or not it has a velocity (its drag is infinite), and the
-  other is placed from it as from an immobile anchor; with both at D 0, the lower `track_id` stays. An anchored pair
-  does not move.
+  other is placed from it as from an immobile anchor; with both at D 0, an immobile partner stays, and if both are
+  immobile or both have a velocity, the lower `track_id` stays. The same holds when a pair closer than `r_react`
+  splits (Dissociation). An anchored pair does not move.
 - **Immobile** means monomer D 0 and no velocity, everywhere these rules or `pair_mobility` say immobile: the `:min`
   anchor at formation, while bound and at dissociation, the `:fixed` warning, and `frame_dimer_truth`'s `mixed`. A
   molecule with D 0 and a velocity is mobile. Under `:min` its pair has D 0 (the pair rule is by D) and moves at its

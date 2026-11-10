@@ -431,8 +431,9 @@ Place two freshly dissociated monomers at least `params.r_react` apart along the
 minimum-image distance under periodic boundaries), so that the formation check (`can_dimerize`) cannot
 re-capture them at the next step only because `d_dimer < r_react`. The distance is formation's (`_sep`, in
 Float64 from the stored coordinates, each axis rounded once) with the minimum image under periodic
-boundaries; partners `r_react` or more apart by it are returned unchanged. Under `pair_mobility = :min` an immobile member (both
-immobile: the lower `track_id`, see `_anchor`) keeps its position and the other is placed from it
+boundaries; partners `r_react` or more apart by it are returned unchanged. Under `pair_mobility = :min` an immobile member,
+or else a member with D 0 (`d0`, a velocity's partner; both alike: the lower `track_id`, see `_anchor`) keeps its
+position and the other is placed from it
 (mirrored across it on each axis it would leave a reflecting box); otherwise, including every pair under
 `:fixed`, both move apart about their midpoint, shifted inward just far enough that both are inside a
 reflecting box, or wrapped under periodic boundaries. Every placed coordinate is inside the box in its
@@ -452,11 +453,13 @@ changes positions only.
 - `Tuple`: The two monomers, moved apart if they were closer than `r_react`
 """
 function _unbind(m1::AbstractDiffusingEmitter, m2::AbstractDiffusingEmitter, params, s1::Bool, s2::Bool,
-                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing)
+                 unfit::Union{Nothing,Base.RefValue{Bool}}=nothing; d0::Union{Nothing,Tuple{Bool,Bool}}=nothing)
     p1, p2 = _pos(m1), _pos(m2)
     _sep(p1, p2, _period(params)) >= params.r_react && return (m1, m2)
     T1, T2 = typeof(m1.x), typeof(m2.x)
+    # under :min the member that stays: an immobile one, else one with D 0 (`d0`; its drag is infinite)
     a = _anchor(params, m1, m2, s1, s2)
+    a === nothing && d0 !== nothing && (a = _anchor(params, m1, m2, d0[1], d0[2]))
     ok, q1, q2 = _unbind_positions(p1, p2, params, a, m1.track_id, _unbind_spacing(params, _coarser(T1, T2)), T1, T2)
     # the anchor keeps its stored coordinates (a type wider than Float64 is not rounded)
     ok && return (a == m1.track_id ? m1 : _at(m1, q1), a == m2.track_id ? m2 : _at(m2, q2))

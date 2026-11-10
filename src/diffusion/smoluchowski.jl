@@ -18,9 +18,10 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
 - `d_dimer::Float64`: monomer separation in dimer (μm)
   On dissociation the partners are placed at least `r_react` apart along the pair axis (the
   minimum-image distance under periodic boundaries), so a pair does not re-form at the next step only
-  because `d_dimer < r_react`. Under `pair_mobility = :min` an immobile partner stays put and the other
-  is placed from it, mirrored across it on each axis it would leave a reflecting box (if both are
-  immobile, the lower `track_id` stays and the higher one moves); otherwise, including every pair under
+  because `d_dimer < r_react`. Under `pair_mobility = :min` a partner with D 0 stays put (an immobile one,
+  or else one with a velocity, whose drag is infinite) and the other is placed from it, mirrored across
+  it on each axis it would leave a reflecting box (if both have D 0 an immobile one stays, and if both are
+  immobile or both have a velocity, the lower `track_id` stays and the higher one moves); otherwise, including every pair under
   `:fixed`, both move apart about their midpoint, shifted inward just enough to fit a reflecting box or
   wrapped under periodic boundaries. When that cannot fit along the pair's axis (a box of about
   `2·r_react` or less), the partners stay where they are, and `simulate` warns once per run. Partners
@@ -65,7 +66,8 @@ Parameters for diffusion-based SMLM simulation using Smoluchowski dynamics.
   position (an immobile one, or one with a velocity, whose drag is infinite) and the other is placed
   `d_dimer` from it (in a reflecting box, mirrored across the fixed partner on each axis it would leave,
   so the bond stays `d_dimer` long; if some axis fits neither way, possible only when
-  `box_size < 2·d_dimer`, it keeps its position); if both have D 0 the lower `track_id` stays. `:min` requires `diff_monomer > 0`. Stored in `smld.metadata["pair_mobility"]`.
+  `box_size < 2·d_dimer`, it keeps its position); if both have D 0 an immobile one stays, and if both are
+  immobile or both have a velocity, the lower `track_id` stays. `:min` requires `diff_monomer > 0`. Stored in `smld.metadata["pair_mobility"]`.
   Under either setting a mobile pair in a reflecting box is rigid: at formation, if an end is outside
   the box, both partners move to `d_dimer/2` either side of their midpoint, shifted inward just enough
   to fit, and while bound the pair's center folds off the walls moved in by each end's half-extent as
@@ -663,7 +665,7 @@ function _update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::Di
                 m1, m2 = dissociate(e1, emitters)
                 D1, D2 = monomer_D(m1.track_id), monomer_D(m2.track_id)
                 s1, s2 = still(m1.track_id), still(m2.track_id)
-                u1, u2 = _unbind(m1, m2, params, s1, s2, split_unfit)
+                u1, u2 = _unbind(m1, m2, params, s1, s2, split_unfit; d0=(D1 == 0, D2 == 0))
                 _note_immobile!(moved_immobile, params, s1, s2, m1, m2, u1, u2)
                 m1, m2 = u1, u2
 

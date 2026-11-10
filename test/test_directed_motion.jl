@@ -439,6 +439,19 @@ end
                                                             0.01; track_D=Dict(1 => 0.0, 2 => 0.1),
                                                             track_v=Dict(1 => (1.0, 0.0))))
         @test isapprox(o[1].x, 1.01; atol=1e-12) && isapprox(o[2].x, 1.03; atol=1e-12) && o[1].y == o[2].y == 1.0
+        # ... and when such a pair splits closer than r_react, the D 0 partner stays on its line: it keeps its place and
+        # takes its own monomer step (1.0 + 0.01), and the other is placed r_react from it
+        ps = dm_config(box_size=10.0, r_react=0.01, d_dimer=0.005, k_off=Inf, pair_mobility=:min)
+        o = Dict(x.track_id => x for x in DM.update_system(DM.AbstractDiffusingEmitter[bound(1, 1.0, 2), bound(2, 1.005, 1)],
+                                                            ps, 0.01; track_D=Dict(1 => 0.0, 2 => 0.1),
+                                                            track_v=Dict(1 => (1.0, 0.0))))
+        @test o[1].state == :monomer && isapprox(o[1].x, 1.01; atol=1e-12) && o[1].y == 1.0
+        # both at D 0 under :min: the immobile partner stays even with the higher track_id (still 5 at 1.0, directed 3
+        # at 1.005: 5 stays, 3 is placed at 1.02, and the pair is held)
+        o = Dict(x.track_id => x for x in DM.update_system(DM.AbstractDiffusingEmitter[mono(5, 1.0), mono(3, 1.005)], pa,
+                                                            0.01; track_D=Dict(5 => 0.0, 3 => 0.0),
+                                                            track_v=Dict(3 => (1.0, 0.0))))
+        @test o[5].x == 1.0 && isapprox(o[3].x, 1.02; atol=1e-12) && o[3].state == :dimer
         # a directed D 0 molecule meets an immobile one under :min: the immobile one anchors
         s = sim(cfg(:min), [mono(1, 1.0), mono(2, 1.004)]; track_D=D0, track_velocity=Dict(1 => (1.0, 0.0)))
         @test at(s, 2, 0.01).x == 1.004 && isapprox(at(s, 1, 0.01).x, 0.984; atol=1e-12)
