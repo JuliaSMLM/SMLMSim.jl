@@ -599,8 +599,8 @@ end
 # The body of `update_system`, with `v_all` the config's one velocity for every monomer (`_uniform_velocity`).
 # Internal.
 function _update_system(emitters::Vector{<:AbstractDiffusingEmitter}, params::DiffusionSMLMConfig, dt::Float64,
-                        v_all::Union{Nothing,NTuple{N,Float64}}, track_D, track_v, moved_immobile,
-                        split_unfit) where {N}
+                        v_all::Union{Nothing,NTuple{<:Any,Float64}}, track_D, track_v, moved_immobile,
+                        split_unfit)
     monomer_D(id) = track_D === nothing ? params.diff_monomer : get(track_D, id, params.diff_monomer)
     velocity(id) = track_v === nothing ? v_all : get(track_v, id, v_all)
     # Immobile: monomer D 0 and no velocity (the :min anchor and the :fixed warning)

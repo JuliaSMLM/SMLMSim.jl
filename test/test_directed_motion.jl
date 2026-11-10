@@ -317,6 +317,10 @@ end
                 @test !occursin("Core.Box", sprint(show, ci))
             end
         end
+        # No method leaves a type parameter unbound. With no velocity set, a step signature typed
+        # Union{Nothing,NTuple{N,Float64}} where N left N unbound, and Julia nightly then compiled the whole step to
+        # dynamic calls (several times the allocations of a step on main, failing the formation-allocation test)
+        @test isempty(Test.detect_unbound_args(SMLMSim; recursive=true))
     end
 
     @testset "continuation" begin
