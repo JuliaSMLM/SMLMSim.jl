@@ -183,6 +183,55 @@ Input containers may have an abstract element type or mix numeric precisions wit
 dimension. The 2D or 3D output type is chosen from the individual fits and its coordinates
 are Float64. Mixing 2D and 3D inputs throws `ArgumentError`.
 
+## Molecule-to-Molecule Brightness
+
+By default every molecule emits at the model's rate `γ`, so every full-frame molecule carries
+exactly `γ / framerate` photons. The keyword `brightness` of `simulate` (static) and
+`kinetic_model` takes any univariate distribution of a dimensionless factor `b`. A molecule
+with factor `b` emits at `b * γ` for all of its frames; the rate matrix is unchanged. One factor
+is drawn per molecule and dataset, and the factor must be finite and not negative. Redrawing per
+dataset is intended: each dataset is an independent sample, as its initial states and blinking
+already are, so the same position can differ in brightness between datasets.
+
+For a mean and standard deviation of photons per full frame with a floor, set `γ` from the mean
+and give the factor as a normal of mean 1, kept at or above the floor:
+
+```julia
+using SMLMSim, Distributions   # Normal, truncated and censored come from Distributions.jl
+
+mean_ph, sd_ph, floor_ph = 3000.0, 600.0, 1000.0   # photons per full frame
+fluor = GenericFluor(mean_ph * 50.0, [-10.0 10.0; 0.5 -0.5])   # γ for a 50 Hz frame rate
+params = StaticSMLMConfig(framerate=50.0)
+
+# cut at the floor and renormalized: no draw lies at the floor
+b_trunc = truncated(Normal(1, sd_ph / mean_ph); lower=floor_ph / mean_ph)
+# draws below the floor are set to it, as DECODE does
+b_cens = censored(Normal(1, sd_ph / mean_ph); lower=floor_ph / mean_ph)
+
+smld, info = simulate(params; molecule=fluor, brightness=b_trunc)
+info.smld_model.metadata["brightness_factors"]   # (dataset, track_id) => factor
+```
+
+The two differ in what they do with the probability below the floor. `truncated` removes it
+and renormalizes, so the distribution is smooth and no molecule sits exactly at the floor.
+`censored` moves it onto the floor, so a fraction `cdf(Normal(1, sd/mean), floor/mean)` of the
+molecules has the factor exactly equal to the floor. Both raise the mean above that of the
+underlying normal and narrow its spread; `mean` and `var` of either distribution give the exact
+moments. With 32-bit parameters, `truncated(Normal(1f0, 0.3f0); lower=0.7f0)` fails when drawn
+from in Distributions 0.25 (a Distributions.jl bug, its issue 1089, through 0.25.134); build the
+distribution from 64-bit values.
+
+A distribution with negative values (such as a plain `Normal`) throws `ArgumentError` before any
+random number is drawn. That check sees only the distribution's minimum, so every drawn factor is
+checked too, when it is drawn: a factor that is NaN, infinite or negative throws `ArgumentError`
+naming the value and the distribution. A factor so large that the molecule's photon counts
+overflow throws once its blinking is simulated. `DiscreteNonParametric([1.0, NaN], [0.5, 0.5])`,
+for example, has minimum 1.0 and throws at its first draw of NaN. With `brightness` given,
+`metadata["brightness"]` holds the distribution and `metadata["brightness_factors"]` the factor
+drawn for each `(dataset, track_id)`. Without it no random number is drawn for brightness and
+neither key is added; `kinetic_model` drops the values an earlier `brightness` run wrote under
+them from its input's metadata.
+
 ## Photophysical Parameters and Duty Cycle
 
 The photophysical properties determine the "duty cycle" - the fraction of time a fluorophore is in the ON state:

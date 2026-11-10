@@ -414,6 +414,15 @@ smld_noisy, info = simulate(
     molecule=GenericFluor()
 )
 
+# Molecule-to-molecule brightness: a factor on the molecule's emission rate,
+# drawn once per molecule and dataset (default `nothing`: every molecule at γ)
+smld_noisy, info = simulate(
+    params;
+    pattern=Nmer2D(),
+    brightness=truncated(Normal(1, 0.3); lower=0.7)
+)
+info.smld_model.metadata["brightness_factors"]  # (dataset, track_id) => factor
+
 # Diffusion simulation
 # First create simulation parameters
 params_diff = DiffusionSMLMConfig()
@@ -464,7 +473,20 @@ smld_model = kinetic_model(
     minphotons=50.0, # Minimum photons for detection
     state1=:equilibrium  # Initial state sampling
 )
+
+# Optional: a per-molecule brightness factor on the emission rate (default `nothing`).
+# Must not be negative: use truncated(d; lower=floor) or censored(d; lower=floor).
+smld_bright = kinetic_model(smld_true, fluor, nframes, framerate;
+                            brightness=censored(Normal(1, 0.3); lower=0.7))
 ```
+
+The `brightness` keyword (also a keyword of static `simulate`) takes any univariate
+distribution of a dimensionless factor `b`; a molecule emits at `b * γ` for all its frames,
+with one draw per molecule and dataset. With it, the output metadata holds `"brightness"`
+and `"brightness_factors"`, a `Dict{Tuple{Int,Int},Float64}` from `(dataset, track_id)` to `b`.
+A distribution whose minimum is negative throws `ArgumentError` before any random draw; a drawn
+factor that is NaN, infinite or negative throws when it is drawn; and one whose photon counts
+overflow throws once the molecule's blinking is simulated.
 
 #### apply_noise
 
